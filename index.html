@@ -86,8 +86,10 @@
 
   .table-container {
     background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 12px; overflow: hidden; margin-bottom: 20px;
+    border-radius: 12px; margin-bottom: 20px;
   }
+  .table-container > div[style*="overflow-x"] { overflow-x: auto; }
+  .table-header { overflow: visible; }
 
   .table-header {
     display: flex; justify-content: space-between; align-items: center;
@@ -119,7 +121,9 @@
   .multi-row {
     display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 10px;
     padding: 8px; border-radius: 8px; background: rgba(255,255,255,0.02);
+    width: 100%;
   }
+  .multi-row .form-group { flex: 1 1 100px; min-width: 80px; }
 
   .btn-remove-row {
     background: transparent; border: 1px solid #f87171; color: #f87171;
@@ -187,14 +191,100 @@
     .header, .content-area { padding-left: 12px; padding-right: 12px; }
     .summary { grid-template-columns: 1fr 1fr; }
     .summary-grid { grid-template-columns: 1fr 1fr !important; }
-    .mortgage-input { grid-template-columns: 1fr; }
-    .multi-row { flex-direction: column; }
-    .dca-row { grid-template-columns: 1fr; }
+    .mortgage-input { grid-template-columns: 1fr 1fr; }
+    .multi-row { flex-direction: row; flex-wrap: wrap; }
+    .multi-row .form-group { flex: 1 1 80px; min-width: 70px; }
+    .dca-row { grid-template-columns: 1fr 1fr; }
   }
-  @media (max-width: 500px) {
+  @media (max-width: 500px) and (orientation: portrait) {
     .summary { grid-template-columns: 1fr; }
     .summary-grid { grid-template-columns: 1fr !important; }
+    .mortgage-input { grid-template-columns: 1fr; }
+    .multi-row { flex-direction: column; }
+    .multi-row .form-group { flex: 1 1 auto; min-width: 100%; }
+    .dca-row { grid-template-columns: 1fr; }
   }
+  /* 手機橫式：善用寬度，保持橫排 */
+  @media (max-height: 500px) and (orientation: landscape) {
+    .multi-row { flex-direction: row; flex-wrap: wrap; }
+    .multi-row .form-group { flex: 1 1 100px; min-width: 80px; }
+    .mortgage-input { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+    .dca-row { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+  }
+
+  /* Tutorial banner under each tab title */
+  .tutorial-banner {
+    background: rgba(167,139,250,0.08);
+    border: 1px solid rgba(167,139,250,0.15);
+    border-radius: 10px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    font-size: 0.82em;
+    color: #bbb;
+    line-height: 1.6;
+    position: relative;
+  }
+  .tutorial-banner .tutorial-title {
+    color: #a78bfa;
+    font-weight: 600;
+    font-size: 0.95em;
+    margin-bottom: 6px;
+  }
+  .tutorial-banner .tutorial-close {
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    cursor: pointer;
+    color: #666;
+    font-size: 1.1em;
+    border: none;
+    background: none;
+  }
+  .tutorial-banner .tutorial-close:hover { color: #fff; }
+  .tutorial-banner ul { margin: 4px 0; padding-left: 18px; }
+  .tutorial-banner li { margin-bottom: 3px; }
+  .tutorial-banner code { background: rgba(255,255,255,0.08); padding: 1px 5px; border-radius: 3px; color: #67e8f9; font-size: 0.9em; }
+
+  /* Help tooltip (!) icon */
+  .help-tip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: rgba(167,139,250,0.2);
+    color: #a78bfa;
+    font-size: 0.7em;
+    font-weight: 700;
+    cursor: help;
+    position: relative;
+    margin-left: 4px;
+    vertical-align: middle;
+    flex-shrink: 0;
+  }
+  .help-tip:hover { background: rgba(167,139,250,0.4); }
+  .help-tip .help-text {
+    display: none;
+    position: absolute;
+    top: 22px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #1a1a2e;
+    border: 1px solid rgba(167,139,250,0.3);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 1.6em;
+    font-weight: 400;
+    color: #ccc;
+    white-space: normal;
+    width: 220px;
+    z-index: 9999;
+    line-height: 1.4;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    pointer-events: none;
+  }
+  .help-tip:hover .help-text { display: block; }
 </style>
 </head>
 <body>
@@ -215,6 +305,17 @@
 <!-- ========== OVERVIEW TAB ========== -->
 <div id="overview" class="content-area active">
   <h2 style="margin-bottom:16px">📊 投資總覽</h2>
+
+  <div class="tutorial-banner" id="tutorial-overview">
+    <button class="tutorial-close" onclick="this.parentElement.style.display='none';localStorage.setItem('hide_tutorial_overview','1')">✕</button>
+    <div class="tutorial-title">💡 總覽使用說明</div>
+    • 這裡顯示所有帳戶的投資摘要，包含美股、台股、房產的總資產和淨資產<br>
+    • 使用上方「持有人篩選」可以查看個別持有人或全部合計<br>
+    • 選擇「按戶名分開」可以看到每位持有人各自的圓餅圖和趨勢圖<br>
+    • 圓餅圖顯示持股配置比例，趨勢圖可切換 30天/6個月/1年/自訂時間範圍<br>
+    • 所有金額單位：美股為 USD，台股為 TWD，總覽中的合計以 TWD 計算
+  </div>
+  <script>if(localStorage.getItem('hide_tutorial_overview'))document.getElementById('tutorial-overview').style.display='none';</script>
 
   <div style="margin-bottom:16px;display:flex;align-items:center;gap:10px">
     <label style="color:#888;font-size:0.9em">持有人篩選:</label>
@@ -240,14 +341,33 @@
     </div>
   </div>
 
+  <div class="tutorial-banner" id="tutorial-us">
+    <button class="tutorial-close" onclick="this.parentElement.style.display='none';localStorage.setItem('hide_tutorial_us','1')">✕</button>
+    <div class="tutorial-title">💡 美股投資使用說明</div>
+    • 需要先到「帳戶管理」建立帳戶，才能記錄交易<br>
+    • 輸入 Finnhub API Key 後可即時更新美股股價（免費申請，下方有連結）<br>
+    • 「資金管理」記錄存入/提出美元資金，可填匯率自動換算台幣<br>
+    • 「新增交易」記錄買賣操作，支援一次新增多筆<br>
+    • 「股利 &amp; 利息」記錄配息、利息、稅額和微調<br>
+    • 持倉明細顯示現價、均價、損益，系統自動計算投報率<br>
+    • 資料存在瀏覽器 localStorage，記得定期到「帳戶管理」做備份
+  </div>
+  <script>if(localStorage.getItem('hide_tutorial_us'))document.getElementById('tutorial-us').style.display='none';</script>
+
   <div class="summary" id="usSummary"></div>
 
   <div id="usChartsSection"></div>
 
-  <div style="display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap;">
+  <div style="display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; align-items: center;">
     <input type="password" id="usApiKey" placeholder="Finnhub API Key (可選)" style="padding:8px 12px;border-radius:6px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.08);color:#fff;flex:1;min-width:200px;">
+    <span class="help-tip">!<span class="help-text">免費的 Finnhub API Key 可從 finnhub.io 申請。沒有 API Key 也能使用，只是無法自動更新美股股價。</span></span>
     <button class="btn btn-primary" onclick="saveUSApiKey()">💾 儲存 API Key</button>
     <button class="btn btn-primary" onclick="refreshUSPrices()">🔄 更新股價</button>
+  </div>
+  <div style="font-size:0.78em;color:#666;margin-bottom:16px">
+    免費申請 Finnhub API Key：<a href="https://finnhub.io/register" target="_blank" style="color:#67e8f9;text-decoration:underline">https://finnhub.io/register</a>（註冊後到 Dashboard 複製 API Key）
+  </div>
+  <div style="display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap;">
     <label class="btn btn-secondary" style="cursor:pointer">
       📊 匯入 JSON
       <input type="file" accept=".json" style="display:none" onchange="importAccountJSON(event,'us')">
@@ -256,7 +376,7 @@
   </div>
 
   <div class="add-form">
-    <h2>💰 資金管理</h2>
+    <h2>💰 資金管理 <span class="help-tip">!<span class="help-text">記錄美元存入和提出。存入時可填匯率，系統會自動換算台幣金額，方便計算實際投入成本。</span></span></h2>
     <div id="usFundRows"></div>
     <div style="display:flex;gap:8px;margin-top:10px">
       <button class="btn btn-secondary" onclick="addUSFundRow()">＋ 新增一行</button>
@@ -265,7 +385,7 @@
   </div>
 
   <div class="add-form">
-    <h2>➕ 新增交易</h2>
+    <h2>➕ 新增交易 <span class="help-tip">!<span class="help-text">支援一次新增多筆交易。日期格式彈性：2024.1.5、2024/01/05、20240105 都可以。</span></span></h2>
     <div id="usTradeRows"></div>
     <div style="display:flex;gap:8px;margin-top:10px">
       <button class="btn btn-secondary" onclick="addUSTradeRow()">＋ 新增一行</button>
@@ -274,7 +394,7 @@
   </div>
 
   <div class="add-form">
-    <h2>💵 股利 & 利息</h2>
+    <h2>💵 股利 &amp; 利息 <span class="help-tip">!<span class="help-text">除了股利和利息，也可記錄「稅」（自動轉負數）和「微調」（可正可負），用於調整帳戶餘額。</span></span></h2>
     <div id="usIncomeRows"></div>
     <div style="display:flex;gap:8px;margin-top:10px">
       <button class="btn btn-secondary" onclick="addUSIncomeRow()">＋ 新增一行</button>
@@ -284,7 +404,7 @@
 
   <div class="table-container">
     <div class="table-header">
-      <h2>📋 持倉明細</h2>
+      <h2>📋 持倉明細 <span class="help-tip">!<span class="help-text">現均價 = 扣除配息後的淨成本均價。已清倉的股票會顯示在下方（半透明）。</span></span></h2>
     </div>
     <div style="overflow-x:auto">
       <table>
@@ -339,6 +459,16 @@
     </div>
   </div>
 
+  <div class="tutorial-banner" id="tutorial-tw">
+    <button class="tutorial-close" onclick="this.parentElement.style.display='none';localStorage.setItem('hide_tutorial_tw','1')">✕</button>
+    <div class="tutorial-title">💡 台股投資使用說明</div>
+    • 台股股價會自動更新（使用 TWSE 即時報價），也可按「🔄 更新台股股價」手動刷新<br>
+    • 股票代號支援數字代碼（如 2330）或中文名稱（如 台積電）<br>
+    • 交易金額以「整股」計算（股數 × 股價，無條件捨去到整數）<br>
+    • 其餘操作方式與美股相同：先建帳戶 → 存入資金 → 新增交易
+  </div>
+  <script>if(localStorage.getItem('hide_tutorial_tw'))document.getElementById('tutorial-tw').style.display='none';</script>
+
   <div class="summary" id="twSummary"></div>
 
   <div id="twChartsSection"></div>
@@ -353,7 +483,7 @@
   </div>
 
   <div class="add-form">
-    <h2>💰 資金管理</h2>
+    <h2>💰 資金管理 <span class="help-tip">!<span class="help-text">記錄台幣存入和提出。這是計算投報率的基礎：淨值 ÷ 淨投入 = 投報率。</span></span></h2>
     <div id="twFundRows"></div>
     <div style="display:flex;gap:8px;margin-top:10px">
       <button class="btn btn-secondary" onclick="addTWFundRow()">＋ 新增一行</button>
@@ -362,7 +492,7 @@
   </div>
 
   <div class="add-form">
-    <h2>➕ 新增交易</h2>
+    <h2>➕ 新增交易 <span class="help-tip">!<span class="help-text">支援一次新增多筆交易。日期格式彈性：2024.1.5、2024/01/05、20240105 都可以。</span></span></h2>
     <div id="twTradeRows"></div>
     <div style="display:flex;gap:8px;margin-top:10px">
       <button class="btn btn-secondary" onclick="addTWTradeRow()">＋ 新增一行</button>
@@ -371,7 +501,7 @@
   </div>
 
   <div class="add-form">
-    <h2>💵 股利 & 利息</h2>
+    <h2>💵 股利 &amp; 利息 <span class="help-tip">!<span class="help-text">除了股利和利息，也可記錄「稅」（自動轉負數）和「微調」（可正可負），用於調整帳戶餘額。</span></span></h2>
     <div id="twIncomeRows"></div>
     <div style="display:flex;gap:8px;margin-top:10px">
       <button class="btn btn-secondary" onclick="addTWIncomeRow()">＋ 新增一行</button>
@@ -380,7 +510,7 @@
   </div>
 
   <div class="table-container">
-    <div class="table-header"><h2>📋 持倉明細</h2></div>
+    <div class="table-header"><h2>📋 持倉明細 <span class="help-tip">!<span class="help-text">現均價 = 扣除配息後的淨成本均價。已清倉的股票會顯示在下方（半透明）。</span></span></h2></div>
     <div style="overflow-x:auto">
       <table>
         <thead>
@@ -428,6 +558,17 @@
 <div id="dca" class="content-area">
   <h2 style="margin-bottom:16px">📅 定期定額快速輸入</h2>
 
+  <div class="tutorial-banner" id="tutorial-dca">
+    <button class="tutorial-close" onclick="this.parentElement.style.display='none';localStorage.setItem('hide_tutorial_dca','1')">✕</button>
+    <div class="tutorial-title">💡 定期定額使用說明</div>
+    • 快速輸入定期定額買入紀錄，每筆可設不同股票<br>
+    • 股票代號自動判別市場：純數字 → 台股，含英文 → 美股<br>
+    • 手續費率會依市場自動帶入（台股 0.1425%，美股 0.01425%）<br>
+    • 每個帳戶可設不同金額，勾選要參與的帳戶<br>
+    • 送出後自動寫入對應市場的交易紀錄
+  </div>
+  <script>if(localStorage.getItem('hide_tutorial_dca'))document.getElementById('tutorial-dca').style.display='none';</script>
+
   <div class="add-form">
     <h2>🎯 新增定期定額批次</h2>
     <div style="font-size:0.82em;color:#888;margin-bottom:12px">純數字代號 → 台股，含英文字母 → 美股，自動判讀市場與手續費率</div>
@@ -445,6 +586,18 @@
 <div id="mortgage" class="content-area">
   <h2 style="margin-bottom:16px">🏠 房產 / 房貸管理</h2>
 
+  <div class="tutorial-banner" id="tutorial-mortgage">
+    <button class="tutorial-close" onclick="this.parentElement.style.display='none';localStorage.setItem('hide_tutorial_mortgage','1')">✕</button>
+    <div class="tutorial-title">💡 房產/房貸使用說明</div>
+    • 支援「預售屋」和「成屋」兩種類型<br>
+    • 預售屋有工程款分段付款功能，最後兩筆（倒數第二筆和交屋款）會自動聯動計算<br>
+    • 工程款佔總價 % 和工程款總額可擇一填入，另一個自動帶入<br>
+    • 貸款部分：填剩餘貸款或已繳本金，另一個自動計算<br>
+    • 未手動填寫剩餘貸款時，系統自動帶入「總價 × 貸款比例」<br>
+    • 可綁定帳戶（戶名），在總覽中會歸到該持有人名下
+  </div>
+  <script>if(localStorage.getItem('hide_tutorial_mortgage'))document.getElementById('tutorial-mortgage').style.display='none';</script>
+
   <div id="mortgageList"></div>
 
   <button class="btn btn-add" onclick="addMortgage()" style="margin-bottom:20px">＋ 新增房產</button>
@@ -453,6 +606,17 @@
 <!-- ========== ACCOUNTS TAB ========== -->
 <div id="accounts" class="content-area">
   <h2 style="margin-bottom:16px">⚙️ 帳戶管理</h2>
+
+  <div class="tutorial-banner" id="tutorial-accounts">
+    <button class="tutorial-close" onclick="this.parentElement.style.display='none';localStorage.setItem('hide_tutorial_accounts','1')">✕</button>
+    <div class="tutorial-title">💡 帳戶管理使用說明</div>
+    • 帳戶名稱就是「持有人」，在總覽中會依此分類<br>
+    • 每個帳戶可同時有美股和台股的交易紀錄<br>
+    • 「完整備份」會把所有資料（帳戶、交易、房產、股價快取）打包下載為 JSON<br>
+    • 「還原備份」可匯入之前備份的 JSON 檔，換電腦或清瀏覽器後可恢復資料<br>
+    • ⚠️ 所有資料存在瀏覽器 localStorage，清除瀏覽器資料會遺失！建議定期備份
+  </div>
+  <script>if(localStorage.getItem('hide_tutorial_accounts'))document.getElementById('tutorial-accounts').style.display='none';</script>
 
   <div class="add-form">
     <h2>新增帳戶</h2>
@@ -476,7 +640,7 @@
   </div>
 
   <div style="margin-top:20px;padding:16px;background:rgba(255,255,255,0.04);border-radius:10px;border:1px solid rgba(255,255,255,0.08)">
-    <h3 style="color:#34d399;margin-bottom:10px">💾 資料備份與還原</h3>
+    <h3 style="color:#34d399;margin-bottom:10px">💾 資料備份與還原 <span class="help-tip">!<span class="help-text">備份檔包含所有資料（帳戶、交易、房產、股價），可在其他電腦或瀏覽器還原。建議每週備份一次。</span></span></h3>
     <p style="color:#888;font-size:0.82em;margin-bottom:12px">所有資料存在瀏覽器 localStorage，清除瀏覽器資料會遺失。建議定期備份。</p>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn btn-add" onclick="backupAllLocalStorage()" style="padding:10px 16px;font-size:0.95em;border-radius:8px">📦 完整備份 (下載 JSON)</button>
@@ -606,6 +770,14 @@ function migrateOldData() {
 
 // Init
 function init() {
+  // 隱藏已關閉的教學 banner
+  ['overview','us','tw','dca','mortgage','accounts'].forEach(tab => {
+    if (localStorage.getItem('hide_tutorial_' + tab)) {
+      const el = document.getElementById('tutorial-' + tab);
+      if (el) el.style.display = 'none';
+    }
+  });
+
   migrateOldData();
   
   if (accounts.length === 0) {
@@ -767,7 +939,7 @@ async function fetchPrice(ticker) {
 // 由 Python 腳本更新後寫入 localStorage，或手動按更新按鈕時用 prompt 輸入
 let twPrices = JSON.parse(localStorage.getItem('tw_stock_prices') || '{}');
 // 自動注入的台股即時股價（由 update_prices.py 更新）
-(function() { const _p = {"0050":{"price":73.9,"prevClose":75.0,"change":-1.47,"name":"元大台灣50"},"元大台灣50":{"price":73.9,"prevClose":75.0,"change":-1.47,"name":"元大台灣50"},"006208":{"price":171.45,"prevClose":174.45,"change":-1.72,"name":"富邦台50"},"富邦台50":{"price":171.45,"prevClose":174.45,"change":-1.72,"name":"富邦台50"},"009802":{"price":12.41,"prevClose":12.67,"change":-2.05,"name":"富邦旗艦50"},"富邦旗艦50":{"price":12.41,"prevClose":12.67,"change":-2.05,"name":"富邦旗艦50"},"1720":{"price":63.3,"prevClose":62.7,"change":0.96,"name":"生達"},"生達":{"price":63.3,"prevClose":62.7,"change":0.96,"name":"生達"},"2324":{"price":28.4,"prevClose":30.25,"change":-6.12,"name":"仁寶"},"仁寶":{"price":28.4,"prevClose":30.25,"change":-6.12,"name":"仁寶"},"2330":{"price":1780.0,"prevClose":1820.0,"change":-2.2,"name":"台積電"},"台積電":{"price":1780.0,"prevClose":1820.0,"change":-2.2,"name":"台積電"},"3231":{"price":126.0,"prevClose":127.0,"change":-0.79,"name":"緯創"},"緯創":{"price":126.0,"prevClose":127.0,"change":-0.79,"name":"緯創"},"4938":{"price":78.3,"prevClose":80.9,"change":-3.21,"name":"和碩"},"和碩":{"price":78.3,"prevClose":80.9,"change":-3.21,"name":"和碩"}}; Object.assign(twPrices, _p); localStorage.setItem('tw_stock_prices', JSON.stringify(twPrices)); })();
+(function() { const _p = {"0050":{"price":75.45,"prevClose":72.35,"change":4.28,"name":"元大台灣50"},"元大台灣50":{"price":75.45,"prevClose":72.35,"change":4.28,"name":"元大台灣50"},"006208":{"price":175.3,"prevClose":168.1,"change":4.28,"name":"富邦台50"},"富邦台50":{"price":175.3,"prevClose":168.1,"change":4.28,"name":"富邦台50"},"009802":{"price":12.41,"prevClose":12.01,"change":3.33,"name":"富邦旗艦50"},"富邦旗艦50":{"price":12.41,"prevClose":12.01,"change":3.33,"name":"富邦旗艦50"},"1720":{"price":64.1,"prevClose":63.4,"change":1.1,"name":"生達"},"生達":{"price":64.1,"prevClose":63.4,"change":1.1,"name":"生達"},"2324":{"price":27.45,"prevClose":26.95,"change":1.86,"name":"仁寶"},"仁寶":{"price":27.45,"prevClose":26.95,"change":1.86,"name":"仁寶"},"2330":{"price":1855.0,"prevClose":1760.0,"change":5.4,"name":"台積電"},"台積電":{"price":1855.0,"prevClose":1760.0,"change":5.4,"name":"台積電"},"3231":{"price":127.0,"prevClose":122.5,"change":3.67,"name":"緯創"},"緯創":{"price":127.0,"prevClose":122.5,"change":3.67,"name":"緯創"},"4938":{"price":78.2,"prevClose":76.2,"change":2.62,"name":"和碩"},"和碩":{"price":78.2,"prevClose":76.2,"change":2.62,"name":"和碩"}}; Object.assign(twPrices, _p); localStorage.setItem('tw_stock_prices', JSON.stringify(twPrices)); })();
 
 // 台股名稱對照表（交易紀錄可能用中文名）
 const twTickerMap = {
@@ -926,6 +1098,37 @@ async function fetchTPEXClosingPrices(tickers) {
   return results;
 }
 
+// 用 JSONP 從 TWSE 即時報價 API 抓股價（不受 CORS 限制）
+async function fetchTWPricesJsonp(tickers) {
+  const results = {};
+  // 分批：上市(tse) + 上櫃(otc) 各查一次
+  for (const prefix of ['tse', 'otc']) {
+    const exCh = [...tickers].map(t => `${prefix}_${t}.tw`).join('|');
+    try {
+      const data = await twseJsonp(
+        `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=${exCh}&json=1&delay=0`
+      );
+      if (data && data.msgArray) {
+        for (const stock of data.msgArray) {
+          const code = stock.c;
+          let price = 0, prevClose = 0;
+          try { price = parseFloat(stock.z); } catch(e) {}
+          if (!price || isNaN(price)) try { price = parseFloat(stock.pz); } catch(e) {}
+          try { prevClose = parseFloat(stock.y); } catch(e) {}
+          const name = stock.n || code;
+          if (price > 0) {
+            const change = prevClose > 0 ? ((price - prevClose) / prevClose * 100) : 0;
+            const entry = { price, prevClose, change: parseFloat(change.toFixed(2)), name, time: Date.now() };
+            results[code] = entry;
+            if (name) results[name] = entry;
+          }
+        }
+      }
+    } catch (e) { console.log(`JSONP ${prefix} failed:`, e.message); }
+  }
+  return results;
+}
+
 async function refreshTWPrices() {
   const statusEl = document.getElementById('twLastUpdate');
   if (statusEl) statusEl.textContent = '更新中...';
@@ -958,20 +1161,31 @@ async function refreshTWPrices() {
     }
   } catch (e) {}
 
-  // 方法2: TWSE OpenAPI + CORS proxy（上市股）
+  // 方法2: JSONP（不受 CORS 限制，瀏覽器直接可用）★ 主要方法
+  if (!fetched) {
+    try {
+      const jsonpResults = await fetchTWPricesJsonp(allTickers);
+      if (Object.keys(jsonpResults).length > 0) {
+        Object.assign(twPrices, jsonpResults);
+        fetched = true;
+        method = 'TWSE 即時報價';
+      }
+    } catch (e) { console.log('JSONP method failed:', e); }
+  }
+
+  // 方法3: CORS proxy fallback（備用）
   if (!fetched) {
     try {
       const twseResults = await fetchTWSEClosingPrices(allTickers);
       if (Object.keys(twseResults).length > 0) {
         Object.assign(twPrices, twseResults);
         fetched = true;
-        method = '證交所 API';
+        method = '證交所 API (proxy)';
       }
     } catch (e) {}
   }
 
-  // 方法3: TPEX OpenAPI（上櫃股，補充查詢）
-  // 檢查哪些股票還沒拿到價格
+  // 方法4: 補抓上櫃股（如果還有缺的）
   const missingTickers = new Set();
   for (const code of allTickers) {
     if (!twPrices[code] || !twPrices[code].price) missingTickers.add(code);
@@ -982,7 +1196,7 @@ async function refreshTWPrices() {
       if (Object.keys(tpexResults).length > 0) {
         Object.assign(twPrices, tpexResults);
         fetched = true;
-        if (!method) method = '櫃買中心 API';
+        if (!method) method = '櫃買中心';
         else method += ' + 櫃買中心';
       }
     } catch (e) {}
@@ -997,7 +1211,7 @@ async function refreshTWPrices() {
     renderTWTab();
     renderOverviewTab();
   } else {
-    if (statusEl) statusEl.textContent = `更新失敗，使用快取 (${new Date(twPrices[Object.keys(twPrices)[0]]?.time || 0).toLocaleDateString('zh-TW')})`;
+    if (statusEl) statusEl.textContent = `更新失敗，使用快取`;
     console.log('台股股價無法自動更新，使用 localStorage 快取');
   }
 }
@@ -1036,27 +1250,27 @@ function addUSFundRow() {
   const div = document.createElement('div');
   div.className = 'multi-row';
   div.innerHTML = `
-    <div class="form-group" style="flex:0 0 120px">
+    <div class="form-group" style="flex:1 1 120px">
       <label>日期</label>
       <input type="text" class="usFundDate" placeholder="${todayStr().replace(/-/g,'.')}" data-row="${id}">
     </div>
-    <div class="form-group" style="flex:0 0 100px">
+    <div class="form-group" style="flex:1 1 100px">
       <label>類型</label>
       <select class="usFundType" data-row="${id}"><option value="deposit">存入</option><option value="withdraw">提出</option></select>
     </div>
-    <div class="form-group" style="flex:0 0 110px">
+    <div class="form-group" style="flex:1 1 110px">
       <label>金額 USD</label>
       <input type="number" class="usFundAmount" placeholder="10000" step="0.01" data-row="${id}">
     </div>
-    <div class="form-group" style="flex:0 0 110px">
+    <div class="form-group" style="flex:1 1 110px">
       <label>支付 TWD</label>
       <input type="number" class="usFundTWD" placeholder="300000" step="1" data-row="${id}">
     </div>
-    <div class="form-group" style="flex:0 0 80px">
+    <div class="form-group" style="flex:1 1 80px">
       <label>匯率</label>
       <input type="number" class="usFundRate" placeholder="自動" step="0.001" readonly style="color:#fbbf24" data-row="${id}">
     </div>
-    <div class="form-group" style="flex:0 0 100px">
+    <div class="form-group" style="flex:1 1 100px">
       <label>備註</label>
       <input type="text" class="usFundNote" placeholder="選填" data-row="${id}">
     </div>
@@ -1108,31 +1322,31 @@ function addUSTradeRow() {
   const div = document.createElement('div');
   div.className = 'multi-row';
   div.innerHTML = `
-    <div class="form-group" style="flex:0 0 100px">
+    <div class="form-group" style="flex:1 1 100px">
       <label>日期</label>
       <input type="text" class="usTradeDate" placeholder="${todayStr().replace(/-/g,'.')}" data-row="${id}">
     </div>
-    <div class="form-group" style="flex:0 0 80px">
+    <div class="form-group" style="flex:1 1 80px">
       <label>股票</label>
       <input type="text" class="usTradeTicket" placeholder="AAPL" style="text-transform:uppercase" data-row="${id}">
     </div>
-    <div class="form-group" style="flex:0 0 80px">
+    <div class="form-group" style="flex:1 1 80px">
       <label>類型</label>
       <select class="usTradeType" data-row="${id}"><option value="buy">買入</option><option value="sell">賣出</option></select>
     </div>
-    <div class="form-group" style="flex:0 0 100px">
+    <div class="form-group" style="flex:1 1 100px">
       <label>股數</label>
       <input type="number" class="usTradeShares" placeholder="100" step="any" data-row="${id}">
     </div>
-    <div class="form-group" style="flex:0 0 100px">
+    <div class="form-group" style="flex:1 1 100px">
       <label>單價 USD</label>
       <input type="number" class="usTradePrice" placeholder="150" step="0.01" data-row="${id}">
     </div>
-    <div class="form-group" style="flex:0 0 80px">
+    <div class="form-group" style="flex:1 1 80px">
       <label>手續費 USD</label>
       <input type="number" class="usTradeFee" placeholder="0" step="0.01" data-row="${id}">
     </div>
-    <div class="form-group" style="flex:0 0 90px">
+    <div class="form-group" style="flex:1 1 90px">
       <label>微調金額 USD</label>
       <input type="number" class="usTradeAdjust" placeholder="0" step="0.01" data-row="${id}">
     </div>
@@ -1178,23 +1392,23 @@ function addUSIncomeRow() {
   const div = document.createElement('div');
   div.className = 'multi-row';
   div.innerHTML = `
-    <div class="form-group" style="flex:0 0 100px">
+    <div class="form-group" style="flex:1 1 100px">
       <label>日期</label>
       <input type="text" class="usIncomeDate" placeholder="${todayStr().replace(/-/g,'.')}" data-row="${id}">
     </div>
-    <div class="form-group" style="flex:0 0 100px">
+    <div class="form-group" style="flex:1 1 100px">
       <label>類型</label>
       <select class="usIncomeType" data-row="${id}"><option value="dividend">股利</option><option value="interest">利息</option><option value="tax">稅</option><option value="adjust">微調</option></select>
     </div>
-    <div class="form-group" style="flex:0 0 100px">
+    <div class="form-group" style="flex:1 1 100px">
       <label>來源</label>
       <input type="text" class="usIncomeSource" placeholder="AAPL" data-row="${id}">
     </div>
-    <div class="form-group" style="flex:0 0 100px">
+    <div class="form-group" style="flex:1 1 100px">
       <label>金額 USD</label>
       <input type="number" class="usIncomeAmount" placeholder="50" step="0.01" data-row="${id}">
     </div>
-    <div class="form-group" style="flex:0 0 100px">
+    <div class="form-group" style="flex:1 1 100px">
       <label>備註</label>
       <input type="text" class="usIncomeNote" placeholder="選填" data-row="${id}">
     </div>
@@ -1241,19 +1455,19 @@ function addTWFundRow() {
   const div = document.createElement('div');
   div.className = 'multi-row';
   div.innerHTML = `
-    <div class="form-group" style="flex:0 0 120px">
+    <div class="form-group" style="flex:1 1 120px">
       <label>日期</label>
       <input type="text" class="twFundDate" placeholder="${todayStr().replace(/-/g,'.')}" data-row="${id}">
     </div>
-    <div class="form-group" style="flex:0 0 100px">
+    <div class="form-group" style="flex:1 1 100px">
       <label>類型</label>
       <select class="twFundType" data-row="${id}"><option value="deposit">存入</option><option value="withdraw">提出</option></select>
     </div>
-    <div class="form-group" style="flex:0 0 120px">
+    <div class="form-group" style="flex:1 1 120px">
       <label>金額 TWD</label>
       <input type="number" class="twFundAmount" placeholder="300000" step="1" data-row="${id}">
     </div>
-    <div class="form-group" style="flex:0 0 100px">
+    <div class="form-group" style="flex:1 1 100px">
       <label>備註</label>
       <input type="text" class="twFundNote" placeholder="選填" data-row="${id}">
     </div>
@@ -1291,31 +1505,31 @@ function addTWTradeRow() {
   const div = document.createElement('div');
   div.className = 'multi-row';
   div.innerHTML = `
-    <div class="form-group" style="flex:0 0 100px">
+    <div class="form-group" style="flex:1 1 100px">
       <label>日期</label>
       <input type="text" class="twTradeDate" placeholder="${todayStr().replace(/-/g,'.')}" data-row="${id}">
     </div>
-    <div class="form-group" style="flex:0 0 80px">
+    <div class="form-group" style="flex:1 1 80px">
       <label>股票</label>
       <input type="text" class="twTradeTicket" placeholder="2330" data-row="${id}">
     </div>
-    <div class="form-group" style="flex:0 0 80px">
+    <div class="form-group" style="flex:1 1 80px">
       <label>類型</label>
       <select class="twTradeType" data-row="${id}"><option value="buy">買入</option><option value="sell">賣出</option></select>
     </div>
-    <div class="form-group" style="flex:0 0 100px">
+    <div class="form-group" style="flex:1 1 100px">
       <label>股數</label>
       <input type="number" class="twTradeShares" placeholder="100" step="any" data-row="${id}">
     </div>
-    <div class="form-group" style="flex:0 0 110px">
+    <div class="form-group" style="flex:1 1 110px">
       <label>單價 TWD</label>
       <input type="number" class="twTradePrice" placeholder="500" step="0.1" data-row="${id}">
     </div>
-    <div class="form-group" style="flex:0 0 100px">
+    <div class="form-group" style="flex:1 1 100px">
       <label>手續費 TWD</label>
       <input type="number" class="twTradeFee" placeholder="0" step="0.01" data-row="${id}">
     </div>
-    <div class="form-group" style="flex:0 0 100px">
+    <div class="form-group" style="flex:1 1 100px">
       <label>微調金額 TWD</label>
       <input type="number" class="twTradeAdjust" placeholder="0" step="0.01" data-row="${id}">
     </div>
@@ -1356,23 +1570,23 @@ function addTWIncomeRow() {
   const div = document.createElement('div');
   div.className = 'multi-row';
   div.innerHTML = `
-    <div class="form-group" style="flex:0 0 100px">
+    <div class="form-group" style="flex:1 1 100px">
       <label>日期</label>
       <input type="text" class="twIncomeDate" placeholder="${todayStr().replace(/-/g,'.')}" data-row="${id}">
     </div>
-    <div class="form-group" style="flex:0 0 100px">
+    <div class="form-group" style="flex:1 1 100px">
       <label>類型</label>
       <select class="twIncomeType" data-row="${id}"><option value="dividend">股利</option><option value="interest">利息</option><option value="tax">稅</option><option value="adjust">微調</option></select>
     </div>
-    <div class="form-group" style="flex:0 0 100px">
+    <div class="form-group" style="flex:1 1 100px">
       <label>來源</label>
       <input type="text" class="twIncomeSource" placeholder="2330" data-row="${id}">
     </div>
-    <div class="form-group" style="flex:0 0 110px">
+    <div class="form-group" style="flex:1 1 110px">
       <label>金額 TWD</label>
       <input type="number" class="twIncomeAmount" placeholder="5000" step="1" data-row="${id}">
     </div>
-    <div class="form-group" style="flex:0 0 100px">
+    <div class="form-group" style="flex:1 1 100px">
       <label>備註</label>
       <input type="text" class="twIncomeNote" placeholder="選填" data-row="${id}">
     </div>
@@ -1540,6 +1754,7 @@ function renderOwnerBlock(title, summary, ownerMortgages) {
   const twRet = twNetFunded > 0 ? (twPL / twNetFunded * 100) : 0;
 
   const cardStyle = 'flex:1 1 0;min-width:110px;max-width:200px';
+  const stockTotalTWD = usNetWorth * usdTwdRate + twNetWorth;
 
   return `
     <div style="margin-bottom:20px">
@@ -1554,6 +1769,11 @@ function renderOwnerBlock(title, summary, ownerMortgages) {
           <div class="label">🇹🇼 台股淨值</div>
           <div class="value orange">${fmtTWD(twNetWorth)}</div>
           <div class="sub">投報: <span class="${plClass(twRet)}">${fmtPct(twRet)}</span></div>
+        </div>
+        <div class="card" style="${cardStyle}">
+          <div class="label">📈 股票總值 (TWD)</div>
+          <div class="value" style="color:#fbbf24">${fmtTWD(stockTotalTWD)}</div>
+          <div class="sub">美股+台股合計</div>
         </div>
         <div class="card" style="${cardStyle}">
           <div class="label">🏠 房產</div>
@@ -2194,9 +2414,10 @@ function renderStockSections(containerId, analysis, trades, market) {
             <td>${fmtPrice(t.price)}</td>
             <td>${fmtAmt(t.shares * t.price)}</td>
             <td>${fee > 0 ? fmtAmt(fee) : '-'}</td>
+            <td><button class="btn-danger" onclick="deleteTrade('${market}','${t.id}')" style="padding:2px 6px;font-size:0.8em;border-radius:4px">✕</button></td>
           </tr>`;
         }).join('')
-      : '<tr><td colspan="5" style="text-align:center;color:#555;padding:14px">無</td></tr>';
+      : '<tr><td colspan="6" style="text-align:center;color:#555;padding:14px">無</td></tr>';
 
     const sellRows = sells.length > 0
       ? sells.map(t => {
@@ -2207,9 +2428,10 @@ function renderStockSections(containerId, analysis, trades, market) {
             <td>${fmtPrice(t.price)}</td>
             <td>${fmtAmt(t.shares * t.price)}</td>
             <td>${fee > 0 ? fmtAmt(fee) : '-'}</td>
+            <td><button class="btn-danger" onclick="deleteTrade('${market}','${t.id}')" style="padding:2px 6px;font-size:0.8em;border-radius:4px">✕</button></td>
           </tr>`;
         }).join('')
-      : '<tr><td colspan="5" style="text-align:center;color:#555;padding:14px">無</td></tr>';
+      : '<tr><td colspan="6" style="text-align:center;color:#555;padding:14px">無</td></tr>';
 
     return `
       <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:12px;margin-bottom:12px;overflow:hidden">
@@ -2226,12 +2448,12 @@ function renderStockSections(containerId, analysis, trades, market) {
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:0">
             <div style="border-right:1px solid rgba(255,255,255,0.04)">
               <h3 style="font-size:0.82em;color:#888;padding:10px 14px;border-bottom:1px solid rgba(255,255,255,0.06)">🟢 買入 (${buys.length} 筆，共 ${fmtAmt(s.totalBought)})</h3>
-              <table style="font-size:0.82em"><thead><tr><th>日期</th><th>股數</th><th>單價</th><th>金額</th><th>手續費</th></tr></thead>
+              <table style="font-size:0.82em"><thead><tr><th>日期</th><th>股數</th><th>單價</th><th>金額</th><th>手續費</th><th></th></tr></thead>
               <tbody>${buyRows}</tbody></table>
             </div>
             <div>
               <h3 style="font-size:0.82em;color:#888;padding:10px 14px;border-bottom:1px solid rgba(255,255,255,0.06)">🔴 賣出 (${sells.length} 筆，共 ${fmtAmt(s.totalSold)})</h3>
-              <table style="font-size:0.82em"><thead><tr><th>日期</th><th>股數</th><th>單價</th><th>金額</th><th>手續費</th></tr></thead>
+              <table style="font-size:0.82em"><thead><tr><th>日期</th><th>股數</th><th>單價</th><th>金額</th><th>手續費</th><th></th></tr></thead>
               <tbody>${sellRows}</tbody></table>
             </div>
           </div>
@@ -2242,6 +2464,16 @@ function renderStockSections(containerId, analysis, trades, market) {
 
   // CSS for arrow rotation
   el.querySelectorAll('.arrow.open').forEach(a => a.style.transform = 'rotate(90deg)');
+}
+
+function deleteTrade(market, tradeId) {
+  if (!confirm('確定刪除這筆交易？')) return;
+  const accId = market === 'us' ? currentUSAccount : currentTWAccount;
+  let trades = getAccountData(accId, market, 'trades');
+  trades = trades.filter(t => String(t.id) !== String(tradeId));
+  saveAccountData(accId, market, 'trades', trades);
+  if (market === 'us') renderUSTab();
+  else renderTWTab();
 }
 
 function deleteTWFund(id) {
@@ -2698,8 +2930,9 @@ function renderMortgageTab() {
     const remainingPayment = totalPaymentAmount - totalPaid;
     const isPresale = m.propertyType === 'presale';
 
-    // 計算每月還款
-    const monthlyPayment = calculateMonthlyPayment(m.remainingLoan || 0, m.remainingMonths || 0, m.loanRate || 0);
+    // 計算每月還款（剩餘貸款未填時預設帶入總貸款額）
+    const effectiveRemainingLoan = m.remainingLoan || (m.paidPrincipal > 0 ? getMortgageTotalLoan(m) - m.paidPrincipal : getMortgageTotalLoan(m));
+    const monthlyPayment = calculateMonthlyPayment(effectiveRemainingLoan, m.remainingMonths || 0, m.loanRate || 0);
 
     // 已投入房產 = 已繳工程款 + 已繳貸款本金
     const totalInvested = totalPaid + (m.paidPrincipal || 0);
@@ -2787,11 +3020,14 @@ function renderMortgageTab() {
       <div style="margin:16px 0">
         <h3 style="color:#fbbf24;font-size:0.95em;margin-bottom:10px">📋 工程款分段付款</h3>
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding:8px 12px;background:rgba(255,255,255,0.04);border-radius:8px;flex-wrap:wrap">
-          <label style="color:#888;font-size:0.85em">工程款佔總價</label>
+          <label style="color:#888;font-size:0.85em">工程款佔總價 <span class="help-tip">!<span class="help-text">工程款佔總價的比例，例如 30% 表示需自付 30%，剩餘 70% 為貸款。填 % 或金額，另一個自動算。</span></span></label>
           <input type="number" id="mort-construction-pct-${m.id}" value="${m.constructionPct || 30}" style="width:55px;padding:4px;border:1px solid rgba(255,255,255,0.15);border-radius:4px;background:rgba(255,255,255,0.08);color:#fbbf24;font-size:0.9em;text-align:center" step="1" onchange="const _m=mortgages.find(x=>x.id==='${m.id}');_m.constructionPct=parseFloat(this.value)||0;recalcLastTwoStages(_m,-1,null);saveMortgages();renderMortgageTab()">
           <span style="color:#fbbf24;font-size:0.85em;font-weight:600">%</span>
           <span style="color:#888;font-size:0.85em">= ${(m.totalPrice * (m.constructionPct||30) / 100).toFixed(1)} 萬</span>
-          <span style="color:#666;font-size:0.8em;margin-left:8px">｜實際工程款合計: <span style="color:#fbbf24;font-weight:600">${totalPaymentAmount.toFixed(1)} 萬</span> (各階段%: ${m.payments.reduce((s,p) => s + p.pct, 0)}%)</span>
+          <span style="color:#666;font-size:0.8em;margin-left:8px">｜</span>
+          <label style="color:#888;font-size:0.85em">工程款總額</label>
+          <input type="number" id="mort-construction-amt-${m.id}" value="${(m.totalPrice * (m.constructionPct||30) / 100).toFixed(1)}" style="width:80px;padding:4px;border:1px solid rgba(255,255,255,0.15);border-radius:4px;background:rgba(255,255,255,0.08);color:#fbbf24;font-size:0.9em;text-align:center" step="0.1" onchange="const _m=mortgages.find(x=>x.id==='${m.id}');const v=parseFloat(this.value)||0;if(_m.totalPrice>0){_m.constructionPct=parseFloat((v/_m.totalPrice*100).toFixed(2));}recalcLastTwoStages(_m,-1,null);saveMortgages();renderMortgageTab()">
+          <span style="color:#888;font-size:0.85em">萬</span>
         </div>
         <table style="width:100%;font-size:0.82em">
           <thead><tr><th>階段</th><th>佔總價%</th><th>金額(萬)</th><th>已付</th><th>日期</th><th></th></tr></thead>
@@ -2863,8 +3099,8 @@ function renderMortgageTab() {
           <div style="font-size:0.8em;color:#888;margin-bottom:8px">總貸款額: <span style="color:#a78bfa;font-weight:600">${(isPresale ? m.totalPrice * (100-(m.constructionPct||30))/100 : m.totalPrice).toFixed(1)} 萬</span>${isPresale ? ' (總價' + m.totalPrice + '萬 × ' + (100-(m.constructionPct||30)) + '%)' : ' (總價)'} — 填剩餘貸款或已繳本金，另一個自動算</div>
           <div class="mortgage-input">
             <div class="form-group">
-              <label>剩餘貸款金額 (萬元)</label>
-              <input type="number" id="mort-remaining-loan-${m.id}" value="${m.remainingLoan || ''}" placeholder="1000" step="1" onchange="onRemainingLoanChange('${m.id}')">
+              <label>剩餘貸款金額 (萬元) <span class="help-tip">!<span class="help-text">如果沒有手動填寫，系統會自動帶入「總價 × 貸款比例」作為預設值。</span></span></label>
+              <input type="number" id="mort-remaining-loan-${m.id}" value="${m.remainingLoan || getMortgageTotalLoan(m).toFixed(1)}" placeholder="${getMortgageTotalLoan(m).toFixed(1)}" step="1" onchange="onRemainingLoanChange('${m.id}')">
             </div>
             <div class="form-group">
               <label>剩餘月數</label>
@@ -2880,7 +3116,7 @@ function renderMortgageTab() {
             </div>
           </div>
 
-          ${(m.remainingLoan > 0 && m.remainingMonths > 0) ? `
+          ${(effectiveRemainingLoan > 0 && m.remainingMonths > 0) ? `
           <div style="margin-top:12px;padding:14px;background:rgba(167,139,250,0.08);border:1px solid rgba(167,139,250,0.2);border-radius:8px">
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:0.9em">
               <div>
@@ -2890,14 +3126,14 @@ function renderMortgageTab() {
               </div>
               <div>
                 <div style="color:#888;font-size:0.85em">剩餘貸款</div>
-                <div style="color:#f87171;font-size:1.3em;font-weight:700;margin-top:2px">${fmtTWD((m.remainingLoan || 0) * 10000)}</div>
+                <div style="color:#f87171;font-size:1.3em;font-weight:700;margin-top:2px">${fmtTWD(effectiveRemainingLoan * 10000)}</div>
                 <div style="color:#666;font-size:0.75em;margin-top:2px">還剩 ${m.remainingMonths} 個月 (${(m.remainingMonths / 12).toFixed(1)} 年)</div>
               </div>
             </div>
           </div>
           ` : `
           <div style="margin-top:12px;padding:10px;background:rgba(255,255,255,0.04);border-radius:8px;text-align:center;color:#666;font-size:0.85em">
-            輸入剩餘貸款金額和月數後，自動計算每月還款
+            輸入剩餘月數後，自動計算每月還款
           </div>
           `}
         </div>
@@ -2971,7 +3207,8 @@ function backupAllLocalStorage() {
     _keys: Object.keys(backup).length,
     data: backup
   };
-  const blob = new Blob([JSON.stringify(wrapper, null, 2)], { type: 'application/json' });
+  const jsonStr = JSON.stringify(wrapper, null, 2);
+  const blob = new Blob(['\uFEFF' + jsonStr], { type: 'application/json;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -2989,7 +3226,8 @@ function restoreFromBackup(event) {
   const reader = new FileReader();
   reader.onload = function(e) {
     try {
-      const wrapper = JSON.parse(e.target.result);
+      const raw = e.target.result.replace(/^\uFEFF/, ''); // 移除 BOM
+      const wrapper = JSON.parse(raw);
       let data;
       
       if (wrapper._type === 'investment_tracker_full_backup' && wrapper.data) {
@@ -3533,7 +3771,43 @@ function renderOverviewTrendChart(range) {
     delete ds._values;
   }
 
-  chartInstances['ovTrend'] = createTrendChart('ovTrendCanvas', datasets, allDates);
+  // 加入美股+台股合計 (TWD) 線
+  // 先找出所有 US 和 TW 的資料來合併
+  const filteredAccIdsForCombined = (currentOwnerFilter && currentOwnerFilter !== '__by_owner__'
+    ? accounts.filter(a => a.owner === currentOwnerFilter)
+    : accounts
+  ).map(a => a.id);
+  const usCombined = buildHistoricalData(filteredAccIdsForCombined, 'us', start, end);
+  const twCombined = buildHistoricalData(filteredAccIdsForCombined, 'tw', start, end);
+  // 合併日期
+  const combinedDatesSet = new Set([...usCombined.dates, ...twCombined.dates, ...allDates]);
+  const combinedDates = [...combinedDatesSet].sort();
+  const usValsForCombined = interpolateTrendData(usCombined.dates, usCombined.values, combinedDates);
+  const twValsForCombined = interpolateTrendData(twCombined.dates, twCombined.values, combinedDates);
+  const combinedTWD = combinedDates.map((_, i) => (usValsForCombined[i] || 0) * usdTwdRate + (twValsForCombined[i] || 0));
+
+  // 也重新對齊其他 datasets 到 combinedDates
+  for (const ds of datasets) {
+    if (ds.data && ds.data.length === allDates.length) {
+      ds.data = interpolateTrendData(allDates, ds.data, combinedDates);
+    }
+  }
+
+  // 加入合計線
+  datasets.push({
+    label: '股票總值 (TWD)',
+    data: combinedTWD,
+    borderColor: '#fbbf24',
+    backgroundColor: 'rgba(251,191,36,0.08)',
+    fill: false,
+    tension: 0.3,
+    pointRadius: 0,
+    yAxisID: 'yTW',
+    borderWidth: 3,
+    borderDash: [8, 4]
+  });
+
+  chartInstances['ovTrend'] = createTrendChart('ovTrendCanvas', datasets, combinedDates);
 
   // 設定雙 Y 軸
   if (chartInstances['ovTrend']) {
@@ -3543,6 +3817,55 @@ function renderOverviewTrendChart(range) {
       yTW: { position: 'right', ticks: { color: '#f97316', font: { size: 10 } }, grid: { display: false }, title: { display: true, text: 'TWD', color: '#f97316' } }
     };
     chartInstances['ovTrend'].update();
+  }
+
+  // === 淨資產 vs 總負債 趨勢圖 ===
+  destroyChart('ovAssetDebt');
+  const assetDebtCanvas = document.getElementById('ovAssetDebtCanvas');
+  if (assetDebtCanvas && combinedDates.length > 0) {
+    // 淨資產 = 股票總值 + 房產 - 負債（房產和負債目前是靜態值，用當前值畫水平線）
+    // 但股票部分是動態的
+    const currentFilteredAccs = (currentOwnerFilter && currentOwnerFilter !== '__by_owner__'
+      ? accounts.filter(a => a.owner === currentOwnerFilter)
+      : accounts);
+    const currentFilteredAccIds = currentFilteredAccs.map(a => a.id);
+    const currentFilteredMortgages = (currentOwnerFilter && currentOwnerFilter !== '__by_owner__'
+      ? mortgages.filter(m => m.owner === currentOwnerFilter || (m.accountId && currentFilteredAccIds.includes(m.accountId)))
+      : mortgages);
+
+    // 房產價值（靜態）
+    const propValue = currentFilteredMortgages.reduce((s, m) => s + m.totalPrice * 10000, 0);
+    // 負債（靜態）
+    const debt = currentFilteredMortgages.reduce((s, m) => s + getMortgageDebt(m), 0);
+
+    // 淨資產隨時間 = 股票總值(動態) + 房產(靜態) - 負債(靜態)
+    const netAssetData = combinedTWD.map(v => v + propValue - debt);
+    const debtData = combinedDates.map(() => debt);
+    const totalAssetData = combinedTWD.map(v => v + propValue);
+
+    chartInstances['ovAssetDebt'] = createTrendChart('ovAssetDebtCanvas', [
+      {
+        label: '總資產 (TWD)',
+        data: totalAssetData,
+        borderColor: '#a78bfa',
+        backgroundColor: 'rgba(167,139,250,0.08)',
+        fill: false, tension: 0.3, pointRadius: 0, borderWidth: 2
+      },
+      {
+        label: '淨資產 (TWD)',
+        data: netAssetData,
+        borderColor: '#34d399',
+        backgroundColor: 'rgba(52,211,153,0.08)',
+        fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2
+      },
+      {
+        label: '總負債 (TWD)',
+        data: debtData,
+        borderColor: '#f87171',
+        backgroundColor: 'rgba(248,113,113,0.06)',
+        fill: true, tension: 0, pointRadius: 0, borderWidth: 2, borderDash: [6, 3]
+      }
+    ], combinedDates);
   }
 }
 
@@ -3666,11 +3989,75 @@ function getAccountGroupHoldings(accList) {
   return { usTotalValue, twTotalValue, allActiveUS, allActiveTW };
 }
 
+// 每位戶名各自的趨勢圖時間範圍
+const ownerRangeStates = {};
+
+function renderOwnerTrendCharts(idx, g) {
+  const range = ownerRangeStates[idx] || '1y';
+  const accIds = g.accounts.map(a => a.id);
+  const { start, end } = getDateRange(range);
+
+  destroyChart(`ovOwnerTrend_${idx}`);
+  destroyChart(`ovOwnerAsset_${idx}`);
+
+  const usData = buildHistoricalData(accIds, 'us', start, end);
+  const twData = buildHistoricalData(accIds, 'tw', start, end);
+  const dates = [...new Set([...usData.dates, ...twData.dates])].sort();
+  if (dates.length === 0) return;
+
+  const usVals = interpolateTrendData(usData.dates, usData.values, dates);
+  const twVals = interpolateTrendData(twData.dates, twData.values, dates);
+  const combinedTWD = dates.map((_, i) => (usVals[i] || 0) * usdTwdRate + (twVals[i] || 0));
+
+  // 市值趨勢
+  chartInstances[`ovOwnerTrend_${idx}`] = createTrendChart(`ovOwnerTrend_${idx}`, [
+    { label: '美股 (USD)', data: usVals, borderColor: '#3b82f6', fill: false, tension: 0.3, pointRadius: 0, borderWidth: 1.5 },
+    { label: '台股 (TWD)', data: twVals, borderColor: '#f97316', fill: false, tension: 0.3, pointRadius: 0, borderWidth: 1.5 },
+    { label: '合計 (TWD)', data: combinedTWD, borderColor: '#fbbf24', fill: true, backgroundColor: 'rgba(251,191,36,0.06)', tension: 0.3, pointRadius: 0, borderWidth: 2, borderDash: [6, 3] }
+  ], dates);
+
+  // 淨資產 vs 負債
+  const ownerAccIds = g.accounts.map(a => a.id);
+  const ownerMorts = mortgages.filter(m => (g.owner && m.owner === g.owner) || (m.accountId && ownerAccIds.includes(m.accountId)));
+  const propValue = ownerMorts.reduce((s, m) => s + m.totalPrice * 10000, 0);
+  const debt = ownerMorts.reduce((s, m) => s + getMortgageDebt(m), 0);
+
+  chartInstances[`ovOwnerAsset_${idx}`] = createTrendChart(`ovOwnerAsset_${idx}`, [
+    { label: '總資產', data: combinedTWD.map(v => v + propValue), borderColor: '#a78bfa', fill: false, tension: 0.3, pointRadius: 0, borderWidth: 1.5 },
+    { label: '淨資產', data: combinedTWD.map(v => v + propValue - debt), borderColor: '#34d399', backgroundColor: 'rgba(52,211,153,0.06)', fill: true, tension: 0.3, pointRadius: 0, borderWidth: 1.5 },
+    { label: '總負債', data: dates.map(() => debt), borderColor: '#f87171', fill: false, tension: 0, pointRadius: 0, borderWidth: 1.5, borderDash: [6, 3] }
+  ], dates);
+}
+
+function onOwnerRangeSelect(range, prefix) {
+  // prefix = 'ovo0', 'ovo1', etc. — extract index
+  const idx = parseInt(prefix.replace('ovo', ''));
+  ownerRangeStates[idx] = range;
+
+  // Update button styles for this owner's buttons
+  ['30d','6m','1y','custom'].forEach(v => {
+    const btn = document.getElementById(`${prefix}RangeBtn_${v}`);
+    if (btn) {
+      btn.style.background = v === range ? 'rgba(167,139,250,0.3)' : 'rgba(255,255,255,0.06)';
+      btn.style.color = v === range ? '#a78bfa' : '#aaa';
+    }
+  });
+  const customEl = document.getElementById(`${prefix}CustomRange`);
+  if (customEl) customEl.style.display = range === 'custom' ? 'flex' : 'none';
+
+  // Re-render only this owner's trend charts
+  if (_lastOwnerGroups && _lastOwnerGroups[idx]) {
+    renderOwnerTrendCharts(idx, _lastOwnerGroups[idx]);
+  }
+}
+
+let _lastOwnerGroups = null;
 function renderOverviewCharts(ownerGroups) {
   if (typeof Chart === 'undefined') return;
   Chart.defaults.color = '#aaa';
   const section = document.getElementById('overviewChartsSection');
   if (!section) return;
+  _lastOwnerGroups = ownerGroups || null;
 
   // 清除舊的圖表實例
   for (const key of Object.keys(chartInstances)) {
@@ -3678,15 +4065,20 @@ function renderOverviewCharts(ownerGroups) {
   }
 
   if (ownerGroups) {
-    // === 按戶名分開：圓餅圖嵌在各戶名區塊內 ===
+    // === 按戶名分開：圓餅圖+趨勢圖嵌在各戶名區塊內 ===
     ownerGroups.forEach((g, idx) => {
       const container = document.getElementById(`ownerCharts_${idx}`);
       if (!container) return;
       const h = getAccountGroupHoldings(g.accounts);
       const hasData = h.usTotalValue > 0 || h.twTotalValue > 0;
       const allActive = h.allActiveUS.length + h.allActiveTW.length;
-      if (!hasData && allActive === 0) return;
+      const accIds = g.accounts.map(a => a.id);
+      const hasTrades = g.accounts.some(a =>
+        getAccountData(a.id, 'us', 'trades').length > 0 || getAccountData(a.id, 'tw', 'trades').length > 0
+      );
+      if (!hasData && allActive === 0 && !hasTrades) return;
 
+      // 上排：圓餅圖（一左一右）
       let chartHtml = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:100%">';
       if (hasData) {
         chartHtml += `<div style="background:rgba(255,255,255,0.04);border-radius:10px;padding:12px;max-height:250px">
@@ -3701,6 +4093,22 @@ function renderOverviewCharts(ownerGroups) {
         </div>`;
       }
       chartHtml += '</div>';
+
+      // 下排：時間範圍按鈕 + 趨勢圖（一左一右）
+      if (hasTrades) {
+        chartHtml += `<div style="margin-top:10px">${buildRangeButtons('ovo' + idx, 'onOwnerRangeSelect')}</div>`;
+        chartHtml += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:100%">
+          <div style="background:rgba(255,255,255,0.04);border-radius:10px;padding:12px;max-height:250px">
+            <h3 style="color:#888;font-size:0.8em;margin-bottom:6px">📈 市值走勢</h3>
+            <canvas id="ovOwnerTrend_${idx}" style="max-height:200px"></canvas>
+          </div>
+          <div style="background:rgba(255,255,255,0.04);border-radius:10px;padding:12px;max-height:250px">
+            <h3 style="color:#888;font-size:0.8em;margin-bottom:6px">📈 淨資產 vs 負債</h3>
+            <canvas id="ovOwnerAsset_${idx}" style="max-height:200px"></canvas>
+          </div>
+        </div>`;
+      }
+
       container.innerHTML = chartHtml;
 
       // 渲染圓餅圖
@@ -3719,22 +4127,14 @@ function renderOverviewCharts(ownerGroups) {
           entries.map((_, i) => chartColors[i % chartColors.length])
         );
       }
+
+      // 渲染該戶名的趨勢圖
+      if (hasTrades) {
+        renderOwnerTrendCharts(idx, g);
+      }
     });
 
-    // 趨勢圖放在 chartsSection（合併全部戶名分線）
-    const anyTrades = accounts.some(a =>
-      getAccountData(a.id, 'us', 'trades').length > 0 || getAccountData(a.id, 'tw', 'trades').length > 0
-    );
-    if (anyTrades) {
-      section.innerHTML = `<div style="background:rgba(255,255,255,0.04);border-radius:10px;padding:12px;margin:0 0 12px 0;max-height:300px">
-        <h3 style="color:#888;font-size:0.82em;margin-bottom:8px">📈 投資組合市值走勢（按戶名）</h3>
-        ${buildRangeButtons('ov', 'onRangeSelect')}
-        <canvas id="ovTrendCanvas" style="max-height:220px"></canvas>
-      </div>`;
-      renderOverviewTrendChart(ovCurrentRange);
-    } else {
-      section.innerHTML = '';
-    }
+    section.innerHTML = '';
     return;
   }
 
@@ -3774,6 +4174,10 @@ function renderOverviewCharts(ownerGroups) {
       <h3 style="color:#888;font-size:0.82em;margin-bottom:8px">📈 投資組合市值走勢</h3>
       ${buildRangeButtons('ov', 'onRangeSelect')}
       <canvas id="ovTrendCanvas" style="max-height:220px"></canvas>
+    </div>
+    <div style="background:rgba(255,255,255,0.04);border-radius:10px;padding:12px;margin:0 0 12px 0;max-height:300px">
+      <h3 style="color:#888;font-size:0.82em;margin-bottom:8px">📈 淨資產 vs 總負債</h3>
+      <canvas id="ovAssetDebtCanvas" style="max-height:220px"></canvas>
     </div>`;
   }
 
