@@ -5280,15 +5280,14 @@ function renderUSCharts() {
   html += '</div>';
   section.innerHTML = html;
 
-  // Render doughnut
-  if (active.length > 0) {
+  // Render doughnut (with cash)
+  if (active.length > 0 || cash > 0) {
     destroyChart('usDoughnut');
-    chartInstances['usDoughnut'] = createDoughnutChart(
-      'usDoughnutCanvas',
-      active.map(s => s.ticker),
-      active.map(s => s.marketValue),
-      active.map((_, i) => chartColors[i % chartColors.length])
-    );
+    const dLabels = active.map(s => s.ticker);
+    const dData = active.map(s => s.marketValue);
+    const dColors = active.map((_, i) => chartColors[i % chartColors.length]);
+    if (cash > 0) { dLabels.push('💵 現金'); dData.push(cash); dColors.push('#9ca3af'); }
+    chartInstances['usDoughnut'] = createDoughnutChart('usDoughnutCanvas', dLabels, dData, dColors);
   }
 
   // Render trend
@@ -5326,14 +5325,13 @@ function renderTWCharts() {
   html += '</div>';
   section.innerHTML = html;
 
-  if (active.length > 0) {
+  if (active.length > 0 || cash > 0) {
     destroyChart('twDoughnut');
-    chartInstances['twDoughnut'] = createDoughnutChart(
-      'twDoughnutCanvas',
-      active.map(s => s.ticker),
-      active.map(s => s.marketValue),
-      active.map((_, i) => chartColors[i % chartColors.length])
-    );
+    const dLabels = active.map(s => { const n = twCodeToName[s.ticker] || twPrices[s.ticker]?.name || s.ticker; return n; });
+    const dData = active.map(s => s.marketValue);
+    const dColors = active.map((_, i) => chartColors[i % chartColors.length]);
+    if (cash > 0) { dLabels.push('💵 現金'); dData.push(cash); dColors.push('#9ca3af'); }
+    chartInstances['twDoughnut'] = createDoughnutChart('twDoughnutCanvas', dLabels, dData, dColors);
   }
 
   renderTWTrendChart(twCurrentRange);
