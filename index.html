@@ -3043,6 +3043,7 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
     }));
     allAnalysis = allAnalysis.concat(weightedAnalysis);
 
+    console.log(`[Overview] ${acc.bank||acc.name}: raw mv=${mv.toFixed(2)} cash=${cash.toFixed(2)} nw=${(mv+cash).toFixed(2)} | pct=${(ownPct*100)}% | weighted nw=${(wmv+wcash).toFixed(2)} | trades=${trades.length} funds=${funds.length} income=${income.length}`);
     return { acc, mv: wmv, cash: wcash, netWorth: wmv + wcash, fundIn: wfundIn, income: wIncome, rawMv: mv, rawCash: cash, rawNw: mv+cash, analysis, ownPct };
   });
 
