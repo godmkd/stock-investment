@@ -957,7 +957,8 @@ async function saveAccountDataToSupabase(accId, market, key, data) {
   const table = `inv_${market}_${key}`;
 
   // Delete existing rows for this account
-  await sb.from(table).delete().eq('user_id', uid).eq('account_id', accId);
+  const { error: delErr } = await sb.from(table).delete().eq('user_id', uid).eq('account_id', accId);
+  if (delErr) console.error(`❌ DELETE ${table} acc=${accId}:`, delErr.message);
 
   if (data.length === 0) return;
 
@@ -986,17 +987,34 @@ async function saveAccountDataToSupabase(accId, market, key, data) {
   }
 
   if (rows && rows.length > 0) {
-    // Ensure unique IDs — deduplicate and regenerate if needed
+    // Ensure unique integer IDs
     const seenIds = new Set();
+    let idCounter = Date.now();
     rows.forEach((r, idx) => {
-      if (!r.id || seenIds.has(r.id)) r.id = Date.now() * 1000 + idx;
-      seenIds.add(r.id);
+      // Ensure id is a valid integer
+      let rid = parseInt(r.id);
+      if (!rid || isNaN(rid) || seenIds.has(rid)) rid = idCounter++;
+      r.id = rid;
+      seenIds.add(rid);
     });
-    // Insert in batches of 500
-    for (let i = 0; i < rows.length; i += 500) {
-      const { error } = await sb.from(table).insert(rows.slice(i, i + 500));
-      if (error) console.error(`saveAccountData ${table} batch error:`, error.message);
+    // Insert in batches of 200 (smaller batches for reliability)
+    let totalInserted = 0;
+    for (let i = 0; i < rows.length; i += 200) {
+      const batch = rows.slice(i, i + 200);
+      const { error, data: inserted } = await sb.from(table).insert(batch).select('id');
+      if (error) {
+        console.error(`❌ INSERT ${table} acc=${accId} batch ${i}-${i+batch.length}: ${error.message}`);
+        // Try one by one as fallback
+        for (const row of batch) {
+          const { error: e2 } = await sb.from(table).insert(row);
+          if (e2) console.error(`  ❌ single insert ${table} id=${row.id}: ${e2.message}`, JSON.stringify(row).slice(0,200));
+          else totalInserted++;
+        }
+      } else {
+        totalInserted += batch.length;
+      }
     }
+    console.log(`✅ ${table} acc=${accId}: ${totalInserted}/${rows.length} inserted`);
   }
 }
 
@@ -2550,10 +2568,11 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
   // Merge holdings by ticker
   const merged = {};
   allAnalysis.forEach(s => {
-    if (!merged[s.ticker]) merged[s.ticker] = { ticker: s.ticker, shares: 0, marketValue: 0, netCost: 0 };
+    if (!merged[s.ticker]) merged[s.ticker] = { ticker: s.ticker, shares: 0, marketValue: 0, netCost: 0, currentPrice: s.currentPrice || 0 };
     merged[s.ticker].shares += s.shares;
     merged[s.ticker].marketValue += s.marketValue;
     merged[s.ticker].netCost += s.netCost;
+    if (s.currentPrice) merged[s.ticker].currentPrice = s.currentPrice;
   });
   const mergedList = Object.values(merged).sort((a, b) => b.marketValue - a.marketValue);
 
@@ -2582,10 +2601,11 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
     ${mergedList.length > 0 ? `
     <div class="table-container" style="margin-top:16px">
       <div class="table-header"><h3>${flag} 合併持股</h3></div>
-      <table><thead><tr><th>股票</th><th>總股數</th><th>市值</th><th>佔比</th></tr></thead>
+      <table><thead><tr><th>股票</th><th>股價</th><th>總股數</th><th>市值</th><th>佔比</th></tr></thead>
       <tbody>${mergedList.map(s => {
         const pct = totalMV > 0 ? (s.marketValue / totalMV * 100).toFixed(1) : '0.0';
-        return `<tr><td><strong>${s.ticker}</strong></td><td>${s.shares.toFixed(2)}</td><td>${fmt(s.marketValue)}</td><td>${pct}%</td></tr>`;
+        const priceStr = s.currentPrice ? (market==='tw'?fmtTWD2(s.currentPrice):fmt(s.currentPrice)) : '-';
+        return `<tr><td><strong>${s.ticker}</strong></td><td>${priceStr}</td><td>${s.shares.toFixed(2)}</td><td>${fmt(s.marketValue)}</td><td>${pct}%</td></tr>`;
       }).join('')}</tbody></table>
     </div>` : ''}
   `;
@@ -4031,7 +4051,14 @@ function restoreFromBackup(event) {
         }
       }
 
-      alert(`✅ 已還原並同步到雲端！共 ${totalSaved} 筆資料`);
+      // Verify data was saved
+      let verifyMsg = `✅ 已還原並同步到雲端！共 ${totalSaved} 筆資料\n\n驗證中...`;
+      for (const market of ['us', 'tw']) {
+        const { data: vTrades, count: tc } = await sb.from(`inv_${market}_trades`).select('id', { count: 'exact', head: true }).eq('user_id', currentUser.id);
+        const { data: vFunds, count: fc } = await sb.from(`inv_${market}_funds`).select('id', { count: 'exact', head: true }).eq('user_id', currentUser.id);
+        verifyMsg += `\n${market.toUpperCase()}: trades=${tc||0}, funds=${fc||0}`;
+      }
+      alert(verifyMsg);
       initApp();
     } catch (err) {
       alert('❌ 備份檔案格式錯誤：' + err.message);
