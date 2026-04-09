@@ -1088,56 +1088,53 @@ async function migrateLocalStorageToSupabase() {
 
 // ===================== AUTH INIT =====================
 async function authInit() {
+  // Handle OAuth callback
   const params = new URLSearchParams(window.location.search);
   const code = params.get('code');
   if (code) {
     try {
-      const { data, error } = await withTimeout(sb.auth.exchangeCodeForSession(code));
-      if (error) console.error('Code exchange error:', error);
+      await sb.auth.exchangeCodeForSession(code);
     } catch(e) { console.error('Exchange error:', e); }
     history.replaceState(null, '', window.location.pathname);
   }
   if (window.location.hash && window.location.hash.includes('access_token')) {
-    await withTimeout(sb.auth.getSession());
+    await sb.auth.getSession();
     history.replaceState(null, '', window.location.pathname);
   }
-  const { data: { session } } = await withTimeout(sb.auth.getSession());
-  if (session) {
-    currentUser = session.user;
-    document.getElementById('loginLoading').style.display = 'block';
-    document.getElementById('loginPage').style.display = 'flex';
-    await loadAllDataFromSupabase();
-    showApp();
-    initApp();
-  } else {
-    showLogin();
-  }
+
+  // Listen for auth changes FIRST (catches session restore)
+  let initialLoad = true;
   sb.auth.onAuthStateChange(async (event, session) => {
-    if (event === 'SIGNED_IN' && session) {
+    console.log('Auth event:', event, session?.user?.email || 'no user');
+    if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED') && session) {
       currentUser = session.user;
-      document.getElementById('loginLoading').style.display = 'block';
-      document.getElementById('loginPage').style.display = 'flex';
-      await loadAllDataFromSupabase();
-      showApp();
-      initApp();
+      if (initialLoad || event === 'SIGNED_IN') {
+        initialLoad = false;
+        document.getElementById('loginLoading').style.display = 'block';
+        document.getElementById('loginPage').style.display = 'flex';
+        await loadAllDataFromSupabase();
+        showApp();
+        initApp();
+      }
     } else if (event === 'SIGNED_OUT') {
       currentUser = null;
       showLogin();
-    } else if (event === 'TOKEN_REFRESHED' && session) {
-      currentUser = session.user;
     }
   });
 
-  // Auto refresh session
+  // Check current session
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) {
+    // Wait a moment for session restore from storage
+    await new Promise(r => setTimeout(r, 500));
+    const { data: { session: s2 } } = await sb.auth.getSession();
+    if (!s2) showLogin();
+  }
+
+  // Auto refresh on tab focus
   document.addEventListener('visibilitychange', async () => {
     if (document.visibilityState === 'visible' && currentUser) {
-      try {
-        const { data, error } = await sb.auth.refreshSession();
-        if (error || !data?.session) {
-          const { data: d2 } = await sb.auth.getSession();
-          if (!d2?.session) { alert('登入已過期，請重新登入'); showLogin(); return; }
-        }
-      } catch(e) { console.warn('Session refresh failed:', e); }
+      try { await sb.auth.refreshSession(); } catch(e) {}
     }
   });
 }
@@ -2038,8 +2035,8 @@ function addTWTradeRow() {
       <input type="text" class="twTradeDate" placeholder="${todayStr().replace(/-/g,'.')}" data-row="${id}">
     </div>
     <div class="form-group" style="flex:1 1 80px">
-      <label>股票</label>
-      <input type="text" class="twTradeTicket" placeholder="2330" data-row="${id}">
+      <label>股票 <span id="twTickerName_${id}" style="color:#67e8f9;font-size:0.8em"></span></label>
+      <input type="text" class="twTradeTicket" placeholder="2330" data-row="${id}" oninput="const c=resolveTWTicker(this.value);const n=twCodeToName[c]||twPrices[c]?.name||'';document.getElementById('twTickerName_${id}').textContent=n?'('+n+')':''">
     </div>
     <div class="form-group" style="flex:1 1 80px">
       <label>類型</label>
