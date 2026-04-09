@@ -492,12 +492,16 @@
               <label>類型</label>
               <select id="usQiIncomeType"><option value="dividend">股利</option><option value="interest">利息</option><option value="tax">稅</option><option value="adjust">微調</option></select>
             </div>
+            <div style="display:flex;align-items:center;gap:6px">
+              <label style="white-space:nowrap;color:#888;font-size:0.85em">預設來源：</label>
+              <input id="usQiIncomeDefaultSource" type="text" placeholder="如 AAPL（可留空）" style="padding:4px 8px;border:1px solid rgba(255,255,255,0.15);border-radius:4px;background:rgba(255,255,255,0.08);color:#fff;font-size:0.85em;width:140px">
+            </div>
           </div>
           <div class="form-group">
-            <label>每行一筆：<code>日期 (來源) 金額</code></label>
-            <textarea id="usQiIncomeText" rows="6" placeholder="2024.3.5 AAPL 25.50&#10;2024.4.1 150&#10;3.15 MSFT 30" style="font-family:monospace;font-size:0.88em"></textarea>
+            <label>每行一筆：<code>日期 (來源) 金額</code>（行內有來源會覆蓋預設）</label>
+            <textarea id="usQiIncomeText" rows="6" placeholder="2024.3.5 25.50&#10;2024.4.1 150&#10;3.15 MSFT 30（此行用 MSFT 而非預設）" style="font-family:monospace;font-size:0.88em"></textarea>
           </div>
-          <div style="color:#666;font-size:0.75em;margin:4px 0 8px">格式：<code>日期 來源 金額</code> 或 <code>日期 金額</code>（來源可省略）</div>
+          <div style="color:#666;font-size:0.75em;margin:4px 0 8px">格式：<code>日期 金額</code> 或 <code>日期 來源 金額</code>・行內有來源會覆蓋上方預設</div>
           <button class="btn btn-add" onclick="submitUSQIIncome()">✅ 快速送出</button>
         </div>
       </div>
@@ -652,12 +656,16 @@
               <label>類型</label>
               <select id="twQiIncomeType"><option value="dividend">股利</option><option value="interest">利息</option><option value="tax">稅</option><option value="adjust">微調</option></select>
             </div>
+            <div style="display:flex;align-items:center;gap:6px">
+              <label style="white-space:nowrap;color:#888;font-size:0.85em">預設來源：</label>
+              <input id="twQiIncomeDefaultSource" type="text" placeholder="如 2330（可留空）" style="padding:4px 8px;border:1px solid rgba(255,255,255,0.15);border-radius:4px;background:rgba(255,255,255,0.08);color:#fff;font-size:0.85em;width:140px">
+            </div>
           </div>
           <div class="form-group">
-            <label>每行一筆：<code>日期 (來源) 金額</code></label>
-            <textarea id="twQiIncomeText" rows="6" placeholder="2024.3.5 2330 5000&#10;2024.4.1 3000&#10;3.15 2884 1200" style="font-family:monospace;font-size:0.88em"></textarea>
+            <label>每行一筆：<code>日期 (來源) 金額</code>（行內有來源會覆蓋預設）</label>
+            <textarea id="twQiIncomeText" rows="6" placeholder="2024.3.5 5000&#10;2024.4.1 3000&#10;3.15 2884 1200（此行用 2884）" style="font-family:monospace;font-size:0.88em"></textarea>
           </div>
-          <div style="color:#666;font-size:0.75em;margin:4px 0 8px">格式：<code>日期 來源 金額</code> 或 <code>日期 金額</code>（來源可省略）</div>
+          <div style="color:#666;font-size:0.75em;margin:4px 0 8px">格式：<code>日期 金額</code> 或 <code>日期 來源 金額</code>・行內有來源會覆蓋上方預設</div>
           <button class="btn btn-add" onclick="submitTWQIIncome()">✅ 快速送出</button>
         </div>
       </div>
@@ -2346,6 +2354,7 @@ function submitUSQIFund() {
 
 function submitUSQIIncome() {
   const type = document.getElementById('usQiIncomeType').value;
+  const defaultSource = (document.getElementById('usQiIncomeDefaultSource')?.value || '').trim();
   const text = document.getElementById('usQiIncomeText').value;
   const lines = parseQILines(text);
   if (lines.length === 0) { alert('沒有有效的資料'); return; }
@@ -2357,24 +2366,16 @@ function submitUSQIIncome() {
     if (parts.length < 2) { errors.push(`行 ${i+1}: 格式不正確 "${line}"`); return; }
     const date = parseFlexDate(parts[0]);
     let source, amount;
-    if (parts.length >= 3) {
-      // Check if second part is a number (no source) or text (source)
-      if (isNaN(parseFloat(parts[1]))) {
-        source = parts[1];
-        amount = parseFloat(parts[2]);
-      } else {
-        // Could be: date amount (2 parts means no source), or date source amount
-        // If 3+ parts and part[1] is number, treat as: date amount (extra ignored? no)
-        // Actually if parts[1] is a number, try: is parts[2] also a number? If so, source=parts[1] as ticker?
-        // Better heuristic: if it looks like a ticker (has letters), it's source
-        source = '';
-        amount = parseFloat(parts[1]);
-      }
+    if (parts.length >= 3 && isNaN(parseFloat(parts[1]))) {
+      source = parts[1];
+      amount = parseFloat(parts[2]);
     } else {
       source = '';
       amount = parseFloat(parts[1]);
     }
     if (isNaN(amount) || amount === 0) { errors.push(`行 ${i+1}: 金額不正確 "${line}"`); return; }
+    // 行內有來源用行內的，否則用預設來源
+    if (!source) source = defaultSource;
     if (!source && type === 'dividend') source = '未指定';
     if (!source && type === 'interest') source = 'Interest';
     if (!source && type === 'tax') source = 'Tax';
@@ -2459,6 +2460,7 @@ function submitTWQIFund() {
 
 function submitTWQIIncome() {
   const type = document.getElementById('twQiIncomeType').value;
+  const defaultSource = (document.getElementById('twQiIncomeDefaultSource')?.value || '').trim();
   const text = document.getElementById('twQiIncomeText').value;
   const lines = parseQILines(text);
   if (lines.length === 0) { alert('沒有有效的資料'); return; }
@@ -2470,19 +2472,15 @@ function submitTWQIIncome() {
     if (parts.length < 2) { errors.push(`行 ${i+1}: 格式不正確 "${line}"`); return; }
     const date = parseFlexDate(parts[0]);
     let source, amount;
-    if (parts.length >= 3) {
-      if (isNaN(parseFloat(parts[1]))) {
-        source = parts[1];
-        amount = parseFloat(parts[2]);
-      } else {
-        source = '';
-        amount = parseFloat(parts[1]);
-      }
+    if (parts.length >= 3 && isNaN(parseFloat(parts[1]))) {
+      source = parts[1];
+      amount = parseFloat(parts[2]);
     } else {
       source = '';
       amount = parseFloat(parts[1]);
     }
     if (isNaN(amount) || amount === 0) { errors.push(`行 ${i+1}: 金額不正確 "${line}"`); return; }
+    if (!source) source = defaultSource;
     if (!source && type === 'dividend') source = '未指定';
     if (!source && type === 'interest') source = '銀行利息';
     if (!source && type === 'tax') source = '稅';
