@@ -1344,12 +1344,12 @@ function renderAccountSelectors() {
   const usOwners = [...new Set(usAccounts.map(a => a.owner || a.name))];
   let usOptions = '';
   usOwners.forEach(owner => {
-    const ownerAccs = usAccounts.filter(a => (a.owner||a.name) === owner);
+    const ownerAccs = usAccounts.filter(a => (a.owner||a.name) === owner && a.bank);
     if (ownerAccs.length > 1) {
       usOptions += `<option value="_owner_${owner}">📊 ${owner}（全部帳戶）</option>`;
     }
     ownerAccs.forEach(a => {
-      usOptions += `<option value="${a.id}">${a.owner||a.name} - ${a.bank||'預設'}</option>`;
+      usOptions += `<option value="${a.id}">${a.owner||a.name} - ${a.bank}</option>`;
     });
   });
   usSelect.innerHTML = usOptions || '<option>無帳戶</option>';
@@ -1362,12 +1362,12 @@ function renderAccountSelectors() {
   const twOwners = [...new Set(twAccounts.map(a => a.owner || a.name))];
   let twOptions = '';
   twOwners.forEach(owner => {
-    const ownerAccs = twAccounts.filter(a => (a.owner||a.name) === owner);
+    const ownerAccs = twAccounts.filter(a => (a.owner||a.name) === owner && a.bank);
     if (ownerAccs.length > 1) {
       twOptions += `<option value="_owner_${owner}">📊 ${owner}（全部帳戶）</option>`;
     }
     ownerAccs.forEach(a => {
-      twOptions += `<option value="${a.id}">${a.owner||a.name} - ${a.bank||'預設'}</option>`;
+      twOptions += `<option value="${a.id}">${a.owner||a.name} - ${a.bank}</option>`;
     });
   });
   twSelect.innerHTML = twOptions || '<option>無帳戶</option>';
