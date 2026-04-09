@@ -5764,9 +5764,14 @@ function renderUSCharts() {
   if (!section) return;
 
   const trades = getAccountData(currentUSAccount, 'us', 'trades');
+  const funds = getAccountData(currentUSAccount, 'us', 'funds');
   const income = getAccountData(currentUSAccount, 'us', 'income');
   const analysis = analyzeStocks(trades, 'us', income);
   const active = analysis.filter(s => !s.isClosed && s.marketValue > 0);
+  let cash = 0;
+  for (const f of funds) cash += f.type === 'deposit' ? f.amount : -f.amount;
+  for (const t of trades) cash += calcTradeCashImpact(t, 'us');
+  cash += income.reduce((s, i) => s + i.amount, 0);
 
   if (active.length === 0 && trades.length === 0) { section.innerHTML = ''; return; }
 
@@ -5812,9 +5817,14 @@ function renderTWCharts() {
   if (!section) return;
 
   const trades = getAccountData(currentTWAccount, 'tw', 'trades');
+  const funds = getAccountData(currentTWAccount, 'tw', 'funds');
   const income = getAccountData(currentTWAccount, 'tw', 'income');
   const analysis = analyzeStocks(trades, 'tw', income);
   const active = analysis.filter(s => !s.isClosed && s.marketValue > 0);
+  let cash = 0;
+  for (const f of funds) cash += f.type === 'deposit' ? f.amount : -f.amount;
+  for (const t of trades) cash += calcTradeCashImpact(t, 'tw');
+  cash += income.reduce((s, i) => s + i.amount, 0);
 
   if (active.length === 0 && trades.length === 0) { section.innerHTML = ''; return; }
 
