@@ -1937,8 +1937,7 @@ function submitUSIncome() {
     if (!source && type === 'interest') source = 'Interest';
     if (!source && type === 'tax') source = 'Tax';
     if (!source && type === 'adjust') source = 'Adjustment';
-    if (!source) return; // 股利必須填來源
-    // 稅和微調自動轉負數（如果使用者輸入正數）
+    if (!source && type === 'dividend') source = '未指定';
     const finalAmount = (type === 'tax' && amount > 0) ? -amount : amount;
     data.push({ id: Date.now() + count, date, type, source, amount: finalAmount, note });
     count++;
@@ -2116,7 +2115,7 @@ function submitTWIncome() {
     if (!source && type === 'interest') source = '銀行利息';
     if (!source && type === 'tax') source = '稅';
     if (!source && type === 'adjust') source = '微調';
-    if (!source) return; // 股利必須填來源
+    if (!source && type === 'dividend') source = '未指定';
     // 稅自動轉負數
     const finalAmount = (type === 'tax' && amount > 0) ? -amount : amount;
     data.push({ id: Date.now() + count, date, type, source, amount: finalAmount, note });
