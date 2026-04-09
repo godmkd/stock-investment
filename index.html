@@ -4796,10 +4796,10 @@ function renderMortgageTab() {
 
         <div class="mortgage-input">
           <div class="form-group">
-            <label>所屬帳戶（戶名）</label>
-            <select id="mort-account-${m.id}" onchange="const acc=accounts.find(a=>a.id===this.value);const m=mortgages.find(x=>x.id==='${m.id}');if(m){m.accountId=this.value;m.owner=acc?acc.name:'';saveMortgages();renderMortgageTab()}" style="padding:6px 10px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;background:rgba(255,255,255,0.08);color:#fff">
-              <option value="">不綁定帳戶</option>
-              ${accounts.map(a => `<option value="${a.id}" ${m.accountId === a.id ? 'selected' : ''}>${a.name}</option>`).join('')}
+            <label>所屬持有人</label>
+            <select id="mort-account-${m.id}" onchange="const _m=mortgages.find(x=>x.id==='${m.id}');if(_m){_m.owner=this.value;_m.accountId='';saveMortgages();renderMortgageTab()}" style="padding:6px 10px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;background:rgba(255,255,255,0.08);color:#fff">
+              <option value="">不綁定</option>
+              ${[...new Set(accounts.map(a=>a.owner||a.name))].map(o => `<option value="${o}" ${m.owner === o ? 'selected' : ''}>${o}</option>`).join('')}
             </select>
           </div>
           <div class="form-group">
