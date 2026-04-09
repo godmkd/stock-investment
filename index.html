@@ -428,7 +428,7 @@
   <script>if(localStorage.getItem('hide_tutorial_overview'))document.getElementById('tutorial-overview').style.display='none';</script>
 
   <div style="margin-bottom:16px;display:flex;align-items:center;gap:10px">
-    <label style="color:#888;font-size:0.9em">持有人篩選:</label>
+    <label style="color:#888;font-size:0.9em">持有人篩選: <span class="help-tip">!<span class="help-text">全部合計不乘持有比例，按戶名則會乘。</span></span></label>
     <select id="ownerFilter" onchange="currentOwnerFilter=this.value;renderOverviewTab()" style="padding:6px 12px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;background:rgba(255,255,255,0.08);color:#fff;font-size:0.9em">
       <option value="">全部</option>
     </select>
@@ -450,7 +450,7 @@
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
       <label style="color:#888;font-size:0.9em">帳戶：</label>
       <select id="usAccountSelect" onchange="onUSAccountChange()" style="padding:6px 12px;border-radius:6px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.08);color:#fff;font-size:0.9em;cursor:pointer;"></select>
-      <button class="btn btn-secondary" onclick="addBankAccount('us')" style="padding:4px 10px;font-size:0.82em">＋ 新增</button>
+      <button class="btn btn-secondary" onclick="addBankAccount('us')" style="padding:4px 10px;font-size:0.82em">＋ 新增</button> <span class="help-tip">!<span class="help-text">為此持有人新增銀行/券商帳戶。</span></span>
       <button class="btn btn-secondary" onclick="editBankAccount('us')" style="padding:4px 10px;font-size:0.82em">✏️ 編輯</button>
       <button class="btn-danger" onclick="deleteBankAccount('us')" style="padding:4px 10px;font-size:0.82em;border-radius:6px;border:none;cursor:pointer">🗑️ 刪除</button>
     </div>
@@ -477,7 +477,7 @@
 
   <div style="display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; align-items: center;">
     <input type="password" id="usApiKey" placeholder="Finnhub API Key (可選)" style="padding:8px 12px;border-radius:6px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.08);color:#fff;flex:1;min-width:200px;">
-    <span class="help-tip">!<span class="help-text">免費的 Finnhub API Key 可從 finnhub.io 申請。沒有 API Key 也能使用，只是無法自動更新美股股價。</span></span>
+    <span class="help-tip">!<span class="help-text">免費申請：finnhub.io/register，用於即時更新美股股價。</span></span>
     <button class="btn btn-primary" onclick="saveUSApiKey()">💾 儲存 API Key</button>
     <button class="btn btn-primary" onclick="refreshUSPrices()">🔄 更新股價</button>
   </div>
@@ -523,7 +523,7 @@
             <label>每行一筆：<code>日期 股數 價格 (手續費)</code></label>
             <textarea id="usQiTradeText" rows="6" placeholder="2024.3.5 10 250&#10;2024.4.1 5 260&#10;3.15 20 245 5.99（個別手續費覆蓋預設）" style="font-family:monospace;font-size:0.88em"></textarea>
           </div>
-          <div style="color:#666;font-size:0.75em;margin:4px 0 8px">格式：<code>日期 股數 價格 (手續費)</code>・手續費率不填=0・行內第4欄可覆蓋預設</div>
+          <div style="color:#666;font-size:0.75em;margin:4px 0 8px">格式：<code>日期 股數 價格 (手續費)</code>・手續費率不填=0・行內第4欄可覆蓋預設 <span class="help-tip">!<span class="help-text">每行格式：日期 股數 價格，行內第4欄可指定手續費。</span></span></div>
           <button class="btn btn-add" onclick="submitUSQITrade()">✅ 快速送出</button>
         </div>
         <!-- Fund mode -->
@@ -538,7 +538,7 @@
             <label>每行一筆：<code>日期 美金金額 (台幣金額) (匯率)</code></label>
             <textarea id="usQiFundText" rows="6" placeholder="2024.3.5 1000 31500&#10;2024.4.1 2000&#10;3.15 500 15750 31.5" style="font-family:monospace;font-size:0.88em"></textarea>
           </div>
-          <div style="color:#666;font-size:0.75em;margin:4px 0 8px">格式：<code>日期 美金</code> 或 <code>日期 美金 台幣</code> 或 <code>日期 美金 台幣 匯率</code></div>
+          <div style="color:#666;font-size:0.75em;margin:4px 0 8px">格式：<code>日期 美金</code> 或 <code>日期 美金 台幣</code> 或 <code>日期 美金 台幣 匯率</code> <span class="help-tip">!<span class="help-text">美股：日期 美金 台幣，台股：日期 金額。</span></span></div>
           <button class="btn btn-add" onclick="submitUSQIFund()">✅ 快速送出</button>
         </div>
         <!-- Income mode -->
@@ -549,7 +549,7 @@
               <select id="usQiIncomeType"><option value="dividend">股利</option><option value="interest">利息</option><option value="tax">稅</option><option value="adjust">微調</option></select>
             </div>
             <div style="display:flex;align-items:center;gap:6px">
-              <label style="white-space:nowrap;color:#888;font-size:0.85em">預設來源：</label>
+              <label style="white-space:nowrap;color:#888;font-size:0.85em">預設來源：<span class="help-tip">!<span class="help-text">填寫後所有未指定來源的行都使用此值。</span></span></label>
               <input id="usQiIncomeDefaultSource" type="text" placeholder="如 AAPL（可留空）" style="padding:4px 8px;border:1px solid rgba(255,255,255,0.15);border-radius:4px;background:rgba(255,255,255,0.08);color:#fff;font-size:0.85em;width:140px">
             </div>
           </div>
@@ -557,7 +557,7 @@
             <label>每行一筆：<code>日期 (來源) 金額</code>（行內有來源會覆蓋預設）</label>
             <textarea id="usQiIncomeText" rows="6" placeholder="2024.3.5 25.50&#10;2024.4.1 150&#10;3.15 MSFT 30（此行用 MSFT 而非預設）" style="font-family:monospace;font-size:0.88em"></textarea>
           </div>
-          <div style="color:#666;font-size:0.75em;margin:4px 0 8px">格式：<code>日期 金額</code> 或 <code>日期 來源 金額</code>・行內有來源會覆蓋上方預設</div>
+          <div style="color:#666;font-size:0.75em;margin:4px 0 8px">格式：<code>日期 金額</code> 或 <code>日期 來源 金額</code>・行內有來源會覆蓋上方預設 <span class="help-tip">!<span class="help-text">日期 (來源) 金額，來源可省略。</span></span></div>
           <button class="btn btn-add" onclick="submitUSQIIncome()">✅ 快速送出</button>
         </div>
       </div>
@@ -629,7 +629,7 @@
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
       <label style="color:#888;font-size:0.9em">帳戶：</label>
       <select id="twAccountSelect" onchange="onTWAccountChange()" style="padding:6px 12px;border-radius:6px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.08);color:#fff;font-size:0.9em;cursor:pointer;"></select>
-      <button class="btn btn-secondary" onclick="addBankAccount('tw')" style="padding:4px 10px;font-size:0.82em">＋ 新增</button>
+      <button class="btn btn-secondary" onclick="addBankAccount('tw')" style="padding:4px 10px;font-size:0.82em">＋ 新增</button> <span class="help-tip">!<span class="help-text">為此持有人新增銀行/券商帳戶。</span></span>
       <button class="btn btn-secondary" onclick="editBankAccount('tw')" style="padding:4px 10px;font-size:0.82em">✏️ 編輯</button>
       <button class="btn-danger" onclick="deleteBankAccount('tw')" style="padding:4px 10px;font-size:0.82em;border-radius:6px;border:none;cursor:pointer">🗑️ 刪除</button>
     </div>
@@ -691,7 +691,7 @@
             <label>每行一筆：<code>日期 股數 價格 (手續費)</code></label>
             <textarea id="twQiTradeText" rows="6" placeholder="2024.3.5 1000 580&#10;2024.4.1 500 595&#10;3.15 2000 570 500（個別手續費覆蓋預設）" style="font-family:monospace;font-size:0.88em"></textarea>
           </div>
-          <div style="color:#666;font-size:0.75em;margin:4px 0 8px">格式：<code>日期 股數 價格 (手續費)</code>・預設手續費率千分之1.425・行內第4欄可覆蓋預設</div>
+          <div style="color:#666;font-size:0.75em;margin:4px 0 8px">格式：<code>日期 股數 價格 (手續費)</code>・預設手續費率千分之1.425・行內第4欄可覆蓋預設 <span class="help-tip">!<span class="help-text">每行格式：日期 股數 價格，行內第4欄可指定手續費。</span></span></div>
           <button class="btn btn-add" onclick="submitTWQITrade()">✅ 快速送出</button>
         </div>
         <!-- Fund mode -->
@@ -706,7 +706,7 @@
             <label>每行一筆：<code>日期 金額</code></label>
             <textarea id="twQiFundText" rows="6" placeholder="2024.3.5 300000&#10;2024.4.1 500000&#10;3.15 100000" style="font-family:monospace;font-size:0.88em"></textarea>
           </div>
-          <div style="color:#666;font-size:0.75em;margin:4px 0 8px">格式：<code>日期 金額</code>，例 <code>2024.3.5 300000</code></div>
+          <div style="color:#666;font-size:0.75em;margin:4px 0 8px">格式：<code>日期 金額</code>，例 <code>2024.3.5 300000</code> <span class="help-tip">!<span class="help-text">美股：日期 美金 台幣，台股：日期 金額。</span></span></div>
           <button class="btn btn-add" onclick="submitTWQIFund()">✅ 快速送出</button>
         </div>
         <!-- Income mode -->
@@ -717,7 +717,7 @@
               <select id="twQiIncomeType"><option value="dividend">股利</option><option value="interest">利息</option><option value="tax">稅</option><option value="adjust">微調</option></select>
             </div>
             <div style="display:flex;align-items:center;gap:6px">
-              <label style="white-space:nowrap;color:#888;font-size:0.85em">預設來源：</label>
+              <label style="white-space:nowrap;color:#888;font-size:0.85em">預設來源：<span class="help-tip">!<span class="help-text">填寫後所有未指定來源的行都使用此值。</span></span></label>
               <input id="twQiIncomeDefaultSource" type="text" placeholder="如 2330（可留空）" style="padding:4px 8px;border:1px solid rgba(255,255,255,0.15);border-radius:4px;background:rgba(255,255,255,0.08);color:#fff;font-size:0.85em;width:140px">
             </div>
           </div>
@@ -725,7 +725,7 @@
             <label>每行一筆：<code>日期 (來源) 金額</code>（行內有來源會覆蓋預設）</label>
             <textarea id="twQiIncomeText" rows="6" placeholder="2024.3.5 5000&#10;2024.4.1 3000&#10;3.15 2884 1200（此行用 2884）" style="font-family:monospace;font-size:0.88em"></textarea>
           </div>
-          <div style="color:#666;font-size:0.75em;margin:4px 0 8px">格式：<code>日期 金額</code> 或 <code>日期 來源 金額</code>・行內有來源會覆蓋上方預設</div>
+          <div style="color:#666;font-size:0.75em;margin:4px 0 8px">格式：<code>日期 金額</code> 或 <code>日期 來源 金額</code>・行內有來源會覆蓋上方預設 <span class="help-tip">!<span class="help-text">日期 (來源) 金額，來源可省略。</span></span></div>
           <button class="btn btn-add" onclick="submitTWQIIncome()">✅ 快速送出</button>
         </div>
       </div>
@@ -805,7 +805,7 @@
 
   <!-- DCA Template Management -->
   <div class="tpl-section">
-    <h2>📋 定期定額範本</h2>
+    <h2>📋 定期定額範本 <span class="help-tip">!<span class="help-text">建立範本後可每月快速執行，系統自動處理假日。</span></span></h2>
     <div id="dcaTplList"></div>
     <button class="btn btn-secondary" onclick="openTplEditor()" style="margin-top:8px">＋ 新增範本</button>
     <div id="dcaTplEditorWrap"></div>
@@ -884,7 +884,7 @@
   <script>if(localStorage.getItem('hide_tutorial_accounts'))document.getElementById('tutorial-accounts').style.display='none';</script>
 
   <div class="add-form">
-    <h2>新增持有人</h2>
+    <h2>新增持有人 <span class="help-tip">!<span class="help-text">持有人是最上層分類，底下可新增不同銀行帳戶。</span></span></h2>
     <div style="display: flex; gap: 10px; margin-bottom: 12px; align-items: flex-end; flex-wrap: wrap;">
       <div class="form-group" style="flex:1;min-width:120px">
         <label>持有人姓名</label>
@@ -3157,7 +3157,7 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
 
     ${mergedList.length > 0 ? `
     <div class="table-container" style="margin-top:16px">
-      <div class="table-header"><h3>${flag} 合併持股</h3></div>
+      <div class="table-header"><h3>${flag} 合併持股 <span class="help-tip">!<span class="help-text">各帳戶持股按比例加權後合併顯示。</span></span></h3></div>
       <table><thead><tr><th>股票</th><th>股價</th><th>總股數</th><th>市值</th><th>佔比</th></tr></thead>
       <tbody>${mergedList.map(s => {
         const pct = totalMV > 0 ? (s.marketValue / totalMV * 100).toFixed(1) : '0.0';
@@ -4073,7 +4073,7 @@ function openTplEditor(editId) {
         <input type="text" id="tplEdTicker" value="${ticker}" placeholder="2330" style="text-transform:uppercase">
       </div>
       <div class="form-group" style="min-width:120px">
-        <label>手續費率 (預設萬分之1.425)</label>
+        <label>手續費率 (預設萬分之1.425) <span class="help-tip">!<span class="help-text">定期定額預設萬分之1.425，一般交易千分之1.425。</span></span></label>
         <input type="number" id="tplEdFeeRate" value="${feeRate}" step="0.000001">
       </div>
     </div>
@@ -4796,7 +4796,7 @@ function renderMortgageTab() {
 
         <div class="mortgage-input">
           <div class="form-group">
-            <label>所屬持有人</label>
+            <label>所屬持有人 <span class="help-tip">!<span class="help-text">選擇此房產歸屬的持有人。</span></span></label>
             <select id="mort-account-${m.id}" onchange="const _m=mortgages.find(x=>x.id==='${m.id}');if(_m){_m.owner=this.value;_m.accountId='';saveMortgages();renderMortgageTab()}" style="padding:6px 10px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;background:rgba(255,255,255,0.08);color:#fff">
               <option value="">不綁定</option>
               ${[...new Set(accounts.map(a=>a.owner||a.name))].map(o => `<option value="${o}" ${m.owner === o ? 'selected' : ''}>${o}</option>`).join('')}
@@ -4914,7 +4914,7 @@ function addBankAccount(market) {
       <input id="_bankName" placeholder="例：${market==='us'?'Firstrade、嘉信':'國泰、富邦'}" style="width:100%;padding:8px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;background:rgba(255,255,255,0.08);color:#fff;box-sizing:border-box">
     </div>
     <div style="margin-bottom:16px">
-      <label style="color:#888;font-size:0.85em;display:block;margin-bottom:4px">持有比例 %</label>
+      <label style="color:#888;font-size:0.85em;display:block;margin-bottom:4px">持有比例 % <span class="help-tip">!<span class="help-text">持有比例只在「全部帳戶」和「投資總覽」計算時使用。</span></span></label>
       <input id="_bankPct" type="number" value="100" min="0" max="100" style="width:80px;padding:8px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;background:rgba(255,255,255,0.08);color:#fff">
     </div>
     <div style="display:flex;gap:8px;justify-content:flex-end">
@@ -4977,7 +4977,7 @@ function editBankAccount(market) {
       <input id="_editBank" value="${acc.bank||''}" style="width:100%;padding:8px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;background:rgba(255,255,255,0.08);color:#fff;box-sizing:border-box">
     </div>
     <div style="margin-bottom:16px">
-      <label style="color:#888;font-size:0.85em;display:block;margin-bottom:4px">持有比例 %</label>
+      <label style="color:#888;font-size:0.85em;display:block;margin-bottom:4px">持有比例 % <span class="help-tip">!<span class="help-text">持有比例只在「全部帳戶」和「投資總覽」計算時使用。</span></span></label>
       <input id="_editPct" type="number" value="${acc.ownership_pct??100}" min="0" max="100" style="width:80px;padding:8px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;background:rgba(255,255,255,0.08);color:#fff">
     </div>
     <div style="display:flex;gap:8px;justify-content:flex-end">
