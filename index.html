@@ -1165,20 +1165,28 @@ async function saveAccountDataToSupabase(accId, market, key, data) {
 
   let rows;
   if (key === 'trades') {
-    rows = data.map(t => ({
-      id: t.id || Date.now() + Math.floor(Math.random()*100000),
-      user_id: uid, account_id: accId, date: t.date, ticker: t.ticker,
-      type: t.type, shares: t.shares, price: t.price, fee: t.fee || 0,
-      adjust: t.adjust || 0, invest_amount: t.investAmount || 0,
-      actual_cost: t.actualCost || 0
-    }));
+    rows = data.map(t => {
+      const row = {
+        id: t.id || Date.now() + Math.floor(Math.random()*100000),
+        user_id: uid, account_id: accId, date: t.date, ticker: t.ticker,
+        type: t.type, shares: t.shares, price: t.price, fee: t.fee || 0,
+        adjust: t.adjust || 0
+      };
+      // US trades have extra columns
+      if (market === 'us') { row.invest_amount = t.investAmount || 0; row.actual_cost = t.actualCost || 0; }
+      return row;
+    });
   } else if (key === 'funds') {
-    rows = data.map(f => ({
-      id: f.id || Date.now() + Math.floor(Math.random()*100000),
-      user_id: uid, account_id: accId, date: f.date, type: f.type,
-      amount: f.amount, twd_amount: f.twdAmount || 0, rate: f.rate || 0,
-      note: f.note || ''
-    }));
+    rows = data.map(f => {
+      const row = {
+        id: f.id || Date.now() + Math.floor(Math.random()*100000),
+        user_id: uid, account_id: accId, date: f.date, type: f.type,
+        amount: f.amount, note: f.note || ''
+      };
+      // US funds have extra columns
+      if (market === 'us') { row.twd_amount = f.twdAmount || 0; row.rate = f.rate || 0; }
+      return row;
+    });
   } else if (key === 'income') {
     rows = data.map(i => ({
       id: i.id || Date.now() + Math.floor(Math.random()*100000),
