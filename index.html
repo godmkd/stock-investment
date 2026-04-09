@@ -443,6 +443,64 @@
   <div class="add-form">
     <h2 style="cursor:pointer;user-select:none" onclick="const b=document.getElementById('usOpsBody');b.style.display=b.style.display==='none'?'block':'none';this.querySelector('.ops-arrow').textContent=b.style.display==='none'?'▶':'▼'">📝 資料操作 <span class="ops-arrow" style="font-size:0.7em;margin-left:6px">▶</span></h2>
     <div id="usOpsBody" style="display:none">
+      <!-- ⚡ 快速輸入 US -->
+      <div style="margin-bottom:16px;padding:12px;background:rgba(103,232,249,0.06);border:1px solid rgba(103,232,249,0.15);border-radius:10px">
+        <h3 style="color:#67e8f9;font-size:0.95em;margin:0 0 10px">⚡ 快速輸入</h3>
+        <div style="display:flex;gap:4px;margin-bottom:10px">
+          <button class="btn" id="usQiTradeBtn" style="padding:5px 12px;font-size:0.82em;background:#67e8f9;color:#000;font-weight:600;border-radius:6px" onclick="switchUSQI('trade')">交易</button>
+          <button class="btn" id="usQiFundBtn" style="padding:5px 12px;font-size:0.82em;background:rgba(255,255,255,0.1);color:#aaa;border-radius:6px" onclick="switchUSQI('fund')">資金</button>
+          <button class="btn" id="usQiIncomeBtn" style="padding:5px 12px;font-size:0.82em;background:rgba(255,255,255,0.1);color:#aaa;border-radius:6px" onclick="switchUSQI('income')">股利/利息/稅</button>
+        </div>
+        <!-- Trade mode -->
+        <div id="usQiTrade">
+          <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+            <div class="form-group" style="flex:1 1 100px">
+              <label>股票代號</label>
+              <input type="text" id="usQiTradeTicker" placeholder="AAPL" style="text-transform:uppercase">
+            </div>
+            <div class="form-group" style="flex:1 1 80px">
+              <label>類型</label>
+              <select id="usQiTradeType"><option value="buy">買入</option><option value="sell">賣出</option></select>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>每行一筆：<code>日期 股數 價格</code></label>
+            <textarea id="usQiTradeText" rows="6" placeholder="2024.3.5 10 250&#10;2024.4.1 5 260&#10;3.15 20 245" style="font-family:monospace;font-size:0.88em"></textarea>
+          </div>
+          <div style="color:#666;font-size:0.75em;margin:4px 0 8px">格式：<code>日期 股數 價格</code>，例 <code>2024.3.5 10 250</code> = 10股@$250</div>
+          <button class="btn btn-add" onclick="submitUSQITrade()">✅ 快速送出</button>
+        </div>
+        <!-- Fund mode -->
+        <div id="usQiFund" style="display:none">
+          <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+            <div class="form-group" style="flex:1 1 80px">
+              <label>類型</label>
+              <select id="usQiFundType"><option value="deposit">存入</option><option value="withdraw">提出</option></select>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>每行一筆：<code>日期 美金金額 (台幣金額) (匯率)</code></label>
+            <textarea id="usQiFundText" rows="6" placeholder="2024.3.5 1000 31500&#10;2024.4.1 2000&#10;3.15 500 15750 31.5" style="font-family:monospace;font-size:0.88em"></textarea>
+          </div>
+          <div style="color:#666;font-size:0.75em;margin:4px 0 8px">格式：<code>日期 美金</code> 或 <code>日期 美金 台幣</code> 或 <code>日期 美金 台幣 匯率</code></div>
+          <button class="btn btn-add" onclick="submitUSQIFund()">✅ 快速送出</button>
+        </div>
+        <!-- Income mode -->
+        <div id="usQiIncome" style="display:none">
+          <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+            <div class="form-group" style="flex:1 1 100px">
+              <label>類型</label>
+              <select id="usQiIncomeType"><option value="dividend">股利</option><option value="interest">利息</option><option value="tax">稅</option><option value="adjust">微調</option></select>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>每行一筆：<code>日期 (來源) 金額</code></label>
+            <textarea id="usQiIncomeText" rows="6" placeholder="2024.3.5 AAPL 25.50&#10;2024.4.1 150&#10;3.15 MSFT 30" style="font-family:monospace;font-size:0.88em"></textarea>
+          </div>
+          <div style="color:#666;font-size:0.75em;margin:4px 0 8px">格式：<code>日期 來源 金額</code> 或 <code>日期 金額</code>（來源可省略）</div>
+          <button class="btn btn-add" onclick="submitUSQIIncome()">✅ 快速送出</button>
+        </div>
+      </div>
       <h3 style="color:#67e8f9;font-size:0.9em;margin:12px 0 6px">💰 資金管理</h3>
       <div id="usFundRows"></div>
       <div style="display:flex;gap:8px;margin-top:10px">
@@ -545,6 +603,64 @@
   <div class="add-form">
     <h2 style="cursor:pointer;user-select:none" onclick="const b=document.getElementById('twOpsBody');b.style.display=b.style.display==='none'?'block':'none';this.querySelector('.ops-arrow').textContent=b.style.display==='none'?'▶':'▼'">📝 資料操作 <span class="ops-arrow" style="font-size:0.7em;margin-left:6px">▶</span></h2>
     <div id="twOpsBody" style="display:none">
+      <!-- ⚡ 快速輸入 TW -->
+      <div style="margin-bottom:16px;padding:12px;background:rgba(251,147,60,0.06);border:1px solid rgba(251,147,60,0.15);border-radius:10px">
+        <h3 style="color:#fb923c;font-size:0.95em;margin:0 0 10px">⚡ 快速輸入</h3>
+        <div style="display:flex;gap:4px;margin-bottom:10px">
+          <button class="btn" id="twQiTradeBtn" style="padding:5px 12px;font-size:0.82em;background:#fb923c;color:#000;font-weight:600;border-radius:6px" onclick="switchTWQI('trade')">交易</button>
+          <button class="btn" id="twQiFundBtn" style="padding:5px 12px;font-size:0.82em;background:rgba(255,255,255,0.1);color:#aaa;border-radius:6px" onclick="switchTWQI('fund')">資金</button>
+          <button class="btn" id="twQiIncomeBtn" style="padding:5px 12px;font-size:0.82em;background:rgba(255,255,255,0.1);color:#aaa;border-radius:6px" onclick="switchTWQI('income')">股利/利息/稅</button>
+        </div>
+        <!-- Trade mode -->
+        <div id="twQiTrade">
+          <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+            <div class="form-group" style="flex:1 1 100px">
+              <label>股票代號</label>
+              <input type="text" id="twQiTradeTicker" placeholder="2330">
+            </div>
+            <div class="form-group" style="flex:1 1 80px">
+              <label>類型</label>
+              <select id="twQiTradeType"><option value="buy">買入</option><option value="sell">賣出</option></select>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>每行一筆：<code>日期 股數 價格</code></label>
+            <textarea id="twQiTradeText" rows="6" placeholder="2024.3.5 1000 580&#10;2024.4.1 500 595&#10;3.15 2000 570" style="font-family:monospace;font-size:0.88em"></textarea>
+          </div>
+          <div style="color:#666;font-size:0.75em;margin:4px 0 8px">格式：<code>日期 股數 價格</code>，例 <code>2024.3.5 1000 580</code> = 1000股@$580（手續費自動計算）</div>
+          <button class="btn btn-add" onclick="submitTWQITrade()">✅ 快速送出</button>
+        </div>
+        <!-- Fund mode -->
+        <div id="twQiFund" style="display:none">
+          <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+            <div class="form-group" style="flex:1 1 80px">
+              <label>類型</label>
+              <select id="twQiFundType"><option value="deposit">存入</option><option value="withdraw">提出</option></select>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>每行一筆：<code>日期 金額</code></label>
+            <textarea id="twQiFundText" rows="6" placeholder="2024.3.5 300000&#10;2024.4.1 500000&#10;3.15 100000" style="font-family:monospace;font-size:0.88em"></textarea>
+          </div>
+          <div style="color:#666;font-size:0.75em;margin:4px 0 8px">格式：<code>日期 金額</code>，例 <code>2024.3.5 300000</code></div>
+          <button class="btn btn-add" onclick="submitTWQIFund()">✅ 快速送出</button>
+        </div>
+        <!-- Income mode -->
+        <div id="twQiIncome" style="display:none">
+          <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+            <div class="form-group" style="flex:1 1 100px">
+              <label>類型</label>
+              <select id="twQiIncomeType"><option value="dividend">股利</option><option value="interest">利息</option><option value="tax">稅</option><option value="adjust">微調</option></select>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>每行一筆：<code>日期 (來源) 金額</code></label>
+            <textarea id="twQiIncomeText" rows="6" placeholder="2024.3.5 2330 5000&#10;2024.4.1 3000&#10;3.15 2884 1200" style="font-family:monospace;font-size:0.88em"></textarea>
+          </div>
+          <div style="color:#666;font-size:0.75em;margin:4px 0 8px">格式：<code>日期 來源 金額</code> 或 <code>日期 金額</code>（來源可省略）</div>
+          <button class="btn btn-add" onclick="submitTWQIIncome()">✅ 快速送出</button>
+        </div>
+      </div>
       <h3 style="color:#fb923c;font-size:0.9em;margin:12px 0 6px">💰 資金管理</h3>
       <div id="twFundRows"></div>
       <div style="display:flex;gap:8px;margin-top:10px">
@@ -2128,6 +2244,263 @@ function submitTWIncome() {
   addTWIncomeRow();
   renderTWTab();
   alert(`✅ 已新增 ${count} 筆紀錄`);
+}
+
+// ===== Quick Input (快速輸入) =====
+function switchUSQI(mode) {
+  document.getElementById('usQiTrade').style.display = mode === 'trade' ? '' : 'none';
+  document.getElementById('usQiFund').style.display = mode === 'fund' ? '' : 'none';
+  document.getElementById('usQiIncome').style.display = mode === 'income' ? '' : 'none';
+  const active = 'background:#67e8f9;color:#000;font-weight:600';
+  const inactive = 'background:rgba(255,255,255,0.1);color:#aaa';
+  document.getElementById('usQiTradeBtn').style.cssText = 'padding:5px 12px;font-size:0.82em;border-radius:6px;' + (mode === 'trade' ? active : inactive);
+  document.getElementById('usQiFundBtn').style.cssText = 'padding:5px 12px;font-size:0.82em;border-radius:6px;' + (mode === 'fund' ? active : inactive);
+  document.getElementById('usQiIncomeBtn').style.cssText = 'padding:5px 12px;font-size:0.82em;border-radius:6px;' + (mode === 'income' ? active : inactive);
+}
+function switchTWQI(mode) {
+  document.getElementById('twQiTrade').style.display = mode === 'trade' ? '' : 'none';
+  document.getElementById('twQiFund').style.display = mode === 'fund' ? '' : 'none';
+  document.getElementById('twQiIncome').style.display = mode === 'income' ? '' : 'none';
+  const active = 'background:#fb923c;color:#000;font-weight:600';
+  const inactive = 'background:rgba(255,255,255,0.1);color:#aaa';
+  document.getElementById('twQiTradeBtn').style.cssText = 'padding:5px 12px;font-size:0.82em;border-radius:6px;' + (mode === 'trade' ? active : inactive);
+  document.getElementById('twQiFundBtn').style.cssText = 'padding:5px 12px;font-size:0.82em;border-radius:6px;' + (mode === 'fund' ? active : inactive);
+  document.getElementById('twQiIncomeBtn').style.cssText = 'padding:5px 12px;font-size:0.82em;border-radius:6px;' + (mode === 'income' ? active : inactive);
+}
+
+function parseQILines(text) {
+  return text.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#') && !l.startsWith('//'));
+}
+
+// --- US Quick Input ---
+function submitUSQITrade() {
+  const ticker = document.getElementById('usQiTradeTicker').value.trim().toUpperCase();
+  const type = document.getElementById('usQiTradeType').value;
+  const text = document.getElementById('usQiTradeText').value;
+  if (!ticker) { alert('請輸入股票代號'); return; }
+  const lines = parseQILines(text);
+  if (lines.length === 0) { alert('沒有有效的資料'); return; }
+  let data = getAccountData(currentUSAccount, 'us', 'trades');
+  let count = 0;
+  const errors = [];
+  lines.forEach((line, i) => {
+    const parts = line.split(/\s+/);
+    if (parts.length < 3) { errors.push(`行 ${i+1}: 格式不正確 "${line}"`); return; }
+    const date = parseFlexDate(parts[0]);
+    const shares = parseFloat(parts[1]);
+    const price = parseFloat(parts[2]);
+    if (isNaN(shares) || isNaN(price) || shares <= 0 || price <= 0) { errors.push(`行 ${i+1}: 數值不正確 "${line}"`); return; }
+    data.push({ id: Date.now() + count, date, ticker, type, shares, price, fee: 0, adjust: 0 });
+    count++;
+  });
+  if (errors.length > 0 && count === 0) { alert('解析錯誤:\n' + errors.join('\n')); return; }
+  if (count === 0) { alert('沒有有效的資料'); return; }
+  data.sort((a, b) => b.date.localeCompare(a.date));
+  saveAccountData(currentUSAccount, 'us', 'trades', data);
+  document.getElementById('usQiTradeText').value = '';
+  renderUSTab();
+  if (localStorage.getItem('us_finnhub_key') && !prices[ticker]) fetchPrice(ticker);
+  let msg = `✅ 已新增 ${count} 筆 ${ticker} ${type === 'buy' ? '買入' : '賣出'}交易`;
+  if (errors.length > 0) msg += '\n\n⚠️ 跳過的行:\n' + errors.join('\n');
+  alert(msg);
+}
+
+function submitUSQIFund() {
+  const type = document.getElementById('usQiFundType').value;
+  const text = document.getElementById('usQiFundText').value;
+  const lines = parseQILines(text);
+  if (lines.length === 0) { alert('沒有有效的資料'); return; }
+  let data = getAccountData(currentUSAccount, 'us', 'funds');
+  let count = 0;
+  const errors = [];
+  lines.forEach((line, i) => {
+    const parts = line.split(/\s+/);
+    if (parts.length < 2) { errors.push(`行 ${i+1}: 格式不正確 "${line}"`); return; }
+    const date = parseFlexDate(parts[0]);
+    const amount = parseFloat(parts[1]);
+    if (isNaN(amount) || amount <= 0) { errors.push(`行 ${i+1}: 金額不正確 "${line}"`); return; }
+    let twdAmount = null, rate = null;
+    if (parts.length >= 3) {
+      twdAmount = parseFloat(parts[2]);
+      if (isNaN(twdAmount)) twdAmount = null;
+    }
+    if (parts.length >= 4) {
+      rate = parseFloat(parts[3]);
+      if (isNaN(rate)) rate = null;
+    }
+    if (twdAmount && !rate) rate = twdAmount / amount;
+    if (rate && !twdAmount) twdAmount = amount * rate;
+    data.push({ id: Date.now() + count, date, type, amount, twdAmount, rate, note: '' });
+    count++;
+  });
+  if (errors.length > 0 && count === 0) { alert('解析錯誤:\n' + errors.join('\n')); return; }
+  if (count === 0) { alert('沒有有效的資料'); return; }
+  data.sort((a, b) => b.date.localeCompare(a.date));
+  saveAccountData(currentUSAccount, 'us', 'funds', data);
+  document.getElementById('usQiFundText').value = '';
+  renderUSTab();
+  let msg = `✅ 已新增 ${count} 筆${type === 'deposit' ? '存入' : '提出'}資金紀錄`;
+  if (errors.length > 0) msg += '\n\n⚠️ 跳過的行:\n' + errors.join('\n');
+  alert(msg);
+}
+
+function submitUSQIIncome() {
+  const type = document.getElementById('usQiIncomeType').value;
+  const text = document.getElementById('usQiIncomeText').value;
+  const lines = parseQILines(text);
+  if (lines.length === 0) { alert('沒有有效的資料'); return; }
+  let data = getAccountData(currentUSAccount, 'us', 'income');
+  let count = 0;
+  const errors = [];
+  lines.forEach((line, i) => {
+    const parts = line.split(/\s+/);
+    if (parts.length < 2) { errors.push(`行 ${i+1}: 格式不正確 "${line}"`); return; }
+    const date = parseFlexDate(parts[0]);
+    let source, amount;
+    if (parts.length >= 3) {
+      // Check if second part is a number (no source) or text (source)
+      if (isNaN(parseFloat(parts[1]))) {
+        source = parts[1];
+        amount = parseFloat(parts[2]);
+      } else {
+        // Could be: date amount (2 parts means no source), or date source amount
+        // If 3+ parts and part[1] is number, treat as: date amount (extra ignored? no)
+        // Actually if parts[1] is a number, try: is parts[2] also a number? If so, source=parts[1] as ticker?
+        // Better heuristic: if it looks like a ticker (has letters), it's source
+        source = '';
+        amount = parseFloat(parts[1]);
+      }
+    } else {
+      source = '';
+      amount = parseFloat(parts[1]);
+    }
+    if (isNaN(amount) || amount === 0) { errors.push(`行 ${i+1}: 金額不正確 "${line}"`); return; }
+    if (!source && type === 'dividend') source = '未指定';
+    if (!source && type === 'interest') source = 'Interest';
+    if (!source && type === 'tax') source = 'Tax';
+    if (!source && type === 'adjust') source = 'Adjustment';
+    const finalAmount = (type === 'tax' && amount > 0) ? -amount : amount;
+    data.push({ id: Date.now() + count, date, type, source, amount: finalAmount, note: '' });
+    count++;
+  });
+  if (errors.length > 0 && count === 0) { alert('解析錯誤:\n' + errors.join('\n')); return; }
+  if (count === 0) { alert('沒有有效的資料'); return; }
+  data.sort((a, b) => b.date.localeCompare(a.date));
+  saveAccountData(currentUSAccount, 'us', 'income', data);
+  document.getElementById('usQiIncomeText').value = '';
+  renderUSTab();
+  const typeNames = { dividend: '股利', interest: '利息', tax: '稅', adjust: '微調' };
+  let msg = `✅ 已新增 ${count} 筆${typeNames[type]}紀錄`;
+  if (errors.length > 0) msg += '\n\n⚠️ 跳過的行:\n' + errors.join('\n');
+  alert(msg);
+}
+
+// --- TW Quick Input ---
+function submitTWQITrade() {
+  const ticker = document.getElementById('twQiTradeTicker').value.trim();
+  const type = document.getElementById('twQiTradeType').value;
+  const text = document.getElementById('twQiTradeText').value;
+  if (!ticker) { alert('請輸入股票代號'); return; }
+  const resolved = resolveTWTicker(ticker);
+  const lines = parseQILines(text);
+  if (lines.length === 0) { alert('沒有有效的資料'); return; }
+  let data = getAccountData(currentTWAccount, 'tw', 'trades');
+  let count = 0;
+  const errors = [];
+  lines.forEach((line, i) => {
+    const parts = line.split(/\s+/);
+    if (parts.length < 3) { errors.push(`行 ${i+1}: 格式不正確 "${line}"`); return; }
+    const date = parseFlexDate(parts[0]);
+    const shares = parseFloat(parts[1]);
+    const price = parseFloat(parts[2]);
+    if (isNaN(shares) || isNaN(price) || shares <= 0 || price <= 0) { errors.push(`行 ${i+1}: 數值不正確 "${line}"`); return; }
+    const fee = Math.floor(shares * price * 0.001425);
+    data.push({ id: Date.now() + count, date, ticker: resolved, type, shares, price, fee, adjust: 0 });
+    count++;
+  });
+  if (errors.length > 0 && count === 0) { alert('解析錯誤:\n' + errors.join('\n')); return; }
+  if (count === 0) { alert('沒有有效的資料'); return; }
+  data.sort((a, b) => b.date.localeCompare(a.date));
+  saveAccountData(currentTWAccount, 'tw', 'trades', data);
+  document.getElementById('twQiTradeText').value = '';
+  renderTWTab();
+  let msg = `✅ 已新增 ${count} 筆 ${resolved} ${type === 'buy' ? '買入' : '賣出'}交易`;
+  if (errors.length > 0) msg += '\n\n⚠️ 跳過的行:\n' + errors.join('\n');
+  alert(msg);
+}
+
+function submitTWQIFund() {
+  const type = document.getElementById('twQiFundType').value;
+  const text = document.getElementById('twQiFundText').value;
+  const lines = parseQILines(text);
+  if (lines.length === 0) { alert('沒有有效的資料'); return; }
+  let data = getAccountData(currentTWAccount, 'tw', 'funds');
+  let count = 0;
+  const errors = [];
+  lines.forEach((line, i) => {
+    const parts = line.split(/\s+/);
+    if (parts.length < 2) { errors.push(`行 ${i+1}: 格式不正確 "${line}"`); return; }
+    const date = parseFlexDate(parts[0]);
+    const amount = parseFloat(parts[1]);
+    if (isNaN(amount) || amount <= 0) { errors.push(`行 ${i+1}: 金額不正確 "${line}"`); return; }
+    data.push({ id: Date.now() + count, date, type, amount, note: '' });
+    count++;
+  });
+  if (errors.length > 0 && count === 0) { alert('解析錯誤:\n' + errors.join('\n')); return; }
+  if (count === 0) { alert('沒有有效的資料'); return; }
+  data.sort((a, b) => b.date.localeCompare(a.date));
+  saveAccountData(currentTWAccount, 'tw', 'funds', data);
+  document.getElementById('twQiFundText').value = '';
+  renderTWTab();
+  let msg = `✅ 已新增 ${count} 筆${type === 'deposit' ? '存入' : '提出'}資金紀錄`;
+  if (errors.length > 0) msg += '\n\n⚠️ 跳過的行:\n' + errors.join('\n');
+  alert(msg);
+}
+
+function submitTWQIIncome() {
+  const type = document.getElementById('twQiIncomeType').value;
+  const text = document.getElementById('twQiIncomeText').value;
+  const lines = parseQILines(text);
+  if (lines.length === 0) { alert('沒有有效的資料'); return; }
+  let data = getAccountData(currentTWAccount, 'tw', 'income');
+  let count = 0;
+  const errors = [];
+  lines.forEach((line, i) => {
+    const parts = line.split(/\s+/);
+    if (parts.length < 2) { errors.push(`行 ${i+1}: 格式不正確 "${line}"`); return; }
+    const date = parseFlexDate(parts[0]);
+    let source, amount;
+    if (parts.length >= 3) {
+      if (isNaN(parseFloat(parts[1]))) {
+        source = parts[1];
+        amount = parseFloat(parts[2]);
+      } else {
+        source = '';
+        amount = parseFloat(parts[1]);
+      }
+    } else {
+      source = '';
+      amount = parseFloat(parts[1]);
+    }
+    if (isNaN(amount) || amount === 0) { errors.push(`行 ${i+1}: 金額不正確 "${line}"`); return; }
+    if (!source && type === 'dividend') source = '未指定';
+    if (!source && type === 'interest') source = '銀行利息';
+    if (!source && type === 'tax') source = '稅';
+    if (!source && type === 'adjust') source = '微調';
+    const finalAmount = (type === 'tax' && amount > 0) ? -amount : amount;
+    data.push({ id: Date.now() + count, date, type, source, amount: finalAmount, note: '' });
+    count++;
+  });
+  if (errors.length > 0 && count === 0) { alert('解析錯誤:\n' + errors.join('\n')); return; }
+  if (count === 0) { alert('沒有有效的資料'); return; }
+  data.sort((a, b) => b.date.localeCompare(a.date));
+  saveAccountData(currentTWAccount, 'tw', 'income', data);
+  document.getElementById('twQiIncomeText').value = '';
+  renderTWTab();
+  const typeNames = { dividend: '股利', interest: '利息', tax: '稅', adjust: '微調' };
+  let msg = `✅ 已新增 ${count} 筆${typeNames[type]}紀錄`;
+  if (errors.length > 0) msg += '\n\n⚠️ 跳過的行:\n' + errors.join('\n');
+  alert(msg);
 }
 
 // ===== Analysis Functions =====
