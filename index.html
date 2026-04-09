@@ -4008,7 +4008,7 @@ function openTplEditor(editId) {
   const isEdit = !!tpl;
   const name = tpl ? tpl.name : '';
   const ticker = tpl ? tpl.ticker : '';
-  const feeRate = tpl ? tpl.feeRate : 0.001425;
+  const feeRate = tpl ? tpl.feeRate : 0.0001425;
 
   wrap.innerHTML = `<div class="tpl-editor" id="tplEditorPanel">
     <h3 style="color:#a78bfa;margin-bottom:10px">${isEdit ? '編輯範本' : '新增範本'}</h3>
@@ -4022,7 +4022,7 @@ function openTplEditor(editId) {
         <input type="text" id="tplEdTicker" value="${ticker}" placeholder="2330" style="text-transform:uppercase">
       </div>
       <div class="form-group" style="min-width:120px">
-        <label>手續費率 (小數)</label>
+        <label>手續費率 (預設萬分之1.425)</label>
         <input type="number" id="tplEdFeeRate" value="${feeRate}" step="0.000001">
       </div>
     </div>
@@ -4120,7 +4120,7 @@ window.tplInvOwnerChanged = function(iid) {
 function saveTplEditor(editId) {
   const name = document.getElementById('tplEdName').value.trim();
   const ticker = document.getElementById('tplEdTicker').value.trim().toUpperCase();
-  const feeRate = parseFloat(document.getElementById('tplEdFeeRate').value) || 0.001425;
+  const feeRate = parseFloat(document.getElementById('tplEdFeeRate').value) || 0.0001425;
 
   if (!name) { alert('請輸入範本名稱'); return; }
   if (!ticker) { alert('請輸入股票代號'); return; }
