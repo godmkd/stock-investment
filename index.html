@@ -1463,7 +1463,7 @@ function fmtTWD2(n) { return 'NT$' + (n || 0).toLocaleString('en-US', { minimumF
 function fmtPct(n) { return (n >= 0 ? '+' : '') + (n || 0).toFixed(2) + '%'; }
 // 台股手續費計算: 四捨五入, 最低1元
 function calcTWFee(amount, feeRate) {
-  const fee = Math.round(amount * (feeRate || 0.001425));
+  const fee = Math.max(1, Math.round(amount * (feeRate || 0.001425)));
   return Math.max(fee, 1);
 }
 function plClass(n) { return (n || 0) >= 0 ? 'pos' : 'neg'; }
@@ -2186,7 +2186,7 @@ function submitTWTrades() {
     const shares = parseFloat(row.querySelector('.twTradeShares').value);
     const price = parseFloat(row.querySelector('.twTradePrice').value);
     const feeInput = row.querySelector('.twTradeFee').value.trim();
-    const fee = feeInput !== '' ? parseFloat(feeInput) || 0 : Math.floor(shares * price * 0.001425);
+    const fee = feeInput !== '' ? parseFloat(feeInput) || 0 : Math.max(1, Math.floor(shares * price * 0.001425));
     const adjust = parseFloat(row.querySelector('.twTradeAdjust').value) || 0;
     if (!ticker || !shares || !price) return;
     data.push({ id: Date.now() + count, date, ticker, type, shares, price, fee, adjust });
@@ -2428,7 +2428,7 @@ function submitTWQITrade() {
     const shares = parseFloat(parts[1]);
     const price = parseFloat(parts[2]);
     if (isNaN(shares) || isNaN(price) || shares <= 0 || price <= 0) { errors.push(`行 ${i+1}: 數值不正確 "${line}"`); return; }
-    const fee = parts.length >= 4 ? parseFloat(parts[3]) : Math.floor(shares * price * feeRate);
+    const fee = parts.length >= 4 ? parseFloat(parts[3]) : Math.max(1, Math.floor(shares * price * feeRate));
     data.push({ id: Date.now() + count, date, ticker: resolved, type, shares, price, fee: fee || 0, adjust: 0 });
     count++;
   });
@@ -3712,75 +3712,80 @@ function addDCAEntry() {
       </div>
     </div>
     <div style="margin-top:10px">
-      <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
-        <div class="form-group" style="margin-bottom:0;flex:1;min-width:120px">
-          <label>戶名</label>
-          <select class="dcaOwnerSelect" data-entry="${id}" style="width:100%;padding:6px 10px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;background:rgba(255,255,255,0.08);color:#fff;font-size:0.9em">
-            <option value="">-- 選擇戶名 --</option>
-            ${allOwners.map(o => `<option value="${o}">${o}</option>`).join('')}
-          </select>
-        </div>
-        <div class="form-group" style="margin-bottom:0;flex:1;min-width:120px">
-          <label>帳戶</label>
-          <select class="dcaAccountSelect" data-entry="${id}" style="width:100%;padding:6px 10px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;background:rgba(255,255,255,0.08);color:#fff;font-size:0.9em">
-            <option value="">-- 先選戶名 --</option>
-          </select>
-        </div>
-        <div class="form-group" style="margin-bottom:0;min-width:100px">
-          <label>金額</label>
-          <input type="number" class="dcaAmount" placeholder="10000" data-entry="${id}" style="width:100px;text-align:right;padding:6px 10px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;background:rgba(255,255,255,0.08);color:#fbbf24;font-weight:600;font-size:0.9em">
-        </div>
-      </div>
-      <div class="dca-account-calc" data-entry="${id}" style="color:#888;font-size:0.75em;margin-top:4px">-</div>
+      <div style="font-size:0.85em;color:#888;margin-bottom:6px">投資人：</div>
+      <div class="dcaPersonRows" data-entry="${id}"></div>
+      <button class="btn btn-secondary" onclick="addDCAPerson(${id})" style="padding:3px 10px;font-size:0.78em;margin-top:4px">＋ 新增投資人</button>
     </div>
   `;
 
   container.appendChild(div);
 
-  // Add calc listeners
   const tickerInput = div.querySelector('.dcaTicker');
   const priceInput = div.querySelector('.dcaPrice');
   const feeRateInput = div.querySelector('.dcaFeeRate');
-  const amountInput = div.querySelector('.dcaAmount');
   const marketLabel = div.querySelector('.dcaMarketLabel');
-  const ownerSelect = div.querySelector('.dcaOwnerSelect');
-  const accountSelect = div.querySelector('.dcaAccountSelect');
 
-  // Owner change -> filter accounts
-  ownerSelect.addEventListener('change', () => {
-    const owner = ownerSelect.value;
-    const ownerAccs = accounts.filter(a => (a.owner || a.name) === owner);
-    accountSelect.innerHTML = ownerAccs.length > 0
-      ? ownerAccs.map(a => `<option value="${a.id}">${a.bank || a.name}${a.market ? (a.market==='us'?' 🇺🇸':' 🇹🇼') : ''}</option>`).join('')
-      : '<option value="">無帳戶</option>';
-  });
-
-  // 輸入股票代號時自動判讀市場、更新手續費率
   tickerInput.addEventListener('input', () => {
     const t = tickerInput.value.trim();
     const m = detectMarket(t);
     feeRateInput.value = getDefaultFeeRate(m);
     if (marketLabel) marketLabel.textContent = m === 'tw' ? '🇹🇼 台股' : '🇺🇸 美股';
-    updateCalc();
   });
 
-  const updateCalc = () => {
-    const price = parseFloat(priceInput.value) || 0;
-    const feeRate = parseFloat(feeRateInput.value) || 0;
-    const amount = parseFloat(amountInput.value) || 0;
-    const calcEl = div.querySelector(`.dca-account-calc[data-entry="${id}"]`);
-    if (price > 0 && amount > 0) {
-      const shares = Math.floor(amount / price);
-      const fee = amount * feeRate;
-      if (calcEl) calcEl.textContent = `${shares} 股，手續費 ${fee.toFixed(2)}`;
-    } else {
-      if (calcEl) calcEl.textContent = '-';
-    }
-  };
+  // Auto add first person
+  addDCAPerson(id);
+}
 
-  priceInput.addEventListener('input', updateCalc);
-  feeRateInput.addEventListener('input', updateCalc);
-  amountInput.addEventListener('input', updateCalc);
+let dcaPersonId = 0;
+function addDCAPerson(entryId) {
+  const pid = ++dcaPersonId;
+  const container = document.querySelector(`.dcaPersonRows[data-entry="${entryId}"]`);
+  if (!container) return;
+  const allOwners = [...new Set(accounts.map(a => a.owner || a.name))];
+  const sel = 'padding:4px 8px;border:1px solid rgba(255,255,255,0.15);border-radius:4px;background:rgba(255,255,255,0.08);color:#fff;font-size:0.85em';
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;gap:6px;align-items:center;margin-bottom:4px;flex-wrap:wrap';
+  row.id = `dcaPerson_${pid}`;
+  row.innerHTML = `
+    <select class="dcaOwnerSel" data-pid="${pid}" onchange="dcaOwnerChanged(${entryId},${pid})" style="${sel};min-width:80px">
+      <option value="">戶名</option>
+      ${allOwners.map(o => `<option value="${o}">${o}</option>`).join('')}
+    </select>
+    <select class="dcaAccSel" data-pid="${pid}" style="${sel};min-width:100px"><option value="">帳戶</option></select>
+    <input type="number" class="dcaAmt" data-pid="${pid}" placeholder="金額" style="${sel};width:90px;color:#fbbf24;font-weight:600;text-align:right">
+    <span class="dcaCalc" data-pid="${pid}" style="font-size:0.75em;color:#888;min-width:80px">-</span>
+    <button onclick="document.getElementById('dcaPerson_${pid}').remove()" style="background:none;border:none;color:#f87171;cursor:pointer;font-size:0.9em">✕</button>
+  `;
+  container.appendChild(row);
+
+  // Add calc listener
+  row.querySelector('.dcaAmt').addEventListener('input', () => updateDCAPersonCalc(entryId, pid));
+}
+
+window.dcaOwnerChanged = function(entryId, pid) {
+  const row = document.getElementById(`dcaPerson_${pid}`);
+  if (!row) return;
+  const owner = row.querySelector('.dcaOwnerSel').value;
+  const accSel = row.querySelector('.dcaAccSel');
+  const ownerAccs = accounts.filter(a => (a.owner || a.name) === owner && a.bank);
+  accSel.innerHTML = ownerAccs.length > 0
+    ? ownerAccs.map(a => `<option value="${a.id}">${a.bank}${a.market ? (a.market==='us'?' 🇺🇸':' 🇹🇼') : ''}</option>`).join('')
+    : '<option value="">無帳戶</option>';
+};
+
+function updateDCAPersonCalc(entryId, pid) {
+  const entry = document.getElementById(`dca-entry-${entryId}`);
+  const row = document.getElementById(`dcaPerson_${pid}`);
+  if (!entry || !row) return;
+  const price = parseFloat(entry.querySelector('.dcaPrice')?.value) || 0;
+  const amount = parseFloat(row.querySelector('.dcaAmt')?.value) || 0;
+  const calc = row.querySelector('.dcaCalc');
+  if (price > 0 && amount > 0) {
+    const shares = Math.floor(amount / price);
+    calc.textContent = `≈ ${shares} 股`;
+  } else {
+    calc.textContent = '-';
+  }
 }
 
 function submitAllDCA() {
@@ -3797,37 +3802,27 @@ function submitAllDCA() {
 
     if (!price || price <= 0) { alert(`第 ${idx + 1} 個交易日：請輸入股價`); return; }
 
-    const accid = entry.querySelector('.dcaAccountSelect')?.value;
-    if (!accid) { alert(`第 ${idx + 1} 筆：請選擇帳戶`); return; }
-    const amount = parseFloat(entry.querySelector('.dcaAmount').value) || 0;
-    if (amount <= 0) return;
+    // Multiple people per entry
+    const personRows = entry.querySelectorAll('.dcaPersonRows > div');
+    if (personRows.length === 0) { alert(`第 ${idx + 1} 筆：請新增投資人`); return; }
 
-    // 股數無條件捨去（向下取整）
-    const shares = Math.floor(amount / price);
-    // 實際花費 = 股數 × 股價（捨去的部分留作現金）
-    const actualCost = shares * price;
-    const fee = actualCost * feeRate;
-
-    let trades = getAccountData(accid, market, 'trades');
-    trades.push({
-      id: Date.now() + Math.random(),
-      date,
-      ticker,
-      type: 'buy',
-      shares,
-      price,
-      fee,
-      // 記錄投入金額和實際花費的差異（捨去的現金）
-      investAmount: amount,
-      actualCost: actualCost + fee
+    personRows.forEach(row => {
+      const accid = row.querySelector('.dcaAccSel')?.value;
+      if (!accid) return;
+      const amount = parseFloat(row.querySelector('.dcaAmt')?.value) || 0;
+      if (amount <= 0) return;
+      const shares = Math.floor(amount / price);
+      const actualCost = shares * price;
+      const fee = market === 'tw' ? Math.max(1, Math.floor(actualCost * feeRate)) : actualCost * feeRate;
+      let trades = getAccountData(accid, market, 'trades');
+      trades.push({
+        id: Date.now() + Math.floor(Math.random()*10000),
+        date, ticker, type: 'buy', shares, price, fee,
+        investAmount: amount, actualCost: actualCost + fee
+      });
+      saveAccountData(accid, market, 'trades', trades);
+      totalTrades++;
     });
-    saveAccountData(accid, market, 'trades', trades);
-
-    // Save last amounts
-    dcaLastAmounts[ticker] = { [accid]: amount };
-    localStorage.setItem('dca_last_amounts', JSON.stringify(dcaLastAmounts));
-
-    totalTrades++;
   });
 
   if (totalTrades === 0) { alert('沒有有效的交易'); return; }
