@@ -38,7 +38,8 @@
   .tab-btn:hover { color: #aaa; }
   .tab-btn.active { color: #34d399; border-bottom-color: #34d399; }
 
-  .content-area { padding: 24px 32px; display: none; overflow: hidden; max-width: 100%; }
+  .content-area { padding: 24px 32px; display: none; overflow-x: hidden; overflow-y: auto; max-width: 100%; }
+  canvas { max-width: 100% !important; }
   .content-area.active { display: block; }
 
   .summary { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; margin-bottom: 20px; overflow: hidden; }
@@ -2904,11 +2905,14 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
   let allAnalysis = [];
   let totalMV = 0, totalCash = 0, totalFundIn = 0, totalIncome = 0;
 
+  const fmtMkt = market === 'tw' ? fmtTWD : fmt;
+
   const accountSummaries = marketAccounts.map(acc => {
     const trades = getAccountData(acc.id, market, 'trades');
     const funds = getAccountData(acc.id, market, 'funds');
     const income = getAccountData(acc.id, market, 'income');
     const analysis = analyzeStocks(trades, market, income);
+    const ownPct = (acc.ownership_pct ?? 100) / 100;
 
     let mv = 0;
     for (const s of analysis) if (!s.isClosed) mv += s.marketValue;
@@ -2919,13 +2923,27 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
     cash += incTotal;
     const fundInfo = getAccountFunds(acc.id, market);
 
-    totalMV += mv;
-    totalCash += cash;
-    totalFundIn += fundInfo.netAmount;
-    totalIncome += incTotal;
-    allAnalysis = allAnalysis.concat(analysis.filter(s => !s.isClosed));
+    // Apply ownership percentage
+    const wmv = mv * ownPct;
+    const wcash = cash * ownPct;
+    const wfundIn = fundInfo.netAmount * ownPct;
+    const wIncome = incTotal * ownPct;
 
-    return { acc, mv, cash, netWorth: mv + cash, fundIn: fundInfo.netAmount, income: incTotal, analysis };
+    totalMV += wmv;
+    totalCash += wcash;
+    totalFundIn += wfundIn;
+    totalIncome += wIncome;
+
+    // Weight individual stock analysis for merged holdings
+    const weightedAnalysis = analysis.filter(s => !s.isClosed).map(s => ({
+      ...s,
+      shares: s.shares * ownPct,
+      marketValue: s.marketValue * ownPct,
+      netCost: s.netCost * ownPct
+    }));
+    allAnalysis = allAnalysis.concat(weightedAnalysis);
+
+    return { acc, mv: wmv, cash: wcash, netWorth: wmv + wcash, fundIn: wfundIn, income: wIncome, analysis, ownPct };
   });
 
   const totalNetWorth = totalMV + totalCash;
@@ -2943,12 +2961,38 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
   });
   const mergedList = Object.values(merged).sort((a, b) => b.marketValue - a.marketValue);
 
+  // Prepare pie chart data (stocks + cash)
+  const pieLabels = mergedList.map(s => s.ticker);
+  const pieData = mergedList.map(s => s.marketValue);
+  if (totalCash > 0) { pieLabels.push('現金'); pieData.push(totalCash); }
+  const pieColors = pieLabels.map((_, i) => chartColors[i % chartColors.length]);
+  const pieCanvasId = `mktOvwChart_${market}`;
+
+  // Prepare trend chart
+  const trendCanvasId = `mktOvwTrend_${market}`;
+  const accountIds = marketAccounts.map(a => a.id);
+
+  // Destroy previous chart instances
+  destroyChart(`mktOvwPie_${market}`);
+  destroyChart(`mktOvwTrend_${market}`);
+
   container.innerHTML = `
     <div class="summary">
-      <div class="card"><div class="label">總淨值</div><div class="value blue">${fmt(totalNetWorth)}</div></div>
-      <div class="card"><div class="label">持倉市值</div><div class="value">${fmt(totalMV)}</div></div>
-      <div class="card"><div class="label">現金</div><div class="value yellow">${fmt(totalCash)}</div></div>
-      <div class="card"><div class="label">總損益</div><div class="value ${totalPL>=0?'green':'red'}">${fmt(totalPL)} (${totalRet.toFixed(2)}%)</div></div>
+      <div class="card"><div class="label">總淨值</div><div class="value blue">${fmtMkt(totalNetWorth)}</div></div>
+      <div class="card"><div class="label">持倉市值</div><div class="value">${fmtMkt(totalMV)}</div></div>
+      <div class="card"><div class="label">現金</div><div class="value yellow">${fmtMkt(totalCash)}</div></div>
+      <div class="card"><div class="label">總損益</div><div class="value ${totalPL>=0?'green':'red'}">${fmtMkt(totalPL)} (${totalRet.toFixed(2)}%)</div></div>
+    </div>
+
+    ${pieData.length > 0 ? `
+    <div style="max-width:360px;margin:0 auto 20px">
+      <h3 style="text-align:center;font-size:0.9em;color:#aaa;margin-bottom:8px">${flag} 持倉配置</h3>
+      <canvas id="${pieCanvasId}"></canvas>
+    </div>` : ''}
+
+    <div style="margin-bottom:20px">
+      <h3 style="font-size:0.9em;color:#aaa;margin-bottom:8px">${flag} 資產趨勢</h3>
+      <canvas id="${trendCanvasId}" style="width:100%;max-height:300px"></canvas>
     </div>
 
     <div class="table-container" style="margin-top:16px">
@@ -2957,10 +3001,11 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
       <tbody>${accountSummaries.map(s => {
         const pl = s.netWorth - s.fundIn;
         const ret = s.fundIn > 0 ? (pl / s.fundIn * 100).toFixed(2) : '0.00';
+        const pctLabel = s.ownPct < 1 ? ` (${(s.ownPct*100).toFixed(0)}%)` : '';
         return `<tr>
-          <td><strong>${s.acc.bank || s.acc.name}</strong></td>
-          <td>${fmt(s.mv)}</td><td>${fmt(s.cash)}</td><td>${fmt(s.netWorth)}</td>
-          <td>${fmt(s.fundIn)}</td><td class="${pl>=0?'green':'red'}">${fmt(pl)} (${ret}%)</td>
+          <td><strong>${s.acc.bank || s.acc.name}${pctLabel}</strong></td>
+          <td>${fmtMkt(s.mv)}</td><td>${fmtMkt(s.cash)}</td><td>${fmtMkt(s.netWorth)}</td>
+          <td>${fmtMkt(s.fundIn)}</td><td class="${pl>=0?'green':'red'}">${fmtMkt(pl)} (${ret}%)</td>
         </tr>`;
       }).join('')}</tbody></table>
     </div>
@@ -2972,10 +3017,33 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
       <tbody>${mergedList.map(s => {
         const pct = totalMV > 0 ? (s.marketValue / totalMV * 100).toFixed(1) : '0.0';
         const priceStr = s.currentPrice ? (market==='tw'?fmtTWD2(s.currentPrice):fmt(s.currentPrice)) : '-';
-        return `<tr><td><strong>${s.ticker}</strong></td><td>${priceStr}</td><td>${s.shares.toFixed(2)}</td><td>${fmt(s.marketValue)}</td><td>${pct}%</td></tr>`;
+        return `<tr><td><strong>${s.ticker}</strong></td><td>${priceStr}</td><td>${s.shares.toFixed(2)}</td><td>${fmtMkt(s.marketValue)}</td><td>${pct}%</td></tr>`;
       }).join('')}</tbody></table>
     </div>` : ''}
   `;
+
+  // Render pie chart
+  if (pieData.length > 0) {
+    chartInstances[`mktOvwPie_${market}`] = createDoughnutChart(pieCanvasId, pieLabels, pieData, pieColors);
+  }
+
+  // Render trend chart
+  const { start, end } = getDateRange('1y');
+  const histData = buildHistoricalData(accountIds, market, start, end);
+  if (histData.dates.length > 0) {
+    const trendColor = market === 'tw' ? '#f97316' : '#3b82f6';
+    const trendBg = market === 'tw' ? 'rgba(249,115,22,0.1)' : 'rgba(59,130,246,0.1)';
+    const trendLabel = market === 'tw' ? '台股持倉市值 (TWD)' : '美股持倉市值 (USD)';
+    chartInstances[`mktOvwTrend_${market}`] = createTrendChart(trendCanvasId, [{
+      label: trendLabel,
+      data: histData.values,
+      borderColor: trendColor,
+      backgroundColor: trendBg,
+      fill: true,
+      tension: 0.3,
+      pointRadius: 0
+    }], histData.dates);
+  }
 }
 
 function renderUSTab() {
@@ -3605,7 +3673,8 @@ function addDCAEntry() {
   div.className = 'dca-entry';
   div.id = `dca-entry-${id}`;
 
-  const dcaAccounts = accounts;
+  // Get unique owners
+  const allOwners = [...new Set(accounts.map(a => a.owner || a.name))];
 
   div.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center">
@@ -3631,22 +3700,26 @@ function addDCAEntry() {
       </div>
     </div>
     <div style="margin-top:10px">
-      ${dcaAccounts.length > 0
-        ? dcaAccounts.map(acc => `
-          <div class="dca-account">
-            <input type="checkbox" class="dcaAccountCheck" data-entry="${id}" data-accid="${acc.id}" checked>
-            <div class="dca-account-info">
-              <div style="font-weight:500">${acc.name}</div>
-              
-            </div>
-            <div class="dca-account-amount">
-              <input type="number" class="dcaAmount" placeholder="10000" data-entry="${id}" data-accid="${acc.id}" style="width:100px;text-align:right;background:transparent;border:none;color:#fbbf24;font-weight:600">
-            </div>
-            <div class="dca-account-calc" data-entry="${id}" data-accid="${acc.id}">-</div>
-          </div>
-        `).join('')
-        : '<div style="color:#666;font-size:0.9em">無帳戶</div>'
-      }
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+        <div class="form-group" style="margin-bottom:0;flex:1;min-width:120px">
+          <label>戶名</label>
+          <select class="dcaOwnerSelect" data-entry="${id}" style="width:100%;padding:6px 10px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;background:rgba(255,255,255,0.08);color:#fff;font-size:0.9em">
+            <option value="">-- 選擇戶名 --</option>
+            ${allOwners.map(o => `<option value="${o}">${o}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group" style="margin-bottom:0;flex:1;min-width:120px">
+          <label>帳戶</label>
+          <select class="dcaAccountSelect" data-entry="${id}" style="width:100%;padding:6px 10px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;background:rgba(255,255,255,0.08);color:#fff;font-size:0.9em">
+            <option value="">-- 先選戶名 --</option>
+          </select>
+        </div>
+        <div class="form-group" style="margin-bottom:0;min-width:100px">
+          <label>金額</label>
+          <input type="number" class="dcaAmount" placeholder="10000" data-entry="${id}" style="width:100px;text-align:right;padding:6px 10px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;background:rgba(255,255,255,0.08);color:#fbbf24;font-weight:600;font-size:0.9em">
+        </div>
+      </div>
+      <div class="dca-account-calc" data-entry="${id}" style="color:#888;font-size:0.75em;margin-top:4px">-</div>
     </div>
   `;
 
@@ -3656,8 +3729,19 @@ function addDCAEntry() {
   const tickerInput = div.querySelector('.dcaTicker');
   const priceInput = div.querySelector('.dcaPrice');
   const feeRateInput = div.querySelector('.dcaFeeRate');
-  const amountInputs = div.querySelectorAll('.dcaAmount');
+  const amountInput = div.querySelector('.dcaAmount');
   const marketLabel = div.querySelector('.dcaMarketLabel');
+  const ownerSelect = div.querySelector('.dcaOwnerSelect');
+  const accountSelect = div.querySelector('.dcaAccountSelect');
+
+  // Owner change -> filter accounts
+  ownerSelect.addEventListener('change', () => {
+    const owner = ownerSelect.value;
+    const ownerAccs = accounts.filter(a => (a.owner || a.name) === owner);
+    accountSelect.innerHTML = ownerAccs.length > 0
+      ? ownerAccs.map(a => `<option value="${a.id}">${a.bank || a.name}${a.market ? (a.market==='us'?' 🇺🇸':' 🇹🇼') : ''}</option>`).join('')
+      : '<option value="">無帳戶</option>';
+  });
 
   // 輸入股票代號時自動判讀市場、更新手續費率
   tickerInput.addEventListener('input', () => {
@@ -3671,23 +3755,20 @@ function addDCAEntry() {
   const updateCalc = () => {
     const price = parseFloat(priceInput.value) || 0;
     const feeRate = parseFloat(feeRateInput.value) || 0;
-    amountInputs.forEach(amtInput => {
-      const amount = parseFloat(amtInput.value) || 0;
-      const accid = amtInput.dataset.accid;
-      if (price > 0 && amount > 0) {
-        const shares = Math.floor(amount / price);
-        const fee = amount * feeRate;
-        const calcEl = div.querySelector(`[data-entry="${id}"][data-accid="${accid}"]`);
-        if (calcEl && calcEl.classList.contains('dca-account-calc')) {
-          calcEl.textContent = `${shares} 股，手續費 ${fee.toFixed(2)}`;
-        }
-      }
-    });
+    const amount = parseFloat(amountInput.value) || 0;
+    const calcEl = div.querySelector(`.dca-account-calc[data-entry="${id}"]`);
+    if (price > 0 && amount > 0) {
+      const shares = Math.floor(amount / price);
+      const fee = amount * feeRate;
+      if (calcEl) calcEl.textContent = `${shares} 股，手續費 ${fee.toFixed(2)}`;
+    } else {
+      if (calcEl) calcEl.textContent = '-';
+    }
   };
 
   priceInput.addEventListener('input', updateCalc);
   feeRateInput.addEventListener('input', updateCalc);
-  amountInputs.forEach(input => input.addEventListener('input', updateCalc));
+  amountInput.addEventListener('input', updateCalc);
 }
 
 function submitAllDCA() {
@@ -3704,40 +3785,37 @@ function submitAllDCA() {
 
     if (!price || price <= 0) { alert(`第 ${idx + 1} 個交易日：請輸入股價`); return; }
 
-    const checks = entry.querySelectorAll('.dcaAccountCheck:checked');
-    checks.forEach(check => {
-      const accid = check.dataset.accid;
-      const amountEl = entry.querySelector(`.dcaAmount[data-accid="${accid}"]`);
-      const amount = parseFloat(amountEl.value) || 0;
-      if (amount <= 0) return;
+    const accid = entry.querySelector('.dcaAccountSelect')?.value;
+    if (!accid) { alert(`第 ${idx + 1} 筆：請選擇帳戶`); return; }
+    const amount = parseFloat(entry.querySelector('.dcaAmount').value) || 0;
+    if (amount <= 0) return;
 
-      // 股數無條件捨去（向下取整）
-      const shares = Math.floor(amount / price);
-      // 實際花費 = 股數 × 股價（捨去的部分留作現金）
-      const actualCost = shares * price;
-      const fee = actualCost * feeRate;
+    // 股數無條件捨去（向下取整）
+    const shares = Math.floor(amount / price);
+    // 實際花費 = 股數 × 股價（捨去的部分留作現金）
+    const actualCost = shares * price;
+    const fee = actualCost * feeRate;
 
-      let trades = getAccountData(accid, market, 'trades');
-      trades.push({
-        id: Date.now() + Math.random(),
-        date,
-        ticker,
-        type: 'buy',
-        shares,
-        price,
-        fee,
-        // 記錄投入金額和實際花費的差異（捨去的現金）
-        investAmount: amount,
-        actualCost: actualCost + fee
-      });
-      saveAccountData(accid, market, 'trades', trades);
-
-      // Save last amounts
-      dcaLastAmounts[ticker] = { [accid]: amount };
-      localStorage.setItem('dca_last_amounts', JSON.stringify(dcaLastAmounts));
-
-      totalTrades++;
+    let trades = getAccountData(accid, market, 'trades');
+    trades.push({
+      id: Date.now() + Math.random(),
+      date,
+      ticker,
+      type: 'buy',
+      shares,
+      price,
+      fee,
+      // 記錄投入金額和實際花費的差異（捨去的現金）
+      investAmount: amount,
+      actualCost: actualCost + fee
     });
+    saveAccountData(accid, market, 'trades', trades);
+
+    // Save last amounts
+    dcaLastAmounts[ticker] = { [accid]: amount };
+    localStorage.setItem('dca_last_amounts', JSON.stringify(dcaLastAmounts));
+
+    totalTrades++;
   });
 
   if (totalTrades === 0) { alert('沒有有效的交易'); return; }
