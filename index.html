@@ -391,9 +391,10 @@
 <div id="us" class="content-area">
   <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
     <h2>🇺🇸 美股投資組合</h2>
-    <div>
-      <label style="color:#888;font-size:0.9em;margin-right:8px">帳戶：</label>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <label style="color:#888;font-size:0.9em">帳戶：</label>
       <select id="usAccountSelect" onchange="renderUSTab()" style="padding:6px 12px;border-radius:6px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.08);color:#fff;font-size:0.9em;cursor:pointer;"></select>
+      <button class="btn btn-secondary" onclick="addBankAccount('us')" style="padding:4px 10px;font-size:0.82em">＋ 新增銀行帳戶</button>
     </div>
   </div>
 
@@ -509,9 +510,10 @@
 <div id="tw" class="content-area">
   <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
     <h2>🇹🇼 台股投資組合</h2>
-    <div>
-      <label style="color:#888;font-size:0.9em;margin-right:8px">帳戶：</label>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <label style="color:#888;font-size:0.9em">帳戶：</label>
       <select id="twAccountSelect" onchange="renderTWTab()" style="padding:6px 12px;border-radius:6px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.08);color:#fff;font-size:0.9em;cursor:pointer;"></select>
+      <button class="btn btn-secondary" onclick="addBankAccount('tw')" style="padding:4px 10px;font-size:0.82em">＋ 新增銀行帳戶</button>
     </div>
   </div>
 
@@ -675,29 +677,22 @@
   <script>if(localStorage.getItem('hide_tutorial_accounts'))document.getElementById('tutorial-accounts').style.display='none';</script>
 
   <div class="add-form">
-    <h2>新增帳戶</h2>
+    <h2>新增持有人</h2>
     <div style="display: flex; gap: 10px; margin-bottom: 12px; align-items: flex-end; flex-wrap: wrap;">
       <div class="form-group" style="flex:1;min-width:120px">
-        <label>帳戶名稱（即戶名）</label>
+        <label>持有人姓名</label>
         <input id="newAccountName" type="text" placeholder="例：王小明">
       </div>
-      <div class="form-group" style="flex:1;min-width:120px">
-        <label>銀行/券商</label>
-        <input id="newAccountBank" type="text" placeholder="例：永豐、富邦">
-      </div>
-      <div class="form-group" style="width:100px">
-        <label>持有比例 %</label>
-        <input id="newAccountPct" type="number" value="100" min="0" max="100" step="1">
-      </div>
-      <button class="btn btn-add" onclick="addAccount()">✅ 新增帳戶</button>
+      <button class="btn btn-add" onclick="addAccount()">✅ 新增持有人</button>
     </div>
+    <div style="font-size:0.82em;color:#888;margin-bottom:12px">💡 銀行帳戶請到「美股」或「台股」頁面中新增</div>
   </div>
 
   <div class="table-container">
-    <div class="table-header"><h2>現有帳戶</h2></div>
+    <div class="table-header"><h2>持有人 &amp; 銀行帳戶</h2></div>
     <div style="overflow-x:auto">
       <table>
-        <thead><tr><th>帳戶名稱</th><th>銀行/券商</th><th>持有比例</th><th>資料筆數</th><th>關聯房產</th><th>操作</th></tr></thead>
+        <thead><tr><th>持有人</th><th>銀行/券商</th><th>市場</th><th>持有比例</th><th>資料筆數</th><th>操作</th></tr></thead>
         <tbody id="accountsBody"></tbody>
       </table>
     </div>
@@ -1313,20 +1308,30 @@ function calcTWFee(amount, feeRate) {
 function plClass(n) { return (n || 0) >= 0 ? 'pos' : 'neg'; }
 
 // ===== Account Selectors =====
+function accountLabel(a) {
+  const parts = [a.owner || a.name];
+  if (a.bank) parts.push(a.bank);
+  if (a.ownership_pct != null && a.ownership_pct !== 100) parts.push(a.ownership_pct + '%');
+  return parts.join(' - ');
+}
+
 function renderAccountSelectors() {
+  const usAccounts = accounts.filter(a => !a.market || a.market === 'us' || a.bank);
+  const twAccounts = accounts.filter(a => !a.market || a.market === 'tw' || a.bank);
+
   const usSelect = document.getElementById('usAccountSelect');
-  usSelect.innerHTML = accounts.map(a => `<option value="${a.id}">${a.name}</option>`).join('');
-  if (accounts.length > 0 && (!currentUSAccount || !accounts.find(a => a.id === currentUSAccount))) {
-    currentUSAccount = accounts[0].id;
+  usSelect.innerHTML = usAccounts.map(a => `<option value="${a.id}">${accountLabel(a)}</option>`).join('') || '<option>無帳戶</option>';
+  if (usAccounts.length > 0 && (!currentUSAccount || !usAccounts.find(a => a.id === currentUSAccount))) {
+    currentUSAccount = usAccounts[0].id;
   }
   if (currentUSAccount) usSelect.value = currentUSAccount;
 
   const twSelect = document.getElementById('twAccountSelect');
-  twSelect.innerHTML = accounts.length > 0
-    ? accounts.map(a => `<option value="${a.id}">${a.name}</option>`).join('')
+  twSelect.innerHTML = twAccounts.length > 0
+    ? twAccounts.map(a => `<option value="${a.id}">${accountLabel(a)}</option>`).join('')
     : '<option>無帳戶</option>';
-  if (accounts.length > 0 && (!currentTWAccount || !accounts.find(a => a.id === currentTWAccount))) {
-    currentTWAccount = accounts[0].id;
+  if (twAccounts.length > 0 && (!currentTWAccount || !twAccounts.find(a => a.id === currentTWAccount))) {
+    currentTWAccount = twAccounts[0].id;
   }
   if (currentTWAccount) {
     twSelect.value = currentTWAccount;
@@ -3615,21 +3620,75 @@ function renderMortgageTab() {
 // ===== Accounts Tab =====
 function addAccount() {
   const name = document.getElementById('newAccountName').value.trim();
-  const bank = (document.getElementById('newAccountBank')?.value || '').trim();
-  const pct = parseFloat(document.getElementById('newAccountPct')?.value) || 100;
-
-  if (!name) { alert('請輸入帳戶名稱'); return; }
-
+  if (!name) { alert('請輸入持有人姓名'); return; }
+  // Check if person already exists (as a name-only entry with no bank)
   const id = Date.now().toString();
-  accounts.push({ id, name, owner: name, bank, ownership_pct: pct });
+  accounts.push({ id, name, owner: name, bank: '', market: '', ownership_pct: 100 });
   saveAccounts();
-
   document.getElementById('newAccountName').value = '';
-  if (document.getElementById('newAccountBank')) document.getElementById('newAccountBank').value = '';
-  if (document.getElementById('newAccountPct')) document.getElementById('newAccountPct').value = '100';
-
   renderAccountSelectors();
   renderAccountsTab();
+}
+
+function addBankAccount(market) {
+  const owners = [...new Set(accounts.map(a => a.owner || a.name))];
+  if (!owners.length) { alert('請先到「帳戶管理」新增持有人'); return; }
+  const ownerOptions = owners.map(o => `<option value="${o}">${o}</option>`).join('');
+  const marketLabel = market === 'us' ? '美股' : '台股';
+
+  // Create a simple prompt dialog
+  const dialog = document.createElement('div');
+  dialog.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:10000;display:flex;align-items:center;justify-content:center';
+  dialog.innerHTML = `<div style="background:#1e1e2e;border:1px solid rgba(255,255,255,0.15);border-radius:12px;padding:24px;max-width:360px;width:90%">
+    <h3 style="color:#67e8f9;margin-bottom:16px">新增${marketLabel}銀行帳戶</h3>
+    <div style="margin-bottom:12px">
+      <label style="color:#888;font-size:0.85em;display:block;margin-bottom:4px">持有人</label>
+      <select id="_bankOwner" style="width:100%;padding:8px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;background:rgba(255,255,255,0.08);color:#fff">${ownerOptions}</select>
+    </div>
+    <div style="margin-bottom:12px">
+      <label style="color:#888;font-size:0.85em;display:block;margin-bottom:4px">銀行/券商名稱</label>
+      <input id="_bankName" placeholder="例：${market==='us'?'Firstrade、嘉信':'國泰、富邦'}" style="width:100%;padding:8px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;background:rgba(255,255,255,0.08);color:#fff;box-sizing:border-box">
+    </div>
+    <div style="margin-bottom:16px">
+      <label style="color:#888;font-size:0.85em;display:block;margin-bottom:4px">持有比例 %</label>
+      <input id="_bankPct" type="number" value="100" min="0" max="100" style="width:80px;padding:8px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;background:rgba(255,255,255,0.08);color:#fff">
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn btn-secondary" onclick="this.closest('div[style*=fixed]').remove()">取消</button>
+      <button class="btn btn-add" onclick="confirmAddBank('${market}')">確定新增</button>
+    </div>
+  </div>`;
+  document.body.appendChild(dialog);
+  document.getElementById('_bankName').focus();
+}
+
+function confirmAddBank(market) {
+  const owner = document.getElementById('_bankOwner').value;
+  const bank = document.getElementById('_bankName').value.trim();
+  const pct = parseFloat(document.getElementById('_bankPct').value) || 100;
+  if (!bank) { alert('請輸入銀行/券商名稱'); return; }
+
+  const id = Date.now().toString();
+  accounts.push({ id, name: owner, owner, bank, market, ownership_pct: pct });
+  saveAccounts();
+  renderAccountSelectors();
+  renderAccountsTab();
+
+  // Select the new account
+  if (market === 'us') {
+    currentUSAccount = id;
+    const sel = document.getElementById('usAccountSelect');
+    if (sel) sel.value = id;
+    renderUSTab();
+  } else {
+    currentTWAccount = id;
+    const sel = document.getElementById('twAccountSelect');
+    if (sel) sel.value = id;
+    renderTWTab();
+  }
+
+  // Close dialog
+  document.querySelector('div[style*="fixed"][style*="10000"]')?.remove();
 }
 
 function deleteAccount(id) {
@@ -3913,26 +3972,27 @@ async function clearAllData() {
 }
 
 function renderAccountsTab() {
-  // 更新表頭
   const thead = document.querySelector('#accountsBody')?.closest('table')?.querySelector('thead');
-  if (thead) thead.innerHTML = '<tr><th>帳戶名稱</th><th>銀行/券商</th><th>持有比例</th><th>資料筆數</th><th>關聯房產</th><th>操作</th></tr>';
+  if (thead) thead.innerHTML = '<tr><th>持有人</th><th>銀行/券商</th><th>市場</th><th>持有比例</th><th>資料筆數</th><th>操作</th></tr>';
 
   const inputStyle = 'padding:4px 6px;border:1px solid rgba(255,255,255,0.15);border-radius:4px;background:rgba(255,255,255,0.08);color:#fff;font-size:0.9em';
+  const marketLabel = m => m === 'us' ? '🇺🇸 美股' : m === 'tw' ? '🇹🇼 台股' : '通用';
+
   document.getElementById('accountsBody').innerHTML = accounts.map(acc => {
     const usTrades = getAccountData(acc.id, 'us', 'trades');
     const twTrades = getAccountData(acc.id, 'tw', 'trades');
     const usFunds = getAccountData(acc.id, 'us', 'funds');
     const twFunds = getAccountData(acc.id, 'tw', 'funds');
-    const accMortgages = mortgages.filter(m => m.accountId === acc.id);
+    const totalRecords = usTrades.length + twTrades.length + usFunds.length + twFunds.length;
     return `<tr>
-      <td><input value="${acc.name}" style="width:120px;${inputStyle};font-weight:600" onchange="const a=accounts.find(x=>x.id==='${acc.id}');a.name=this.value;a.owner=this.value;saveAccounts()"></td>
-      <td><input value="${acc.bank || ''}" style="width:90px;${inputStyle}" placeholder="券商" onchange="const a=accounts.find(x=>x.id==='${acc.id}');a.bank=this.value;saveAccounts()"></td>
-      <td><input type="number" value="${acc.ownership_pct ?? 100}" style="width:60px;${inputStyle};text-align:center" min="0" max="100" step="1" onchange="const a=accounts.find(x=>x.id==='${acc.id}');a.ownership_pct=parseFloat(this.value)||100;saveAccounts()">%</td>
-      <td style="font-size:0.8em;color:#888">🇺🇸 ${usTrades.length + usFunds.length} 筆 · 🇹🇼 ${twTrades.length + twFunds.length} 筆</td>
-      <td style="font-size:0.8em;color:#888">${accMortgages.length > 0 ? accMortgages.map(m => '🏠 ' + m.name).join(', ') : '-'}</td>
+      <td><input value="${acc.owner || acc.name}" style="width:100px;${inputStyle};font-weight:600" onchange="const a=accounts.find(x=>x.id==='${acc.id}');a.name=this.value;a.owner=this.value;saveAccounts()"></td>
+      <td>${acc.bank ? `<input value="${acc.bank}" style="width:90px;${inputStyle}" onchange="const a=accounts.find(x=>x.id==='${acc.id}');a.bank=this.value;saveAccounts()">` : '<span style="color:#666">-</span>'}</td>
+      <td style="font-size:0.82em">${marketLabel(acc.market)}</td>
+      <td>${acc.bank ? `<input type="number" value="${acc.ownership_pct ?? 100}" style="width:55px;${inputStyle};text-align:center" min="0" max="100" step="1" onchange="const a=accounts.find(x=>x.id==='${acc.id}');a.ownership_pct=parseFloat(this.value)||100;saveAccounts()">%` : '-'}</td>
+      <td style="font-size:0.8em;color:#888">${totalRecords} 筆</td>
       <td><button class="btn-danger" onclick="deleteAccount('${acc.id}')">刪除</button></td>
     </tr>`;
-  }).join('') || '<tr><td colspan="6" style="text-align:center;color:#666;padding:20px">尚無帳戶</td></tr>';
+  }).join('') || '<tr><td colspan="6" style="text-align:center;color:#666;padding:20px">尚無帳戶，請先新增持有人</td></tr>';
 }
 
 // ===== Charts =====
