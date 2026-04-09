@@ -2159,10 +2159,9 @@ function analyzeStocks(trades, market, income) {
         totalBuyFee += fee;
         shares += t.shares;
       } else {
-        const sellShares = Math.min(t.shares, shares);
-        totalSold += sellShares * t.price;
+        totalSold += t.shares * t.price;
         totalSellFee += fee;
-        shares -= sellShares;
+        shares -= t.shares;
       }
     }
 
