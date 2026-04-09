@@ -3077,15 +3077,20 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
   destroyChart(`mktOvwPie_${market}`);
   destroyChart(`mktOvwTrend_${market}`);
 
+  const rawNW = rawMV + rawCash;
+  const rawPL = rawNW - rawFundIn;
+  const rawRet = rawFundIn > 0 ? (rawPL / rawFundIn * 100) : 0;
+  const rawIncome = accountSummaries.reduce((s, a) => s + (a.income / a.ownPct), 0); // undo weighting
+
   container.innerHTML = `
     <div class="summary">
-      <div class="card"><div class="label">總淨值</div><div class="value blue">${fmtMkt(totalNetWorth)}</div></div>
-      <div class="card"><div class="label">持倉市值</div><div class="value">${fmtMkt(totalMV)}</div></div>
-      <div class="card"><div class="label">現金</div><div class="value yellow">${fmtMkt(totalCash)}</div></div>
-      <div class="card"><div class="label">投入金額</div><div class="value">${fmtMkt(totalFundIn)}</div></div>
-      <div class="card"><div class="label">累計配息</div><div class="value ${totalIncome>=0?'green':'red'}">+${fmtMkt(totalIncome)}</div></div>
-      <div class="card"><div class="label">總損益</div><div class="value ${totalPL>=0?'green':'red'}">${totalPL>=0?'+':''}${fmtMkt(totalPL)}</div></div>
-      <div class="card"><div class="label">投報率</div><div class="value ${totalRet>=0?'green':'red'}">${totalRet>=0?'+':''}${totalRet.toFixed(2)}%</div></div>
+      <div class="card"><div class="label">總淨值</div><div class="value blue">${fmtMkt(rawNW)}</div></div>
+      <div class="card"><div class="label">持倉市值</div><div class="value">${fmtMkt(rawMV)}</div></div>
+      <div class="card"><div class="label">現金</div><div class="value yellow">${fmtMkt(rawCash)}</div></div>
+      <div class="card"><div class="label">投入金額</div><div class="value">${fmtMkt(rawFundIn)}</div></div>
+      <div class="card"><div class="label">累計配息</div><div class="value ${rawIncome>=0?'green':'red'}">+${fmtMkt(rawIncome)}</div></div>
+      <div class="card"><div class="label">總損益</div><div class="value ${rawPL>=0?'green':'red'}">${rawPL>=0?'+':''}${fmtMkt(rawPL)}</div></div>
+      <div class="card"><div class="label">投報率</div><div class="value ${rawRet>=0?'green':'red'}">${rawRet>=0?'+':''}${rawRet.toFixed(2)}%</div></div>
     </div>
 
     ${pieData.length > 0 ? `
