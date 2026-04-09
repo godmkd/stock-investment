@@ -2998,6 +2998,7 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
 
   let allAnalysis = [];
   let totalMV = 0, totalCash = 0, totalFundIn = 0, totalIncome = 0;
+  let rawMV = 0, rawCash = 0, rawFundIn = 0;
 
   const fmtMkt = market === 'tw' ? fmtTWD : fmt;
 
@@ -3016,6 +3017,11 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
     const incTotal = income.reduce((s, i) => s + i.amount, 0);
     cash += incTotal;
     const fundInfo = getAccountFunds(acc.id, market);
+
+    // Raw totals (before ownership %)
+    rawMV += mv;
+    rawCash += cash;
+    rawFundIn += fundInfo.netAmount;
 
     // Apply ownership percentage
     const wmv = mv * ownPct;
@@ -3037,7 +3043,7 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
     }));
     allAnalysis = allAnalysis.concat(weightedAnalysis);
 
-    return { acc, mv: wmv, cash: wcash, netWorth: wmv + wcash, fundIn: wfundIn, income: wIncome, analysis, ownPct };
+    return { acc, mv: wmv, cash: wcash, netWorth: wmv + wcash, fundIn: wfundIn, income: wIncome, rawMv: mv, rawCash: cash, rawNw: mv+cash, analysis, ownPct };
   });
 
   const totalNetWorth = totalMV + totalCash;
@@ -3070,13 +3076,24 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
   destroyChart(`mktOvwPie_${market}`);
   destroyChart(`mktOvwTrend_${market}`);
 
+  const rawNW = rawMV + rawCash;
+  const rawPL = rawNW - rawFundIn;
+  const rawRet = rawFundIn > 0 ? (rawPL / rawFundIn * 100) : 0;
+  const hasWeighted = marketAccounts.some(a => (a.ownership_pct??100) !== 100);
+
   container.innerHTML = `
     <div class="summary">
-      <div class="card"><div class="label">總淨值</div><div class="value blue">${fmtMkt(totalNetWorth)}</div></div>
-      <div class="card"><div class="label">持倉市值</div><div class="value">${fmtMkt(totalMV)}</div></div>
-      <div class="card"><div class="label">現金</div><div class="value yellow">${fmtMkt(totalCash)}</div></div>
-      <div class="card"><div class="label">總損益</div><div class="value ${totalPL>=0?'green':'red'}">${fmtMkt(totalPL)} (${totalRet.toFixed(2)}%)</div></div>
+      <div class="card"><div class="label">原始總淨值</div><div class="value blue">${fmtMkt(rawNW)}</div></div>
+      <div class="card"><div class="label">原始市值</div><div class="value">${fmtMkt(rawMV)}</div></div>
+      <div class="card"><div class="label">原始現金</div><div class="value yellow">${fmtMkt(rawCash)}</div></div>
+      <div class="card"><div class="label">原始損益</div><div class="value ${rawPL>=0?'green':'red'}">${fmtMkt(rawPL)} (${rawRet.toFixed(2)}%)</div></div>
     </div>
+    ${hasWeighted ? `<div class="summary" style="margin-top:8px">
+      <div class="card"><div class="label">持有淨值 (按比例)</div><div class="value blue">${fmtMkt(totalNetWorth)}</div></div>
+      <div class="card"><div class="label">持有市值</div><div class="value">${fmtMkt(totalMV)}</div></div>
+      <div class="card"><div class="label">持有現金</div><div class="value yellow">${fmtMkt(totalCash)}</div></div>
+      <div class="card"><div class="label">持有損益</div><div class="value ${totalPL>=0?'green':'red'}">${fmtMkt(totalPL)} (${totalRet.toFixed(2)}%)</div></div>
+    </div>` : ''}
 
     ${pieData.length > 0 ? `
     <div style="max-width:360px;margin:0 auto 20px">
@@ -3091,14 +3108,14 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
 
     <div class="table-container" style="margin-top:16px">
       <div class="table-header"><h3>${flag} 各帳戶摘要</h3></div>
-      <table><thead><tr><th>帳戶</th><th>持倉市值</th><th>現金</th><th>淨值</th><th>投入</th><th>損益</th></tr></thead>
+      <table><thead><tr><th>帳戶</th><th>比例</th><th>原始淨值</th><th>持有淨值</th><th>投入</th><th>損益</th></tr></thead>
       <tbody>${accountSummaries.map(s => {
         const pl = s.netWorth - s.fundIn;
         const ret = s.fundIn > 0 ? (pl / s.fundIn * 100).toFixed(2) : '0.00';
-        const pctLabel = s.ownPct < 1 ? ` (${(s.ownPct*100).toFixed(0)}%)` : '';
         return `<tr>
-          <td><strong>${s.acc.bank || s.acc.name}${pctLabel}</strong></td>
-          <td>${fmtMkt(s.mv)}</td><td>${fmtMkt(s.cash)}</td><td>${fmtMkt(s.netWorth)}</td>
+          <td><strong>${s.acc.bank || s.acc.name}</strong></td>
+          <td>${(s.ownPct*100).toFixed(0)}%</td>
+          <td>${fmtMkt(s.rawNw)}</td><td>${fmtMkt(s.netWorth)}</td>
           <td>${fmtMkt(s.fundIn)}</td><td class="${pl>=0?'green':'red'}">${fmtMkt(pl)} (${ret}%)</td>
         </tr>`;
       }).join('')}</tbody></table>
