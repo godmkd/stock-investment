@@ -2064,11 +2064,11 @@ function addUSTradeRow() {
     </div>
     <div class="form-group" style="flex:1 1 100px">
       <label>股數</label>
-      <input type="number" class="usTradeShares" placeholder="100" step="any" data-row="${id}">
+      <input type="number" class="usTradeShares" placeholder="100" step="any" data-row="${id}" oninput="calcUSTradePreview(${id})">
     </div>
     <div class="form-group" style="flex:1 1 100px">
       <label>單價 USD</label>
-      <input type="number" class="usTradePrice" placeholder="150" step="0.01" data-row="${id}">
+      <input type="number" class="usTradePrice" placeholder="150" step="0.01" data-row="${id}" oninput="calcUSTradePreview(${id})">
     </div>
     <div class="form-group" style="flex:1 1 80px">
       <label>手續費 USD</label>
@@ -2078,10 +2078,36 @@ function addUSTradeRow() {
       <label>微調金額 USD</label>
       <input type="number" class="usTradeAdjust" placeholder="0" step="0.01" data-row="${id}">
     </div>
+    <span id="usTradeCalc_${id}" style="font-size:0.75em;color:#888;min-width:80px;align-self:center"></span>
     <button class="btn-remove-row" onclick="this.parentElement.remove()">✕</button>
   `;
   container.appendChild(div);
 }
+
+window.calcUSTradePreview = function(id) {
+  const row = document.querySelector(`.usTradeShares[data-row="${id}"]`)?.closest('.multi-row');
+  if (!row) return;
+  const shares = parseFloat(row.querySelector('.usTradeShares')?.value) || 0;
+  const price = parseFloat(row.querySelector('.usTradePrice')?.value) || 0;
+  const el = document.getElementById('usTradeCalc_' + id);
+  if (el && shares > 0 && price > 0) {
+    const amt = shares * price;
+    el.textContent = `= $${amt.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+  } else if (el) el.textContent = '';
+};
+
+window.calcTWTradePreview = function(id) {
+  const row = document.querySelector(`.twTradeShares[data-row="${id}"]`)?.closest('.multi-row');
+  if (!row) return;
+  const shares = parseFloat(row.querySelector('.twTradeShares')?.value) || 0;
+  const price = parseFloat(row.querySelector('.twTradePrice')?.value) || 0;
+  const el = document.getElementById('twTradeCalc_' + id);
+  if (el && shares > 0 && price > 0) {
+    const amt = Math.floor(shares * price);
+    const fee = Math.max(1, Math.floor(amt * 0.001425));
+    el.textContent = `= NT$${amt.toLocaleString()} 手續費$${fee}`;
+  } else if (el) el.textContent = '';
+};
 
 function submitUSTrades() {
   const rows = document.querySelectorAll('#usTradeRows .multi-row');
@@ -2246,11 +2272,11 @@ function addTWTradeRow() {
     </div>
     <div class="form-group" style="flex:1 1 100px">
       <label>股數</label>
-      <input type="number" class="twTradeShares" placeholder="100" step="any" data-row="${id}">
+      <input type="number" class="twTradeShares" placeholder="100" step="any" data-row="${id}" oninput="calcTWTradePreview(${id})">
     </div>
     <div class="form-group" style="flex:1 1 110px">
       <label>單價 TWD</label>
-      <input type="number" class="twTradePrice" placeholder="500" step="0.1" data-row="${id}">
+      <input type="number" class="twTradePrice" placeholder="500" step="0.1" data-row="${id}" oninput="calcTWTradePreview(${id})">
     </div>
     <div class="form-group" style="flex:1 1 100px">
       <label>手續費 TWD</label>
@@ -2260,6 +2286,7 @@ function addTWTradeRow() {
       <label>微調金額 TWD</label>
       <input type="number" class="twTradeAdjust" placeholder="0" step="0.01" data-row="${id}">
     </div>
+    <span id="twTradeCalc_${id}" style="font-size:0.75em;color:#888;min-width:80px;align-self:center"></span>
     <button class="btn-remove-row" onclick="this.parentElement.remove()">✕</button>
   `;
   container.appendChild(div);
