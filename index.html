@@ -394,7 +394,9 @@
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
       <label style="color:#888;font-size:0.9em">帳戶：</label>
       <select id="usAccountSelect" onchange="renderUSTab()" style="padding:6px 12px;border-radius:6px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.08);color:#fff;font-size:0.9em;cursor:pointer;"></select>
-      <button class="btn btn-secondary" onclick="addBankAccount('us')" style="padding:4px 10px;font-size:0.82em">＋ 新增銀行帳戶</button>
+      <button class="btn btn-secondary" onclick="addBankAccount('us')" style="padding:4px 10px;font-size:0.82em">＋ 新增</button>
+      <button class="btn btn-secondary" onclick="editBankAccount('us')" style="padding:4px 10px;font-size:0.82em">✏️ 編輯</button>
+      <button class="btn-danger" onclick="deleteBankAccount('us')" style="padding:4px 10px;font-size:0.82em;border-radius:6px;border:none;cursor:pointer">🗑️ 刪除</button>
     </div>
   </div>
 
@@ -513,7 +515,9 @@
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
       <label style="color:#888;font-size:0.9em">帳戶：</label>
       <select id="twAccountSelect" onchange="renderTWTab()" style="padding:6px 12px;border-radius:6px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.08);color:#fff;font-size:0.9em;cursor:pointer;"></select>
-      <button class="btn btn-secondary" onclick="addBankAccount('tw')" style="padding:4px 10px;font-size:0.82em">＋ 新增銀行帳戶</button>
+      <button class="btn btn-secondary" onclick="addBankAccount('tw')" style="padding:4px 10px;font-size:0.82em">＋ 新增</button>
+      <button class="btn btn-secondary" onclick="editBankAccount('tw')" style="padding:4px 10px;font-size:0.82em">✏️ 編輯</button>
+      <button class="btn-danger" onclick="deleteBankAccount('tw')" style="padding:4px 10px;font-size:0.82em;border-radius:6px;border:none;cursor:pointer">🗑️ 刪除</button>
     </div>
   </div>
 
@@ -3689,6 +3693,65 @@ function confirmAddBank(market) {
 
   // Close dialog
   document.querySelector('div[style*="fixed"][style*="10000"]')?.remove();
+}
+
+function editBankAccount(market) {
+  const accId = market === 'us' ? currentUSAccount : currentTWAccount;
+  const acc = accounts.find(a => a.id === accId);
+  if (!acc) { alert('請先選擇帳戶'); return; }
+
+  const owners = [...new Set(accounts.map(a => a.owner || a.name))];
+  const ownerOptions = owners.map(o => `<option value="${o}" ${o===acc.owner?'selected':''}>${o}</option>`).join('');
+  const marketLabel = market === 'us' ? '美股' : '台股';
+
+  const dialog = document.createElement('div');
+  dialog.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:10000;display:flex;align-items:center;justify-content:center';
+  dialog.innerHTML = `<div style="background:#1e1e2e;border:1px solid rgba(255,255,255,0.15);border-radius:12px;padding:24px;max-width:360px;width:90%">
+    <h3 style="color:#67e8f9;margin-bottom:16px">編輯${marketLabel}銀行帳戶</h3>
+    <div style="margin-bottom:12px">
+      <label style="color:#888;font-size:0.85em;display:block;margin-bottom:4px">持有人</label>
+      <select id="_editOwner" style="width:100%;padding:8px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;background:rgba(255,255,255,0.08);color:#fff">${ownerOptions}</select>
+    </div>
+    <div style="margin-bottom:12px">
+      <label style="color:#888;font-size:0.85em;display:block;margin-bottom:4px">銀行/券商名稱</label>
+      <input id="_editBank" value="${acc.bank||''}" style="width:100%;padding:8px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;background:rgba(255,255,255,0.08);color:#fff;box-sizing:border-box">
+    </div>
+    <div style="margin-bottom:16px">
+      <label style="color:#888;font-size:0.85em;display:block;margin-bottom:4px">持有比例 %</label>
+      <input id="_editPct" type="number" value="${acc.ownership_pct??100}" min="0" max="100" style="width:80px;padding:8px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;background:rgba(255,255,255,0.08);color:#fff">
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn btn-secondary" onclick="this.closest('div[style*=fixed]').remove()">取消</button>
+      <button class="btn btn-add" onclick="confirmEditBank('${accId}','${market}')">確定儲存</button>
+    </div>
+  </div>`;
+  document.body.appendChild(dialog);
+}
+
+function confirmEditBank(accId, market) {
+  const acc = accounts.find(a => a.id === accId);
+  if (!acc) return;
+  acc.owner = document.getElementById('_editOwner').value;
+  acc.name = acc.owner;
+  acc.bank = document.getElementById('_editBank').value.trim();
+  acc.ownership_pct = parseFloat(document.getElementById('_editPct').value) || 100;
+  saveAccounts();
+  renderAccountSelectors();
+  renderAccountsTab();
+  if (market === 'us') renderUSTab();
+  else renderTWTab();
+  document.querySelector('div[style*="fixed"][style*="10000"]')?.remove();
+}
+
+function deleteBankAccount(market) {
+  const accId = market === 'us' ? currentUSAccount : currentTWAccount;
+  const acc = accounts.find(a => a.id === accId);
+  if (!acc) { alert('請先選擇帳戶'); return; }
+  const label = accountLabel(acc);
+  if (!confirm('確定刪除「' + label + '」及其所有交易資料？')) return;
+  deleteAccount(accId);
+  if (market === 'us') renderUSTab();
+  else renderTWTab();
 }
 
 function deleteAccount(id) {
