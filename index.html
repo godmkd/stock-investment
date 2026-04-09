@@ -205,6 +205,10 @@
     .multi-row .form-group { flex: 1 1 auto; min-width: 100%; }
     .dca-row { grid-template-columns: 1fr; }
   }
+  @media (max-width: 768px) {
+    .stock-buysell-grid { grid-template-columns: 1fr !important; }
+    .stock-buysell-grid > div:first-child { border-right: none !important; border-bottom: 1px solid rgba(255,255,255,0.04); }
+  }
   /* 手機橫式：善用寬度，保持橫排 */
   @media (max-height: 500px) and (orientation: landscape) {
     .multi-row { flex-direction: row; flex-wrap: wrap; }
@@ -464,7 +468,7 @@
 
   <div class="table-container">
     <div class="table-header">
-      <h2>📋 持倉明細 <span class="help-tip">!<span class="help-text">現均價 = 扣除配息後的淨成本均價。已清倉的股票會顯示在下方（半透明）。</span></span></h2>
+      <h2>📋 持倉明細 <span id="usPositionsCount" style="font-size:0.8em;color:#888"></span> <span class="help-tip">!<span class="help-text">現均價 = 扣除配息後的淨成本均價。已清倉的股票會顯示在下方（半透明）。</span></span></h2>
     </div>
     <div style="overflow-x:auto">
       <table>
@@ -480,30 +484,20 @@
     <div class="table-header" onclick="document.getElementById('usFundsPanel').style.display=document.getElementById('usFundsPanel').style.display==='none'?'block':'none';this.querySelector('.arrow').classList.toggle('open')" style="cursor:pointer;user-select:none">
       <div style="display:flex;align-items:center;gap:8px">
         <span class="arrow" style="transition:transform 0.2s">▼</span>
-        <h2>💰 資金紀錄</h2>
+        <h2>💰 資金紀錄 <span id="usFundsCount" style="font-size:0.8em;color:#888"></span></h2>
       </div>
     </div>
-    <div id="usFundsPanel" style="overflow-x:auto">
-      <table>
-        <thead><tr><th>日期</th><th>類型</th><th>金額 USD</th><th>支付 TWD</th><th>匯率</th><th>備註</th><th></th></tr></thead>
-        <tbody id="usFundsBody"></tbody>
-      </table>
-    </div>
+    <div id="usFundsPanel"></div>
   </div>
 
   <div class="table-container">
     <div class="table-header" onclick="document.getElementById('usIncomePanel').style.display=document.getElementById('usIncomePanel').style.display==='none'?'block':'none';this.querySelector('.arrow').classList.toggle('open')" style="cursor:pointer;user-select:none">
       <div style="display:flex;align-items:center;gap:8px">
         <span class="arrow" style="transition:transform 0.2s">▼</span>
-        <h2>📊 股利 & 利息紀錄</h2>
+        <h2>📊 股利 & 利息紀錄 <span id="usIncomeCount" style="font-size:0.8em;color:#888"></span></h2>
       </div>
     </div>
-    <div id="usIncomePanel" style="overflow-x:auto">
-      <table>
-        <thead><tr><th>日期</th><th>類型</th><th>來源</th><th>金額 USD</th><th>備註</th><th></th></tr></thead>
-        <tbody id="usIncomeBody"></tbody>
-      </table>
-    </div>
+    <div id="usIncomePanel"></div>
   </div>
 
   <div id="usStockSections"></div>
@@ -575,7 +569,7 @@
   </div>
 
   <div class="table-container">
-    <div class="table-header"><h2>📋 持倉明細 <span class="help-tip">!<span class="help-text">現均價 = 扣除配息後的淨成本均價。已清倉的股票會顯示在下方（半透明）。</span></span></h2></div>
+    <div class="table-header"><h2>📋 持倉明細 <span id="twPositionsCount" style="font-size:0.8em;color:#888"></span> <span class="help-tip">!<span class="help-text">現均價 = 扣除配息後的淨成本均價。已清倉的股票會顯示在下方（半透明）。</span></span></h2></div>
     <div style="overflow-x:auto">
       <table>
         <thead>
@@ -590,30 +584,20 @@
     <div class="table-header" onclick="document.getElementById('twFundsPanel').style.display=document.getElementById('twFundsPanel').style.display==='none'?'block':'none';this.querySelector('.arrow').classList.toggle('open')" style="cursor:pointer;user-select:none">
       <div style="display:flex;align-items:center;gap:8px">
         <span class="arrow" style="transition:transform 0.2s">▼</span>
-        <h2>💰 資金紀錄</h2>
+        <h2>💰 資金紀錄 <span id="twFundsCount" style="font-size:0.8em;color:#888"></span></h2>
       </div>
     </div>
-    <div id="twFundsPanel" style="overflow-x:auto">
-      <table>
-        <thead><tr><th>日期</th><th>類型</th><th>金額 TWD</th><th>備註</th><th></th></tr></thead>
-        <tbody id="twFundsBody"></tbody>
-      </table>
-    </div>
+    <div id="twFundsPanel"></div>
   </div>
 
   <div class="table-container">
     <div class="table-header" onclick="document.getElementById('twIncomePanel').style.display=document.getElementById('twIncomePanel').style.display==='none'?'block':'none';this.querySelector('.arrow').classList.toggle('open')" style="cursor:pointer;user-select:none">
       <div style="display:flex;align-items:center;gap:8px">
         <span class="arrow" style="transition:transform 0.2s">▼</span>
-        <h2>📊 股利 & 利息紀錄</h2>
+        <h2>📊 股利 & 利息紀錄 <span id="twIncomeCount" style="font-size:0.8em;color:#888"></span></h2>
       </div>
     </div>
-    <div id="twIncomePanel" style="overflow-x:auto">
-      <table>
-        <thead><tr><th>日期</th><th>類型</th><th>來源</th><th>金額 TWD</th><th>備註</th><th></th></tr></thead>
-        <tbody id="twIncomeBody"></tbody>
-      </table>
-    </div>
+    <div id="twIncomePanel"></div>
   </div>
 
   <div id="twStockSections"></div>
@@ -2767,6 +2751,7 @@ function renderUSTab() {
   `;
 
   // Positions table
+  document.getElementById('usPositionsCount').textContent = analysis.length > 0 ? `(${analysis.length}檔)` : '';
   const tbody = document.getElementById('usPositionsBody');
   if (analysis.length === 0) {
     tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#666;padding:20px">尚無交易紀錄</td></tr>';
@@ -2789,38 +2774,34 @@ function renderUSTab() {
     }).join('');
   }
 
-  // Funds table
-  document.getElementById('usFundsBody').innerHTML = funds.length > 0
-    ? funds.map(f => {
-        const isDep = f.type === 'deposit';
-        return `<tr>
-          <td>${f.date}</td>
-          <td><span class="badge" style="background:rgba(${isDep ? '52,211,153' : '248,113,113'},0.15);color:${isDep ? '#34d399' : '#f87171'}">${isDep ? '存入' : '提出'}</span></td>
-          <td>${isDep ? '+' : '-'}${fmt(f.amount)}</td>
-          <td>${f.twdAmount ? fmtTWD(f.twdAmount) : '-'}</td>
-          <td>${f.rate ? f.rate.toFixed(3) : '-'}</td>
-          <td class="muted">${f.note || '-'}</td>
-          <td><button class="btn-danger" onclick="deleteUSFund(${f.id})">✕</button></td>
-        </tr>`;
-      }).join('')
-    : '<tr><td colspan="7" style="text-align:center;color:#666;padding:20px">尚無資金紀錄</td></tr>';
+  // Funds - split into deposits and withdrawals
+  document.getElementById('usFundsCount').textContent = funds.length > 0 ? `(${funds.length}筆)` : '';
+  const usDeposits = funds.filter(f => f.type === 'deposit');
+  const usWithdrawals = funds.filter(f => f.type !== 'deposit');
+  const usFundRowFn = (f) => {
+    const isDep = f.type === 'deposit';
+    return `<tr>
+      <td>${f.date}</td>
+      <td>${isDep ? '+' : '-'}${fmt(f.amount)}</td>
+      <td>${f.twdAmount ? fmtTWD(f.twdAmount) : '-'}</td>
+      <td>${f.rate ? f.rate.toFixed(3) : '-'}</td>
+      <td class="muted">${f.note || '-'}</td>
+      <td><button class="btn-danger" onclick="deleteUSFund(${f.id})">✕</button></td>
+    </tr>`;
+  };
+  document.getElementById('usFundsPanel').innerHTML = `
+    <div style="overflow-x:auto">
+      <h3 style="font-size:0.85em;color:#34d399;padding:10px 14px 4px;margin:0">🟢 存入 (${usDeposits.length}筆)</h3>
+      <table><thead><tr><th>日期</th><th>金額 USD</th><th>支付 TWD</th><th>匯率</th><th>備註</th><th></th></tr></thead>
+      <tbody>${usDeposits.length > 0 ? usDeposits.map(usFundRowFn).join('') : '<tr><td colspan="6" style="text-align:center;color:#666;padding:14px">尚無存入紀錄</td></tr>'}</tbody></table>
+      <h3 style="font-size:0.85em;color:#f87171;padding:10px 14px 4px;margin:0">🔴 提領 (${usWithdrawals.length}筆)</h3>
+      <table><thead><tr><th>日期</th><th>金額 USD</th><th>支付 TWD</th><th>匯率</th><th>備註</th><th></th></tr></thead>
+      <tbody>${usWithdrawals.length > 0 ? usWithdrawals.map(usFundRowFn).join('') : '<tr><td colspan="6" style="text-align:center;color:#666;padding:14px">尚無提領紀錄</td></tr>'}</tbody></table>
+    </div>`;
 
-  // Income table
-  document.getElementById('usIncomeBody').innerHTML = income.length > 0
-    ? income.map(item => {
-        const typeMap = { dividend: {label:'股利',color:'52,211,153',text:'#34d399'}, interest: {label:'利息',color:'103,232,249',text:'#67e8f9'}, tax: {label:'稅',color:'248,113,113',text:'#f87171'}, adjust: {label:'微調',color:'251,191,36',text:'#fbbf24'} };
-        const t = typeMap[item.type] || typeMap.dividend;
-        const isNeg = item.amount < 0;
-        return `<tr>
-          <td>${item.date}</td>
-          <td><span class="badge" style="background:rgba(${t.color},0.15);color:${t.text}">${t.label}</span></td>
-          <td><span style="color:#67e8f9">${item.source}</span></td>
-          <td><span class="${isNeg ? 'neg' : 'pos'}">${isNeg ? '' : '+'}${fmt(item.amount)}</span></td>
-          <td class="muted">${item.note || '-'}</td>
-          <td><button class="btn-danger" onclick="deleteUSIncome(${item.id})">✕</button></td>
-        </tr>`;
-      }).join('')
-    : '<tr><td colspan="6" style="text-align:center;color:#666;padding:20px">尚無股利紀錄</td></tr>';
+  // Income - split into 4 sub-sections
+  document.getElementById('usIncomeCount').textContent = income.length > 0 ? `(${income.length}筆)` : '';
+  renderIncomeSections('usIncomePanel', income, 'us');
 
   // Per-stock trade details (collapsible)
   renderStockSections('usStockSections', analysis, trades, 'us');
@@ -2962,6 +2943,7 @@ function renderTWTab() {
     </div>
   `;
 
+  document.getElementById('twPositionsCount').textContent = analysis.length > 0 ? `(${analysis.length}檔)` : '';
   const tbody = document.getElementById('twPositionsBody');
   if (analysis.length === 0) {
     tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#666;padding:20px">尚無交易紀錄</td></tr>';
@@ -2984,40 +2966,120 @@ function renderTWTab() {
     }).join('');
   }
 
-  document.getElementById('twFundsBody').innerHTML = funds.length > 0
-    ? funds.map(f => {
-        const isDep = f.type === 'deposit';
-        return `<tr>
-          <td>${f.date}</td>
-          <td><span class="badge" style="background:rgba(${isDep ? '52,211,153' : '248,113,113'},0.15);color:${isDep ? '#34d399' : '#f87171'}">${isDep ? '存入' : '提出'}</span></td>
-          <td>${isDep ? '+' : '-'}${fmtTWD(f.amount)}</td>
-          <td class="muted">${f.note || '-'}</td>
-          <td><button class="btn-danger" onclick="deleteTWFund(${f.id})">✕</button></td>
-        </tr>`;
-      }).join('')
-    : '<tr><td colspan="5" style="text-align:center;color:#666;padding:20px">尚無資金紀錄</td></tr>';
+  // Funds - split into deposits and withdrawals
+  document.getElementById('twFundsCount').textContent = funds.length > 0 ? `(${funds.length}筆)` : '';
+  const twDeposits = funds.filter(f => f.type === 'deposit');
+  const twWithdrawals = funds.filter(f => f.type !== 'deposit');
+  const twFundRowFn = (f) => {
+    const isDep = f.type === 'deposit';
+    return `<tr>
+      <td>${f.date}</td>
+      <td>${isDep ? '+' : '-'}${fmtTWD(f.amount)}</td>
+      <td class="muted">${f.note || '-'}</td>
+      <td><button class="btn-danger" onclick="deleteTWFund(${f.id})">✕</button></td>
+    </tr>`;
+  };
+  document.getElementById('twFundsPanel').innerHTML = `
+    <div style="overflow-x:auto">
+      <h3 style="font-size:0.85em;color:#34d399;padding:10px 14px 4px;margin:0">🟢 存入 (${twDeposits.length}筆)</h3>
+      <table><thead><tr><th>日期</th><th>金額 TWD</th><th>備註</th><th></th></tr></thead>
+      <tbody>${twDeposits.length > 0 ? twDeposits.map(twFundRowFn).join('') : '<tr><td colspan="4" style="text-align:center;color:#666;padding:14px">尚無存入紀錄</td></tr>'}</tbody></table>
+      <h3 style="font-size:0.85em;color:#f87171;padding:10px 14px 4px;margin:0">🔴 提領 (${twWithdrawals.length}筆)</h3>
+      <table><thead><tr><th>日期</th><th>金額 TWD</th><th>備註</th><th></th></tr></thead>
+      <tbody>${twWithdrawals.length > 0 ? twWithdrawals.map(twFundRowFn).join('') : '<tr><td colspan="4" style="text-align:center;color:#666;padding:14px">尚無提領紀錄</td></tr>'}</tbody></table>
+    </div>`;
 
-  document.getElementById('twIncomeBody').innerHTML = income.length > 0
-    ? income.map(item => {
-        const typeMap = { dividend: {label:'股利',color:'52,211,153',text:'#34d399'}, interest: {label:'利息',color:'103,232,249',text:'#67e8f9'}, tax: {label:'稅',color:'248,113,113',text:'#f87171'}, adjust: {label:'微調',color:'251,191,36',text:'#fbbf24'} };
-        const t = typeMap[item.type] || typeMap.dividend;
-        const isNeg = item.amount < 0;
-        return `<tr>
-          <td>${item.date}</td>
-          <td><span class="badge" style="background:rgba(${t.color},0.15);color:${t.text}">${t.label}</span></td>
-          <td><span style="color:#67e8f9">${item.source}</span></td>
-          <td><span class="${isNeg ? 'neg' : 'pos'}">${isNeg ? '' : '+'}${fmtTWD(item.amount)}</span></td>
-          <td class="muted">${item.note || '-'}</td>
-          <td><button class="btn-danger" onclick="deleteTWIncome(${item.id})">✕</button></td>
-        </tr>`;
-      }).join('')
-    : '<tr><td colspan="6" style="text-align:center;color:#666;padding:20px">尚無股利紀錄</td></tr>';
+  // Income - split into 4 sub-sections
+  document.getElementById('twIncomeCount').textContent = income.length > 0 ? `(${income.length}筆)` : '';
+  renderIncomeSections('twIncomePanel', income, 'tw');
 
   // Per-stock trade details (collapsible)
   renderStockSections('twStockSections', analysis, trades, 'tw');
 
   // Charts
   renderTWCharts();
+}
+
+// ===== Income Sub-Sections (shared by US & TW) =====
+function renderIncomeSections(panelId, income, market) {
+  const panel = document.getElementById(panelId);
+  if (!panel) return;
+  const isTW = market === 'tw';
+  const fmtAmt = isTW ? fmtTWD : fmt;
+  const deleteFn = isTW ? 'deleteTWIncome' : 'deleteUSIncome';
+  const currency = isTW ? 'TWD' : 'USD';
+
+  const dividends = income.filter(i => i.type === 'dividend');
+  const interests = income.filter(i => i.type === 'interest');
+  const taxes = income.filter(i => i.type === 'tax');
+  const adjusts = income.filter(i => i.type === 'adjust');
+
+  const typeMap = { dividend: {label:'股利',color:'52,211,153',text:'#34d399',icon:'🟢'}, interest: {label:'利息',color:'103,232,249',text:'#67e8f9',icon:'🔵'}, tax: {label:'稅',color:'248,113,113',text:'#f87171',icon:'🔴'}, adjust: {label:'微調',color:'251,191,36',text:'#fbbf24',icon:'🟡'} };
+
+  // Helper to render a simple row
+  const renderRow = (item) => {
+    const isNeg = item.amount < 0;
+    return `<tr>
+      <td>${item.date}</td>
+      <td><span style="color:#67e8f9">${item.source}</span></td>
+      <td><span class="${isNeg ? 'neg' : 'pos'}">${isNeg ? '' : '+'}${fmtAmt(item.amount)}</span></td>
+      <td class="muted">${item.note || '-'}</td>
+      <td><button class="btn-danger" onclick="${deleteFn}(${item.id})">✕</button></td>
+    </tr>`;
+  };
+
+  // Dividend section: grouped by source (ticker) with collapsible
+  let dividendHTML = '';
+  if (dividends.length > 0) {
+    const grouped = {};
+    for (const d of dividends) {
+      const key = d.source || 'Unknown';
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(d);
+    }
+    const tickers = Object.keys(grouped).sort();
+    dividendHTML = tickers.map(ticker => {
+      const items = grouped[ticker];
+      const total = items.reduce((s, i) => s + i.amount, 0);
+      return `<div style="margin-bottom:4px">
+        <div onclick="const p=this.nextElementSibling;p.style.display=p.style.display==='none'?'block':'none';this.querySelector('.arrow').classList.toggle('open')"
+             style="display:flex;justify-content:space-between;align-items:center;padding:6px 14px;cursor:pointer;background:rgba(52,211,153,0.05);border-radius:6px;user-select:none">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span class="arrow" style="color:#666;transition:transform 0.2s;display:inline-block;font-size:0.8em">▶</span>
+            <span style="color:#67e8f9;font-weight:600">${ticker}</span>
+            <span style="color:#888;font-size:0.8em">(${items.length}筆)</span>
+          </div>
+          <span class="pos" style="font-size:0.85em">+${fmtAmt(total)}</span>
+        </div>
+        <div style="display:none">
+          <table style="font-size:0.85em"><thead><tr><th>日期</th><th>來源</th><th>金額 ${currency}</th><th>備註</th><th></th></tr></thead>
+          <tbody>${items.map(renderRow).join('')}</tbody></table>
+        </div>
+      </div>`;
+    }).join('');
+  } else {
+    dividendHTML = '<div style="text-align:center;color:#666;padding:14px;font-size:0.85em">尚無股利紀錄</div>';
+  }
+
+  // Simple sub-section renderer for interest/tax/adjust
+  const renderSimpleSection = (items, type) => {
+    const t = typeMap[type];
+    if (items.length === 0) return `<div style="text-align:center;color:#666;padding:14px;font-size:0.85em">尚無${t.label}紀錄</div>`;
+    return `<div style="overflow-x:auto"><table style="font-size:0.85em"><thead><tr><th>日期</th><th>來源</th><th>金額 ${currency}</th><th>備註</th><th></th></tr></thead>
+      <tbody>${items.map(renderRow).join('')}</tbody></table></div>`;
+  };
+
+  panel.innerHTML = `
+    <div style="overflow-x:auto">
+      <h3 style="font-size:0.85em;color:${typeMap.dividend.text};padding:10px 14px 4px;margin:0">${typeMap.dividend.icon} 股利 (${dividends.length}筆)</h3>
+      ${dividendHTML}
+      <h3 style="font-size:0.85em;color:${typeMap.interest.text};padding:10px 14px 4px;margin:0">${typeMap.interest.icon} 利息 (${interests.length}筆)</h3>
+      ${renderSimpleSection(interests, 'interest')}
+      <h3 style="font-size:0.85em;color:${typeMap.tax.text};padding:10px 14px 4px;margin:0">${typeMap.tax.icon} 稅 (${taxes.length}筆)</h3>
+      ${renderSimpleSection(taxes, 'tax')}
+      <h3 style="font-size:0.85em;color:${typeMap.adjust.text};padding:10px 14px 4px;margin:0">${typeMap.adjust.icon} 微調 (${adjusts.length}筆)</h3>
+      ${renderSimpleSection(adjusts, 'adjust')}
+    </div>`;
 }
 
 // ===== Per-Stock Trade Details (collapsible) =====
@@ -3033,7 +3095,7 @@ function renderStockSections(containerId, analysis, trades, market) {
 
   el.innerHTML = `
     <div style="margin-top:20px;margin-bottom:16px">
-      <h2 style="color:#a78bfa">📜 個股交易紀錄</h2>
+      <h2 style="color:#a78bfa">📜 個股交易紀錄 <span style="font-size:0.8em;color:#888">(${analysis.length}檔)</span></h2>
     </div>
   ` + analysis.map(s => {
     // Match trades by normalized key (e.g., both "台積電" and "2330" → "2330")
@@ -3091,7 +3153,7 @@ function renderStockSections(containerId, analysis, trades, market) {
           ${retBadge}
         </div>
         <div style="display:none">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:0">
+          <div class="stock-buysell-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:0">
             <div style="border-right:1px solid rgba(255,255,255,0.04)">
               <h3 style="font-size:0.82em;color:#888;padding:10px 14px;border-bottom:1px solid rgba(255,255,255,0.06)">🟢 買入 (${buys.length} 筆，共 ${fmtAmt(s.totalBought)})</h3>
               <table style="font-size:0.82em"><thead><tr><th>日期</th><th>股數</th><th>單價</th><th>金額</th><th>手續費</th><th></th></tr></thead>
