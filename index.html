@@ -437,29 +437,28 @@
   </div>
 
   <div class="add-form">
-    <h2>💰 資金管理 <span class="help-tip">!<span class="help-text">記錄美元存入和提出。存入時可填匯率，系統會自動換算台幣金額，方便計算實際投入成本。</span></span></h2>
-    <div id="usFundRows"></div>
-    <div style="display:flex;gap:8px;margin-top:10px">
-      <button class="btn btn-secondary" onclick="addUSFundRow()">＋ 新增一行</button>
-      <button class="btn btn-add" onclick="submitUSFunds()">✅ 全部送出</button>
-    </div>
-  </div>
+    <h2 style="cursor:pointer;user-select:none" onclick="const b=document.getElementById('usOpsBody');b.style.display=b.style.display==='none'?'block':'none';this.querySelector('.ops-arrow').textContent=b.style.display==='none'?'▶':'▼'">📝 資料操作 <span class="ops-arrow" style="font-size:0.7em;margin-left:6px">▶</span></h2>
+    <div id="usOpsBody" style="display:none">
+      <h3 style="color:#67e8f9;font-size:0.9em;margin:12px 0 6px">💰 資金管理</h3>
+      <div id="usFundRows"></div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn btn-secondary" onclick="addUSFundRow()">＋ 新增一行</button>
+        <button class="btn btn-add" onclick="submitUSFunds()">✅ 送出</button>
+      </div>
 
-  <div class="add-form">
-    <h2>➕ 新增交易 <span class="help-tip">!<span class="help-text">支援一次新增多筆交易。日期格式彈性：2024.1.5、2024/01/05、20240105 都可以。</span></span></h2>
-    <div id="usTradeRows"></div>
-    <div style="display:flex;gap:8px;margin-top:10px">
-      <button class="btn btn-secondary" onclick="addUSTradeRow()">＋ 新增一行</button>
-      <button class="btn btn-add" onclick="submitUSTrades()">✅ 全部送出</button>
-    </div>
-  </div>
+      <h3 style="color:#67e8f9;font-size:0.9em;margin:16px 0 6px">➕ 新增交易</h3>
+      <div id="usTradeRows"></div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn btn-secondary" onclick="addUSTradeRow()">＋ 新增一行</button>
+        <button class="btn btn-add" onclick="submitUSTrades()">✅ 送出</button>
+      </div>
 
-  <div class="add-form">
-    <h2>💵 股利 &amp; 利息 <span class="help-tip">!<span class="help-text">除了股利和利息，也可記錄「稅」（自動轉負數）和「微調」（可正可負），用於調整帳戶餘額。</span></span></h2>
-    <div id="usIncomeRows"></div>
-    <div style="display:flex;gap:8px;margin-top:10px">
-      <button class="btn btn-secondary" onclick="addUSIncomeRow()">＋ 新增一行</button>
-      <button class="btn btn-add" onclick="submitUSIncome()">✅ 全部送出</button>
+      <h3 style="color:#67e8f9;font-size:0.9em;margin:16px 0 6px">💵 股利 &amp; 利息</h3>
+      <div id="usIncomeRows"></div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn btn-secondary" onclick="addUSIncomeRow()">＋ 新增一行</button>
+        <button class="btn btn-add" onclick="submitUSIncome()">✅ 送出</button>
+      </div>
     </div>
   </div>
 
@@ -550,29 +549,28 @@
   </div>
 
   <div class="add-form">
-    <h2>💰 資金管理 <span class="help-tip">!<span class="help-text">記錄台幣存入和提出。這是計算投報率的基礎：淨值 ÷ 淨投入 = 投報率。</span></span></h2>
-    <div id="twFundRows"></div>
-    <div style="display:flex;gap:8px;margin-top:10px">
-      <button class="btn btn-secondary" onclick="addTWFundRow()">＋ 新增一行</button>
-      <button class="btn btn-add" onclick="submitTWFunds()">✅ 全部送出</button>
-    </div>
-  </div>
+    <h2 style="cursor:pointer;user-select:none" onclick="const b=document.getElementById('twOpsBody');b.style.display=b.style.display==='none'?'block':'none';this.querySelector('.ops-arrow').textContent=b.style.display==='none'?'▶':'▼'">📝 資料操作 <span class="ops-arrow" style="font-size:0.7em;margin-left:6px">▶</span></h2>
+    <div id="twOpsBody" style="display:none">
+      <h3 style="color:#fb923c;font-size:0.9em;margin:12px 0 6px">💰 資金管理</h3>
+      <div id="twFundRows"></div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn btn-secondary" onclick="addTWFundRow()">＋ 新增一行</button>
+        <button class="btn btn-add" onclick="submitTWFunds()">✅ 送出</button>
+      </div>
 
-  <div class="add-form">
-    <h2>➕ 新增交易 <span class="help-tip">!<span class="help-text">支援一次新增多筆交易。日期格式彈性：2024.1.5、2024/01/05、20240105 都可以。</span></span></h2>
-    <div id="twTradeRows"></div>
-    <div style="display:flex;gap:8px;margin-top:10px">
-      <button class="btn btn-secondary" onclick="addTWTradeRow()">＋ 新增一行</button>
-      <button class="btn btn-add" onclick="submitTWTrades()">✅ 全部送出</button>
-    </div>
-  </div>
+      <h3 style="color:#fb923c;font-size:0.9em;margin:16px 0 6px">➕ 新增交易</h3>
+      <div id="twTradeRows"></div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn btn-secondary" onclick="addTWTradeRow()">＋ 新增一行</button>
+        <button class="btn btn-add" onclick="submitTWTrades()">✅ 送出</button>
+      </div>
 
-  <div class="add-form">
-    <h2>💵 股利 &amp; 利息 <span class="help-tip">!<span class="help-text">除了股利和利息，也可記錄「稅」（自動轉負數）和「微調」（可正可負），用於調整帳戶餘額。</span></span></h2>
-    <div id="twIncomeRows"></div>
-    <div style="display:flex;gap:8px;margin-top:10px">
-      <button class="btn btn-secondary" onclick="addTWIncomeRow()">＋ 新增一行</button>
-      <button class="btn btn-add" onclick="submitTWIncome()">✅ 全部送出</button>
+      <h3 style="color:#fb923c;font-size:0.9em;margin:16px 0 6px">💵 股利 &amp; 利息</h3>
+      <div id="twIncomeRows"></div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn btn-secondary" onclick="addTWIncomeRow()">＋ 新增一行</button>
+        <button class="btn btn-add" onclick="submitTWIncome()">✅ 送出</button>
+      </div>
     </div>
   </div>
 
@@ -2150,13 +2148,20 @@ function submitTWIncome() {
 }
 
 // ===== Analysis Functions =====
+function normalizeTickerKey(ticker, market) {
+  if (market === 'tw') return resolveTWTicker(ticker);
+  return ticker.toUpperCase().trim();
+}
+
 function analyzeStocks(trades, market, income) {
   income = income || [];
-  const tickers = [...new Set(trades.map(t => t.ticker))];
+  // Normalize tickers — e.g., "台積電" and "2330" both become "2330"
+  const normalizedTrades = trades.map(t => ({ ...t, _key: normalizeTickerKey(t.ticker, market) }));
+  const tickers = [...new Set(normalizedTrades.map(t => t._key))];
   const results = [];
 
   for (const ticker of tickers) {
-    const tickerTrades = [...trades.filter(t => t.ticker === ticker)]
+    const tickerTrades = [...normalizedTrades.filter(t => t._key === ticker)]
       .sort((a, b) => a.date.localeCompare(b.date));
 
     let shares = 0, totalBuyFee = 0, totalSellFee = 0;
@@ -2178,9 +2183,10 @@ function analyzeStocks(trades, market, income) {
       }
     }
 
-    // 該股票的配息總額（用 source 或 ticker 匹配）
+    // 該股票的配息總額（用 normalized key 匹配）
+    const origTickers = [...new Set(tickerTrades.map(t => t.ticker))];
     const tickerIncome = income
-      .filter(i => i.source === ticker || i.ticker === ticker)
+      .filter(i => origTickers.includes(i.source) || origTickers.includes(i.ticker) || normalizeTickerKey(i.source||'', market) === ticker)
       .reduce((s, i) => s + i.amount, 0);
 
     // 淨成本均價 = (買入花費 - 賣出收入 - 配息) / 剩餘股數
