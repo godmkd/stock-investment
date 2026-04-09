@@ -168,6 +168,57 @@
   .dca-account-amount { color: #fbbf24; font-weight: 600; font-size: 0.9em; }
   .dca-account-calc { color: #888; font-size: 0.75em; }
 
+  /* DCA Template styles */
+  .tpl-section {
+    background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px; padding: 18px; margin-bottom: 20px;
+  }
+  .tpl-section h2 { font-size: 1em; margin-bottom: 12px; color: #a78bfa; }
+  .tpl-list-item {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 14px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 8px; margin-bottom: 6px;
+  }
+  .tpl-list-item .tpl-info { flex: 1; }
+  .tpl-list-item .tpl-name { font-weight: 600; color: #67e8f9; font-size: 0.95em; }
+  .tpl-list-item .tpl-detail { font-size: 0.78em; color: #888; margin-top: 2px; }
+  .tpl-list-item .tpl-actions { display: flex; gap: 6px; }
+  .tpl-editor {
+    background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 10px; padding: 16px; margin-top: 10px;
+  }
+  .tpl-schedule {
+    background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 8px; padding: 12px; margin-bottom: 8px;
+  }
+  .tpl-schedule-header {
+    display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;
+  }
+  .tpl-investor-row {
+    display: flex; gap: 6px; align-items: center; margin-bottom: 4px; flex-wrap: wrap;
+  }
+  .tpl-exec-section {
+    background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px; padding: 18px; margin-bottom: 20px;
+  }
+  .tpl-exec-section h2 { font-size: 1em; margin-bottom: 12px; color: #fbbf24; }
+  .tpl-preview-table {
+    width: 100%; border-collapse: collapse; font-size: 0.85em; margin-top: 10px;
+  }
+  .tpl-preview-table th {
+    text-align: left; padding: 6px 8px; border-bottom: 1px solid rgba(255,255,255,0.15);
+    color: #888; font-size: 0.85em;
+  }
+  .tpl-preview-table td {
+    padding: 6px 8px; border-bottom: 1px solid rgba(255,255,255,0.05);
+  }
+  .tpl-date-group { margin-bottom: 12px; }
+  .tpl-date-label {
+    font-size: 0.9em; font-weight: 600; color: #67e8f9; margin-bottom: 6px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .tpl-date-label .adjusted { font-size: 0.78em; color: #fb923c; }
+
   .mortgage-input {
     display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;
   }
@@ -752,8 +803,39 @@
   </div>
   <script>if(localStorage.getItem('hide_tutorial_dca'))document.getElementById('tutorial-dca').style.display='none';</script>
 
+  <!-- DCA Template Management -->
+  <div class="tpl-section">
+    <h2>📋 定期定額範本</h2>
+    <div id="dcaTplList"></div>
+    <button class="btn btn-secondary" onclick="openTplEditor()" style="margin-top:8px">＋ 新增範本</button>
+    <div id="dcaTplEditorWrap"></div>
+  </div>
+
+  <!-- Monthly Execution -->
+  <div class="tpl-exec-section">
+    <h2>⚡ 範本月度執行</h2>
+    <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px">
+      <div class="form-group" style="min-width:160px">
+        <label>選擇範本</label>
+        <select id="tplExecSelect" onchange="tplExecPreview()" style="padding:8px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.08);color:#fff;font-size:0.9em">
+          <option value="">-- 請選擇 --</option>
+        </select>
+      </div>
+      <div class="form-group" style="min-width:140px">
+        <label>月份</label>
+        <input type="month" id="tplExecMonth" onchange="tplExecPreview()" style="padding:8px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.08);color:#fff;font-size:0.9em">
+      </div>
+    </div>
+    <div id="tplExecDates"></div>
+    <div id="tplExecPreviewArea"></div>
+    <div id="tplExecSubmitArea" style="margin-top:12px"></div>
+  </div>
+
+  <hr style="border-color:rgba(255,255,255,0.08);margin:20px 0">
+
+  <!-- Original DCA quick entry -->
   <div class="add-form">
-    <h2>🎯 新增定期定額批次</h2>
+    <h2>🎯 新增定期定額批次（手動）</h2>
     <div style="font-size:0.82em;color:#888;margin-bottom:12px">純數字代號 → 台股，含英文字母 → 美股，自動判讀市場與手續費率</div>
 
     <div id="dcaEntries"></div>
@@ -3837,6 +3919,418 @@ function renderDCATab() {
   // Just reset the form
   document.getElementById('dcaEntries').innerHTML = '';
   addDCAEntry();
+  renderTplList();
+  refreshTplExecSelect();
+  // Set default month
+  const mi = document.getElementById('tplExecMonth');
+  if (mi && !mi.value) {
+    const d = new Date();
+    mi.value = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+  }
+}
+
+// ===== DCA Template System =====
+
+// TW stock market holidays
+const twHolidays = new Set([
+  // 2024
+  '2024-01-01','2024-02-08','2024-02-09','2024-02-12','2024-02-13','2024-02-14',
+  '2024-02-28','2024-04-04','2024-04-05','2024-06-10','2024-09-17','2024-10-10',
+  // 2025
+  '2025-01-01','2025-01-27','2025-01-28','2025-01-29','2025-01-30','2025-01-31',
+  '2025-02-28','2025-04-03','2025-04-04','2025-05-30','2025-06-02','2025-10-06','2025-10-10',
+  // 2026
+  '2026-01-01','2026-02-16','2026-02-17','2026-02-18','2026-02-19','2026-02-20',
+  '2026-02-27','2026-04-03','2026-04-06','2026-05-25','2026-06-19','2026-10-05','2026-10-09'
+]);
+
+function nextBusinessDay(dateStr) {
+  let d = new Date(dateStr + 'T00:00:00');
+  while (d.getDay() === 0 || d.getDay() === 6 || twHolidays.has(d.toISOString().slice(0,10))) {
+    d.setDate(d.getDate() + 1);
+  }
+  return d.toISOString().slice(0,10);
+}
+
+function getDcaTemplates() {
+  try { return JSON.parse(localStorage.getItem('dca_templates') || '[]'); } catch(e) { return []; }
+}
+function saveDcaTemplates(tpls) {
+  localStorage.setItem('dca_templates', JSON.stringify(tpls));
+}
+
+// --- Template List ---
+function renderTplList() {
+  const list = document.getElementById('dcaTplList');
+  if (!list) return;
+  const tpls = getDcaTemplates();
+  if (tpls.length === 0) {
+    list.innerHTML = '<div style="color:#666;font-size:0.85em;padding:8px 0">尚無範本，點擊下方按鈕新增</div>';
+    return;
+  }
+  list.innerHTML = tpls.map(t => {
+    const schedDesc = t.schedules.map(s => {
+      const totalAmt = s.investors.reduce((sum, inv) => sum + inv.amount, 0);
+      return `${s.day}日 (${s.investors.length}人, $${totalAmt.toLocaleString()})`;
+    }).join('、');
+    return `<div class="tpl-list-item">
+      <div class="tpl-info">
+        <div class="tpl-name">${t.name} — ${t.ticker}</div>
+        <div class="tpl-detail">扣款日: ${schedDesc} | 費率: ${(t.feeRate * 100).toFixed(4)}%</div>
+      </div>
+      <div class="tpl-actions">
+        <button class="btn btn-primary" style="padding:4px 10px;font-size:0.75em" onclick="openTplEditor('${t.id}')">編輯</button>
+        <button class="btn-danger" onclick="deleteTpl('${t.id}')">刪除</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function deleteTpl(id) {
+  if (!confirm('確定刪除此範本？')) return;
+  let tpls = getDcaTemplates();
+  tpls = tpls.filter(t => t.id !== id);
+  saveDcaTemplates(tpls);
+  renderTplList();
+  refreshTplExecSelect();
+}
+
+// --- Template Editor ---
+let _tplEditorScheduleId = 0;
+let _tplEditorInvestorId = 0;
+
+function openTplEditor(editId) {
+  const wrap = document.getElementById('dcaTplEditorWrap');
+  let tpl = null;
+  if (editId) {
+    tpl = getDcaTemplates().find(t => t.id === editId);
+  }
+  const isEdit = !!tpl;
+  const name = tpl ? tpl.name : '';
+  const ticker = tpl ? tpl.ticker : '';
+  const feeRate = tpl ? tpl.feeRate : 0.001425;
+
+  wrap.innerHTML = `<div class="tpl-editor" id="tplEditorPanel">
+    <h3 style="color:#a78bfa;margin-bottom:10px">${isEdit ? '編輯範本' : '新增範本'}</h3>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+      <div class="form-group" style="min-width:140px">
+        <label>範本名稱</label>
+        <input type="text" id="tplEdName" value="${name}" placeholder="台積電定投">
+      </div>
+      <div class="form-group" style="min-width:100px">
+        <label>股票代號</label>
+        <input type="text" id="tplEdTicker" value="${ticker}" placeholder="2330" style="text-transform:uppercase">
+      </div>
+      <div class="form-group" style="min-width:120px">
+        <label>手續費率 (小數)</label>
+        <input type="number" id="tplEdFeeRate" value="${feeRate}" step="0.000001">
+      </div>
+    </div>
+    <div style="font-size:0.85em;color:#888;margin-bottom:6px">扣款日排程：</div>
+    <div id="tplEdSchedules"></div>
+    <button class="btn btn-secondary" onclick="addTplSchedule()" style="padding:3px 10px;font-size:0.78em;margin:6px 0">＋ 新增扣款日</button>
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <button class="btn btn-add" onclick="saveTplEditor('${editId || ''}')">${isEdit ? '儲存' : '新增'}</button>
+      <button class="btn" style="background:rgba(255,255,255,0.1);color:#ccc" onclick="document.getElementById('dcaTplEditorWrap').innerHTML=''">取消</button>
+    </div>
+  </div>`;
+
+  // Populate schedules if editing
+  if (tpl && tpl.schedules) {
+    tpl.schedules.forEach(s => addTplSchedule(s));
+  } else {
+    addTplSchedule();
+  }
+}
+
+function addTplSchedule(data) {
+  const sid = ++_tplEditorScheduleId;
+  const container = document.getElementById('tplEdSchedules');
+  if (!container) return;
+  const div = document.createElement('div');
+  div.className = 'tpl-schedule';
+  div.id = `tplSched_${sid}`;
+  div.innerHTML = `
+    <div class="tpl-schedule-header">
+      <div style="display:flex;gap:8px;align-items:center">
+        <label style="font-size:0.85em;color:#67e8f9">每月</label>
+        <input type="number" class="tplSchedDay" min="1" max="31" value="${data ? data.day : ''}" placeholder="6"
+          style="width:50px;padding:4px 6px;border-radius:6px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.08);color:#fff;font-size:0.9em;text-align:center">
+        <label style="font-size:0.85em;color:#67e8f9">日</label>
+      </div>
+      <button onclick="document.getElementById('tplSched_${sid}').remove()" style="background:none;border:none;color:#f87171;cursor:pointer;font-size:0.85em">✕ 移除</button>
+    </div>
+    <div class="tplSchedInvestors" data-sid="${sid}"></div>
+    <button class="btn btn-secondary" onclick="addTplInvestor(${sid})" style="padding:2px 8px;font-size:0.72em;margin-top:4px">＋ 投資人</button>
+  `;
+  container.appendChild(div);
+
+  if (data && data.investors) {
+    data.investors.forEach(inv => addTplInvestor(sid, inv));
+  } else {
+    addTplInvestor(sid);
+  }
+}
+
+function addTplInvestor(sid, data) {
+  const iid = ++_tplEditorInvestorId;
+  const container = document.querySelector(`.tplSchedInvestors[data-sid="${sid}"]`);
+  if (!container) return;
+  const allOwners = [...new Set(accounts.map(a => a.owner || a.name))];
+  const sel = 'padding:4px 8px;border:1px solid rgba(255,255,255,0.15);border-radius:4px;background:rgba(255,255,255,0.08);color:#fff;font-size:0.85em';
+  const row = document.createElement('div');
+  row.className = 'tpl-investor-row';
+  row.id = `tplInv_${iid}`;
+  row.innerHTML = `
+    <select class="tplInvOwnerSel" data-iid="${iid}" onchange="tplInvOwnerChanged(${iid})" style="${sel};min-width:80px">
+      <option value="">戶名</option>
+      ${allOwners.map(o => `<option value="${o}">${o}</option>`).join('')}
+    </select>
+    <select class="tplInvAccSel" data-iid="${iid}" style="${sel};min-width:100px"><option value="">帳戶</option></select>
+    <input type="number" class="tplInvAmt" data-iid="${iid}" placeholder="金額" value="${data ? data.amount : ''}" style="${sel};width:90px;color:#fbbf24;font-weight:600;text-align:right">
+    <button onclick="document.getElementById('tplInv_${iid}').remove()" style="background:none;border:none;color:#f87171;cursor:pointer;font-size:0.9em">✕</button>
+  `;
+  container.appendChild(row);
+
+  // If editing, set owner and account
+  if (data && data.accId) {
+    const acc = accounts.find(a => a.id === data.accId);
+    if (acc) {
+      const ownerSel = row.querySelector('.tplInvOwnerSel');
+      ownerSel.value = acc.owner || acc.name;
+      tplInvOwnerChanged(iid);
+      setTimeout(() => {
+        row.querySelector('.tplInvAccSel').value = data.accId;
+      }, 0);
+    }
+  }
+}
+
+window.tplInvOwnerChanged = function(iid) {
+  const row = document.getElementById(`tplInv_${iid}`);
+  if (!row) return;
+  const owner = row.querySelector('.tplInvOwnerSel').value;
+  const accSel = row.querySelector('.tplInvAccSel');
+  const ownerAccs = accounts.filter(a => (a.owner || a.name) === owner && a.bank);
+  accSel.innerHTML = ownerAccs.length > 0
+    ? ownerAccs.map(a => `<option value="${a.id}">${a.bank}${a.market ? (a.market==='us'?' 🇺🇸':' 🇹🇼') : ''}</option>`).join('')
+    : '<option value="">無帳戶</option>';
+};
+
+function saveTplEditor(editId) {
+  const name = document.getElementById('tplEdName').value.trim();
+  const ticker = document.getElementById('tplEdTicker').value.trim().toUpperCase();
+  const feeRate = parseFloat(document.getElementById('tplEdFeeRate').value) || 0.001425;
+
+  if (!name) { alert('請輸入範本名稱'); return; }
+  if (!ticker) { alert('請輸入股票代號'); return; }
+
+  const schedEls = document.querySelectorAll('#tplEdSchedules .tpl-schedule');
+  const schedules = [];
+  for (const sEl of schedEls) {
+    const day = parseInt(sEl.querySelector('.tplSchedDay').value);
+    if (!day || day < 1 || day > 31) { alert('扣款日請輸入 1-31'); return; }
+    const invRows = sEl.querySelectorAll('.tpl-investor-row');
+    const investors = [];
+    invRows.forEach(r => {
+      const accId = r.querySelector('.tplInvAccSel')?.value;
+      const amount = parseFloat(r.querySelector('.tplInvAmt')?.value) || 0;
+      if (accId && amount > 0) investors.push({ accId, amount });
+    });
+    if (investors.length === 0) { alert(`第 ${day} 日：請新增至少一位投資人`); return; }
+    schedules.push({ day, investors });
+  }
+  if (schedules.length === 0) { alert('請新增至少一個扣款日'); return; }
+
+  let tpls = getDcaTemplates();
+  if (editId) {
+    const idx = tpls.findIndex(t => t.id === editId);
+    if (idx >= 0) {
+      tpls[idx] = { ...tpls[idx], name, ticker, feeRate, schedules };
+    }
+  } else {
+    tpls.push({ id: Date.now().toString(), name, ticker, feeRate, schedules });
+  }
+  saveDcaTemplates(tpls);
+  document.getElementById('dcaTplEditorWrap').innerHTML = '';
+  renderTplList();
+  refreshTplExecSelect();
+}
+
+// --- Monthly Execution ---
+function refreshTplExecSelect() {
+  const sel = document.getElementById('tplExecSelect');
+  if (!sel) return;
+  const tpls = getDcaTemplates();
+  const prev = sel.value;
+  sel.innerHTML = '<option value="">-- 請選擇 --</option>' +
+    tpls.map(t => `<option value="${t.id}">${t.name} (${t.ticker})</option>`).join('');
+  if (prev) sel.value = prev;
+}
+
+function tplExecPreview() {
+  const tplId = document.getElementById('tplExecSelect').value;
+  const monthVal = document.getElementById('tplExecMonth').value; // "2026-04"
+  const datesArea = document.getElementById('tplExecDates');
+  const previewArea = document.getElementById('tplExecPreviewArea');
+  const submitArea = document.getElementById('tplExecSubmitArea');
+
+  if (!tplId || !monthVal) {
+    datesArea.innerHTML = '';
+    previewArea.innerHTML = '';
+    submitArea.innerHTML = '';
+    return;
+  }
+
+  const tpl = getDcaTemplates().find(t => t.id === tplId);
+  if (!tpl) return;
+
+  const [year, month] = monthVal.split('-').map(Number);
+
+  // Calculate actual dates for each schedule day
+  const dateEntries = tpl.schedules.map(s => {
+    let day = s.day;
+    // Clamp to last day of month
+    const lastDay = new Date(year, month, 0).getDate();
+    if (day > lastDay) day = lastDay;
+    const rawDate = `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+    const actualDate = nextBusinessDay(rawDate);
+    return { schedule: s, rawDate, actualDate, day: s.day };
+  });
+
+  // Render date inputs for stock price
+  datesArea.innerHTML = '<div style="font-size:0.85em;color:#888;margin-bottom:8px">各扣款日股價輸入：</div>' +
+    dateEntries.map((de, i) => {
+      const adjusted = de.rawDate !== de.actualDate;
+      return `<div class="tpl-date-group">
+        <div class="tpl-date-label">
+          每月 ${de.day} 日 → ${de.actualDate}
+          ${adjusted ? `<span class="adjusted">(原 ${de.rawDate}，遇假日順延)</span>` : ''}
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <div class="form-group" style="min-width:100px;max-width:140px">
+            <label>股價</label>
+            <input type="number" class="tplExecPrice" data-idx="${i}" step="0.01" placeholder="股價" oninput="tplExecUpdatePreview()">
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+
+  // Store dateEntries for later
+  window._tplExecDateEntries = dateEntries;
+  window._tplExecTpl = tpl;
+
+  previewArea.innerHTML = '';
+  submitArea.innerHTML = '';
+}
+
+function tplExecUpdatePreview() {
+  const dateEntries = window._tplExecDateEntries;
+  const tpl = window._tplExecTpl;
+  if (!dateEntries || !tpl) return;
+
+  const previewArea = document.getElementById('tplExecPreviewArea');
+  const submitArea = document.getElementById('tplExecSubmitArea');
+
+  const priceInputs = document.querySelectorAll('.tplExecPrice');
+  let allFilled = true;
+  const rows = [];
+
+  dateEntries.forEach((de, i) => {
+    const price = parseFloat(priceInputs[i]?.value) || 0;
+    if (price <= 0) { allFilled = false; return; }
+    de.schedule.investors.forEach(inv => {
+      const acc = accounts.find(a => a.id === inv.accId);
+      if (!acc) return;
+      const shares = Math.floor(inv.amount / price);
+      if (shares <= 0) return;
+      const actualCost = shares * price;
+      const market = detectMarket(tpl.ticker);
+      const fee = market === 'tw' ? Math.max(1, Math.round(actualCost * tpl.feeRate)) : actualCost * tpl.feeRate;
+      rows.push({
+        date: de.actualDate,
+        ticker: tpl.ticker,
+        accId: inv.accId,
+        accLabel: accountLabel(acc),
+        shares,
+        price,
+        investAmount: inv.amount,
+        actualCost: actualCost + fee,
+        fee,
+        market
+      });
+    });
+  });
+
+  if (rows.length === 0) {
+    previewArea.innerHTML = '<div style="color:#666;font-size:0.85em;margin-top:8px">請輸入股價以預覽交易</div>';
+    submitArea.innerHTML = '';
+    return;
+  }
+
+  previewArea.innerHTML = `
+    <div style="font-size:0.85em;color:#888;margin-top:12px;margin-bottom:6px">交易預覽 (共 ${rows.length} 筆)：</div>
+    <div style="overflow-x:auto">
+    <table class="tpl-preview-table">
+      <thead><tr>
+        <th>日期</th><th>股票</th><th>帳戶</th><th>投入金額</th><th>股價</th><th>股數</th><th>手續費</th><th>實際成本</th>
+      </tr></thead>
+      <tbody>
+        ${rows.map(r => `<tr>
+          <td>${r.date}</td>
+          <td style="color:#67e8f9">${r.ticker}</td>
+          <td>${r.accLabel}</td>
+          <td style="color:#fbbf24">$${r.investAmount.toLocaleString()}</td>
+          <td>$${r.price.toLocaleString()}</td>
+          <td style="color:#34d399">${r.shares}</td>
+          <td style="color:#888">$${r.fee.toLocaleString()}</td>
+          <td>$${r.actualCost.toLocaleString()}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+    </div>
+  `;
+
+  window._tplExecRows = rows;
+
+  if (allFilled) {
+    submitArea.innerHTML = `<button class="btn btn-add" onclick="tplExecSubmit()" style="font-size:1em;padding:10px 24px">⚡ 一鍵送出 (${rows.length} 筆交易)</button>`;
+  } else {
+    submitArea.innerHTML = '';
+  }
+}
+
+function tplExecSubmit() {
+  const rows = window._tplExecRows;
+  if (!rows || rows.length === 0) return;
+  if (!confirm(`確定送出 ${rows.length} 筆定期定額交易？`)) return;
+
+  let count = 0;
+  rows.forEach(r => {
+    let trades = getAccountData(r.accId, r.market, 'trades');
+    trades.push({
+      id: Date.now() + Math.floor(Math.random() * 10000) + count,
+      date: r.date,
+      ticker: r.ticker,
+      type: 'buy',
+      shares: r.shares,
+      price: r.price,
+      fee: r.fee,
+      investAmount: r.investAmount,
+      actualCost: r.actualCost
+    });
+    saveAccountData(r.accId, r.market, 'trades', trades);
+    count++;
+  });
+
+  alert(`✅ 已新增 ${count} 筆定期定額交易`);
+  // Clear preview
+  document.getElementById('tplExecDates').innerHTML = '';
+  document.getElementById('tplExecPreviewArea').innerHTML = '';
+  document.getElementById('tplExecSubmitArea').innerHTML = '';
+  window._tplExecRows = null;
+  renderUSTab();
+  renderTWTab();
 }
 
 // ===== Mortgage Tab =====
