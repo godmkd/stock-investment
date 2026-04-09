@@ -1102,34 +1102,32 @@ async function authInit() {
     history.replaceState(null, '', window.location.pathname);
   }
 
-  // Listen for auth changes FIRST (catches session restore)
-  let initialLoad = true;
+  // Try to get existing session
+  const { data: { session } } = await sb.auth.getSession();
+  if (session) {
+    currentUser = session.user;
+    await loadAllDataFromSupabase();
+    showApp();
+    initApp();
+  } else {
+    showLogin();
+  }
+
+  // Listen for future auth changes (login/logout)
   sb.auth.onAuthStateChange(async (event, session) => {
-    console.log('Auth event:', event, session?.user?.email || 'no user');
-    if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED') && session) {
+    console.log('Auth event:', event);
+    if (event === 'SIGNED_IN' && session && !currentUser) {
       currentUser = session.user;
-      if (initialLoad || event === 'SIGNED_IN') {
-        initialLoad = false;
-        document.getElementById('loginLoading').style.display = 'block';
-        document.getElementById('loginPage').style.display = 'flex';
-        await loadAllDataFromSupabase();
-        showApp();
-        initApp();
-      }
+      await loadAllDataFromSupabase();
+      showApp();
+      initApp();
     } else if (event === 'SIGNED_OUT') {
       currentUser = null;
       showLogin();
+    } else if (event === 'TOKEN_REFRESHED' && session) {
+      currentUser = session.user;
     }
   });
-
-  // Check current session
-  const { data: { session } } = await sb.auth.getSession();
-  if (!session) {
-    // Wait a moment for session restore from storage
-    await new Promise(r => setTimeout(r, 500));
-    const { data: { session: s2 } } = await sb.auth.getSession();
-    if (!s2) showLogin();
-  }
 
   // Auto refresh on tab focus
   document.addEventListener('visibilitychange', async () => {
