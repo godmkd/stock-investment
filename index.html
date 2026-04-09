@@ -393,7 +393,7 @@
     <h2>🇺🇸 美股投資組合</h2>
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
       <label style="color:#888;font-size:0.9em">帳戶：</label>
-      <select id="usAccountSelect" onchange="renderUSTab()" style="padding:6px 12px;border-radius:6px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.08);color:#fff;font-size:0.9em;cursor:pointer;"></select>
+      <select id="usAccountSelect" onchange="onUSAccountChange()" style="padding:6px 12px;border-radius:6px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.08);color:#fff;font-size:0.9em;cursor:pointer;"></select>
       <button class="btn btn-secondary" onclick="addBankAccount('us')" style="padding:4px 10px;font-size:0.82em">＋ 新增</button>
       <button class="btn btn-secondary" onclick="editBankAccount('us')" style="padding:4px 10px;font-size:0.82em">✏️ 編輯</button>
       <button class="btn-danger" onclick="deleteBankAccount('us')" style="padding:4px 10px;font-size:0.82em;border-radius:6px;border:none;cursor:pointer">🗑️ 刪除</button>
@@ -413,6 +413,8 @@
   </div>
   <script>if(localStorage.getItem('hide_tutorial_us'))document.getElementById('tutorial-us').style.display='none';</script>
 
+  <div id="usMarketOverview" style="display:none"></div>
+  <div id="usAccountDetail">
   <div class="summary" id="usSummary"></div>
 
   <div id="usChartsSection"></div>
@@ -506,6 +508,7 @@
   </div>
 
   <div id="usStockSections"></div>
+  </div><!-- /usAccountDetail -->
 </div>
 
 <!-- ========== TW STOCKS TAB ========== -->
@@ -514,7 +517,7 @@
     <h2>🇹🇼 台股投資組合</h2>
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
       <label style="color:#888;font-size:0.9em">帳戶：</label>
-      <select id="twAccountSelect" onchange="renderTWTab()" style="padding:6px 12px;border-radius:6px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.08);color:#fff;font-size:0.9em;cursor:pointer;"></select>
+      <select id="twAccountSelect" onchange="onTWAccountChange()" style="padding:6px 12px;border-radius:6px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.08);color:#fff;font-size:0.9em;cursor:pointer;"></select>
       <button class="btn btn-secondary" onclick="addBankAccount('tw')" style="padding:4px 10px;font-size:0.82em">＋ 新增</button>
       <button class="btn btn-secondary" onclick="editBankAccount('tw')" style="padding:4px 10px;font-size:0.82em">✏️ 編輯</button>
       <button class="btn-danger" onclick="deleteBankAccount('tw')" style="padding:4px 10px;font-size:0.82em;border-radius:6px;border:none;cursor:pointer">🗑️ 刪除</button>
@@ -531,6 +534,8 @@
   </div>
   <script>if(localStorage.getItem('hide_tutorial_tw'))document.getElementById('tutorial-tw').style.display='none';</script>
 
+  <div id="twMarketOverview" style="display:none"></div>
+  <div id="twAccountDetail">
   <div class="summary" id="twSummary"></div>
 
   <div id="twChartsSection"></div>
@@ -614,6 +619,7 @@
   </div>
 
   <div id="twStockSections"></div>
+  </div><!-- /twAccountDetail -->
 </div>
 
 <!-- ========== DCA TAB ========== -->
@@ -826,7 +832,7 @@ async function loadAllDataFromSupabase() {
   const { data: accData } = await sb.from('inv_accounts').select('*').eq('user_id', uid);
   if (accData) {
     accounts = accData.map(r => ({
-      id: r.id, name: r.name, owner: r.owner, bank: r.bank || '', ownership_pct: r.ownership_pct ?? 100
+      id: r.id, name: r.name, owner: r.owner, bank: r.bank || '', market: r.market || '', ownership_pct: r.ownership_pct ?? 100
     }));
   }
 
@@ -912,7 +918,7 @@ async function saveAccountsToSupabase() {
   // Upsert all accounts
   const rows = accounts.map(a => ({
     id: a.id, user_id: uid, name: a.name, owner: a.owner,
-    bank: a.bank || '', market: 'all',
+    bank: a.bank || '', market: a.market || '',
     ownership_pct: a.ownership_pct ?? 100
   }));
   // Delete accounts not in current list, then upsert
@@ -1327,7 +1333,7 @@ function renderAccountSelectors() {
   const twAccounts = accounts.filter(a => !a.market || a.market === 'tw');
 
   const usSelect = document.getElementById('usAccountSelect');
-  usSelect.innerHTML = usAccounts.map(a => `<option value="${a.id}">${accountLabel(a)}</option>`).join('') || '<option>無帳戶</option>';
+  usSelect.innerHTML = (usAccounts.length>1?'<option value="_all">📊 所有帳戶總覽</option>':'') + usAccounts.map(a => `<option value="${a.id}">${accountLabel(a)}</option>`).join('') || '<option>無帳戶</option>';
   if (usAccounts.length > 0 && (!currentUSAccount || !usAccounts.find(a => a.id === currentUSAccount))) {
     currentUSAccount = usAccounts[0].id;
   }
@@ -1335,7 +1341,7 @@ function renderAccountSelectors() {
 
   const twSelect = document.getElementById('twAccountSelect');
   twSelect.innerHTML = twAccounts.length > 0
-    ? twAccounts.map(a => `<option value="${a.id}">${accountLabel(a)}</option>`).join('')
+    ? (twAccounts.length>1?'<option value="_all">📊 所有帳戶總覽</option>':'') + twAccounts.map(a => `<option value="${a.id}">${accountLabel(a)}</option>`).join('')
     : '<option>無帳戶</option>';
   if (twAccounts.length > 0 && (!currentTWAccount || !twAccounts.find(a => a.id === currentTWAccount))) {
     currentTWAccount = twAccounts[0].id;
@@ -2448,6 +2454,115 @@ function renderAccountCards(accs, morts) {
 }
 
 // ===== Render: US Stocks =====
+function onUSAccountChange() {
+  const val = document.getElementById('usAccountSelect').value;
+  if (val === '_all') {
+    document.getElementById('usAccountDetail').style.display = 'none';
+    document.getElementById('usMarketOverview').style.display = 'block';
+    renderMarketOverview('us');
+  } else {
+    currentUSAccount = val;
+    document.getElementById('usAccountDetail').style.display = 'block';
+    document.getElementById('usMarketOverview').style.display = 'none';
+    renderUSTab();
+  }
+}
+
+function onTWAccountChange() {
+  const val = document.getElementById('twAccountSelect').value;
+  if (val === '_all') {
+    document.getElementById('twAccountDetail').style.display = 'none';
+    document.getElementById('twMarketOverview').style.display = 'block';
+    renderMarketOverview('tw');
+  } else {
+    currentTWAccount = val;
+    document.getElementById('twAccountDetail').style.display = 'block';
+    document.getElementById('twMarketOverview').style.display = 'none';
+    renderTWTab();
+  }
+}
+
+function renderMarketOverview(market) {
+  const container = document.getElementById(market === 'us' ? 'usMarketOverview' : 'twMarketOverview');
+  const marketAccounts = accounts.filter(a => !a.market || a.market === market);
+  const currency = market === 'us' ? 'USD' : 'TWD';
+  const flag = market === 'us' ? '🇺🇸' : '🇹🇼';
+
+  let allAnalysis = [];
+  let totalMV = 0, totalCash = 0, totalFundIn = 0, totalIncome = 0;
+
+  const accountSummaries = marketAccounts.map(acc => {
+    const trades = getAccountData(acc.id, market, 'trades');
+    const funds = getAccountData(acc.id, market, 'funds');
+    const income = getAccountData(acc.id, market, 'income');
+    const analysis = analyzeStocks(trades, market, income);
+
+    let mv = 0;
+    for (const s of analysis) if (!s.isClosed) mv += s.marketValue;
+    let cash = 0;
+    for (const f of funds) cash += f.type === 'deposit' ? f.amount : -f.amount;
+    for (const t of trades) cash += calcTradeCashImpact(t, market);
+    const incTotal = income.reduce((s, i) => s + i.amount, 0);
+    cash += incTotal;
+    const fundInfo = getAccountFunds(acc.id, market);
+
+    totalMV += mv;
+    totalCash += cash;
+    totalFundIn += fundInfo.netAmount;
+    totalIncome += incTotal;
+    allAnalysis = allAnalysis.concat(analysis.filter(s => !s.isClosed));
+
+    return { acc, mv, cash, netWorth: mv + cash, fundIn: fundInfo.netAmount, income: incTotal, analysis };
+  });
+
+  const totalNetWorth = totalMV + totalCash;
+  const totalPL = totalNetWorth - totalFundIn;
+  const totalRet = totalFundIn > 0 ? (totalPL / totalFundIn * 100) : 0;
+
+  // Merge holdings by ticker
+  const merged = {};
+  allAnalysis.forEach(s => {
+    if (!merged[s.ticker]) merged[s.ticker] = { ticker: s.ticker, shares: 0, marketValue: 0, netCost: 0 };
+    merged[s.ticker].shares += s.shares;
+    merged[s.ticker].marketValue += s.marketValue;
+    merged[s.ticker].netCost += s.netCost;
+  });
+  const mergedList = Object.values(merged).sort((a, b) => b.marketValue - a.marketValue);
+
+  container.innerHTML = `
+    <div class="summary">
+      <div class="card"><div class="label">總淨值</div><div class="value blue">${fmt(totalNetWorth)}</div></div>
+      <div class="card"><div class="label">持倉市值</div><div class="value">${fmt(totalMV)}</div></div>
+      <div class="card"><div class="label">現金</div><div class="value yellow">${fmt(totalCash)}</div></div>
+      <div class="card"><div class="label">總損益</div><div class="value ${totalPL>=0?'green':'red'}">${fmt(totalPL)} (${totalRet.toFixed(2)}%)</div></div>
+    </div>
+
+    <div class="table-container" style="margin-top:16px">
+      <div class="table-header"><h3>${flag} 各帳戶摘要</h3></div>
+      <table><thead><tr><th>帳戶</th><th>持倉市值</th><th>現金</th><th>淨值</th><th>投入</th><th>損益</th></tr></thead>
+      <tbody>${accountSummaries.map(s => {
+        const pl = s.netWorth - s.fundIn;
+        const ret = s.fundIn > 0 ? (pl / s.fundIn * 100).toFixed(2) : '0.00';
+        return `<tr>
+          <td><strong>${s.acc.bank || s.acc.name}</strong></td>
+          <td>${fmt(s.mv)}</td><td>${fmt(s.cash)}</td><td>${fmt(s.netWorth)}</td>
+          <td>${fmt(s.fundIn)}</td><td class="${pl>=0?'green':'red'}">${fmt(pl)} (${ret}%)</td>
+        </tr>`;
+      }).join('')}</tbody></table>
+    </div>
+
+    ${mergedList.length > 0 ? `
+    <div class="table-container" style="margin-top:16px">
+      <div class="table-header"><h3>${flag} 合併持股</h3></div>
+      <table><thead><tr><th>股票</th><th>總股數</th><th>市值</th><th>佔比</th></tr></thead>
+      <tbody>${mergedList.map(s => {
+        const pct = totalMV > 0 ? (s.marketValue / totalMV * 100).toFixed(1) : '0.0';
+        return `<tr><td><strong>${s.ticker}</strong></td><td>${s.shares.toFixed(2)}</td><td>${fmt(s.marketValue)}</td><td>${pct}%</td></tr>`;
+      }).join('')}</tbody></table>
+    </div>` : ''}
+  `;
+}
+
 function renderUSTab() {
   if (!currentUSAccount) return;
   
