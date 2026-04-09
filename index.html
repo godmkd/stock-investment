@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>多帳戶投資追蹤系統</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -285,12 +286,65 @@
     pointer-events: none;
   }
   .help-tip:hover .help-text { display: block; }
+
+  /* Login page styles */
+  .login-page{display:none;align-items:center;justify-content:center;min-height:100vh;width:100%;position:fixed;top:0;left:0;right:0;bottom:0;background:linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);z-index:999}
+  .login-card{background:rgba(30,27,60,.85);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,.1);border-radius:20px;padding:48px 40px;text-align:center;box-shadow:0 25px 60px rgba(0,0,0,.5);max-width:420px;width:90%;color:#e2e8f0}
+  .login-card h1{font-size:1.8rem;background:linear-gradient(135deg, #34d399, #67e8f9);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:8px;font-weight:800}
+  .login-card p{color:#888;margin-bottom:32px;font-size:.9rem;letter-spacing:.5px}
+  .login-logo{font-size:3.5rem;margin-bottom:16px}
+  .login-powered{font-size:.75rem;color:#666;margin-top:24px;opacity:.7}
+  .btn-line{background:#06C755;color:#fff;border:none;padding:14px 32px;border-radius:12px;font-size:1.1rem;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:10px;transition:all .2s;width:100%;justify-content:center;box-shadow:0 4px 14px rgba(6,199,85,.3)}
+  .btn-line:hover{background:#05b34a;transform:translateY(-1px);box-shadow:0 6px 20px rgba(6,199,85,.4)}
+  .login-divider{margin:24px 0 16px;position:relative;border-top:1px solid rgba(255,255,255,.15)}
+  .login-divider span{position:absolute;top:-10px;left:50%;transform:translateX(-50%);background:rgba(30,27,60,.95);padding:0 14px;font-size:.82rem;color:#888;white-space:nowrap}
+  .login-loading{display:none;text-align:center;padding:40px;color:#fff;font-size:1.1rem}
+  .spinner{width:40px;height:40px;border:4px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 16px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .user-bar{display:flex;align-items:center;gap:10px;font-size:0.85em;color:#aaa;cursor:pointer}
+  .user-bar:hover{color:#fff}
 </style>
 </head>
 <body>
 
+<!-- Login Page -->
+<div id="loginPage" class="login-page">
+  <div>
+    <div class="login-card">
+      <div class="login-logo">💼</div>
+      <h1>投資追蹤系統</h1>
+      <p>多帳戶 · 美股台股 · 房產管理</p>
+      <button class="btn-line" onclick="doLineLogin()">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M19.365 9.863c.349 0 .63.285.63.631 0 .345-.281.63-.63.63H17.61v1.125h1.755c.349 0 .63.283.63.63 0 .344-.281.629-.63.629h-2.386c-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.63-.63h2.386c.346 0 .627.285.627.63 0 .349-.281.63-.63.63H17.61v1.125h1.755zm-3.855 3.016c0 .27-.174.51-.432.596-.064.021-.133.031-.199.031-.211 0-.391-.09-.51-.25l-2.443-3.317v2.94c0 .344-.279.629-.631.629-.346 0-.626-.285-.626-.629V8.108c0-.27.173-.51.43-.595.06-.023.136-.033.194-.033.195 0 .375.104.495.254l2.462 3.33V8.108c0-.345.282-.63.63-.63.345 0 .63.285.63.63v4.771zm-5.741 0c0 .344-.282.629-.631.629-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.63-.63.346 0 .628.285.628.63v4.771zm-2.466.629H4.917c-.345 0-.63-.285-.63-.629V8.108c0-.345.285-.63.63-.63.348 0 .63.285.63.63v4.141h1.756c.348 0 .629.283.629.63 0 .344-.282.629-.629.629M24 10.314C24 4.943 18.615.572 12 .572S0 4.943 0 10.314c0 4.811 4.27 8.842 10.035 9.608.391.082.923.258 1.058.59.12.301.079.766.038 1.08l-.164 1.02c-.045.301-.24 1.186 1.049.645 1.291-.539 6.916-4.078 9.436-6.975C23.176 14.393 24 12.458 24 10.314"/></svg>
+        LINE 登入
+      </button>
+      <div class="login-divider">
+        <span>或使用信箱登入</span>
+      </div>
+      <div style="text-align:left">
+        <input id="loginEmail" type="email" placeholder="信箱" style="width:100%;padding:12px 14px;border:1px solid rgba(255,255,255,.15);border-radius:10px;margin-bottom:10px;font-size:.95rem;box-sizing:border-box;outline:none;background:rgba(255,255,255,.08);color:#e0e0e0" onfocus="this.style.borderColor='#34d399'" onblur="this.style.borderColor='rgba(255,255,255,.15)'">
+        <input id="loginPassword" type="password" placeholder="密碼" style="width:100%;padding:12px 14px;border:1px solid rgba(255,255,255,.15);border-radius:10px;margin-bottom:10px;font-size:.95rem;box-sizing:border-box;outline:none;background:rgba(255,255,255,.08);color:#e0e0e0" onfocus="this.style.borderColor='#34d399'" onblur="this.style.borderColor='rgba(255,255,255,.15)'">
+        <label style="display:flex;align-items:center;gap:6px;font-size:.82rem;color:#888;margin-bottom:14px;cursor:pointer">
+          <input id="rememberMe" type="checkbox"> 記住帳號密碼
+        </label>
+        <button class="btn btn-add" style="width:100%;padding:12px;border-radius:10px;font-size:1rem" onclick="doEmailLogin()">信箱登入</button>
+      </div>
+      <div class="login-powered">Powered by Supabase</div>
+    </div>
+    <div class="login-loading" id="loginLoading">
+      <div class="spinner"></div>
+      <div>登入中，請稍候...</div>
+    </div>
+  </div>
+</div>
+
+<div id="appContainer" style="display:none">
 <div class="header">
   <h1>💼 投資追蹤系統</h1>
+  <div class="user-bar" id="userBar" onclick="doLogout()" style="display:none" title="點擊登出">
+    <span id="userDisplayName"></span>
+    <span style="font-size:0.8em;color:#666">登出</span>
+  </div>
 </div>
 
 <div class="tabs-nav">
@@ -329,6 +383,8 @@
   <div id="overviewAccountsSection" style="margin-top: 16px;"></div>
 
   <div id="overviewChartsSection"></div>
+
+  <div id="mergedPortfolioSection" style="margin-top:20px"></div>
 </div>
 
 <!-- ========== US STOCKS TAB ========== -->
@@ -620,10 +676,18 @@
 
   <div class="add-form">
     <h2>新增帳戶</h2>
-    <div style="display: flex; gap: 10px; margin-bottom: 12px; align-items: flex-end;">
-      <div class="form-group" style="flex:1">
+    <div style="display: flex; gap: 10px; margin-bottom: 12px; align-items: flex-end; flex-wrap: wrap;">
+      <div class="form-group" style="flex:1;min-width:120px">
         <label>帳戶名稱（即戶名）</label>
         <input id="newAccountName" type="text" placeholder="例：王小明">
+      </div>
+      <div class="form-group" style="flex:1;min-width:120px">
+        <label>銀行/券商</label>
+        <input id="newAccountBank" type="text" placeholder="例：永豐、富邦">
+      </div>
+      <div class="form-group" style="width:100px">
+        <label>持有比例 %</label>
+        <input id="newAccountPct" type="number" value="100" min="0" max="100" step="1">
       </div>
       <button class="btn btn-add" onclick="addAccount()">✅ 新增帳戶</button>
     </div>
@@ -633,7 +697,7 @@
     <div class="table-header"><h2>現有帳戶</h2></div>
     <div style="overflow-x:auto">
       <table>
-        <thead><tr><th>帳戶名稱</th><th>資料筆數</th><th>關聯房產</th><th>操作</th></tr></thead>
+        <thead><tr><th>帳戶名稱</th><th>銀行/券商</th><th>持有比例</th><th>資料筆數</th><th>關聯房產</th><th>操作</th></tr></thead>
         <tbody id="accountsBody"></tbody>
       </table>
     </div>
@@ -641,7 +705,7 @@
 
   <div style="margin-top:20px;padding:16px;background:rgba(255,255,255,0.04);border-radius:10px;border:1px solid rgba(255,255,255,0.08)">
     <h3 style="color:#34d399;margin-bottom:10px">💾 資料備份與還原 <span class="help-tip">!<span class="help-text">備份檔包含所有資料（帳戶、交易、房產、股價），可在其他電腦或瀏覽器還原。建議每週備份一次。</span></span></h3>
-    <p style="color:#888;font-size:0.82em;margin-bottom:12px">所有資料存在瀏覽器 localStorage，清除瀏覽器資料會遺失。建議定期備份。</p>
+    <p style="color:#888;font-size:0.82em;margin-bottom:12px">資料已同步到雲端 (Supabase)。備份功能可用於離線保存。</p>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn btn-add" onclick="backupAllLocalStorage()" style="padding:10px 16px;font-size:0.95em;border-radius:8px">📦 完整備份 (下載 JSON)</button>
       <label class="btn btn-secondary" style="padding:10px 16px;font-size:0.95em;border-radius:8px;cursor:pointer">
@@ -662,14 +726,385 @@
     </div>
   </div>
 
+  <div style="margin-top:12px;padding:16px;background:rgba(103,232,249,0.06);border-radius:10px;border:1px solid rgba(103,232,249,0.15)">
+    <h3 style="color:#67e8f9;margin-bottom:10px">☁️ localStorage 遷移到雲端</h3>
+    <p style="color:#888;font-size:0.82em;margin-bottom:12px">如果之前用的是舊版（localStorage），可一鍵把資料遷移到 Supabase 雲端。</p>
+    <button class="btn btn-primary" onclick="migrateLocalStorageToSupabase()" style="padding:10px 16px;font-size:0.95em;border-radius:8px">🔄 遷移 localStorage 到雲端</button>
+  </div>
+
   <div style="margin-top:12px;padding:16px;background:rgba(248,113,113,0.06);border-radius:10px;border:1px solid rgba(248,113,113,0.15)">
     <h3 style="color:#f87171;margin-bottom:10px">⚠️ 危險操作</h3>
     <button class="btn btn-danger" onclick="clearAllData()" style="padding:10px 16px;font-size:0.95em;border-radius:8px">🗑️ 清空所有資料</button>
   </div>
 </div>
 
+</div><!-- /appContainer -->
+
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 <script>
+// ===================== SUPABASE CONFIG =====================
+const SUPABASE_URL = 'https://kvnwfesbnxzoqpdgauov.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2bndmZXNibnh6b3FwZGdhdW92Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUwNTAwMjIsImV4cCI6MjA5MDYyNjAyMn0.wpf9rUcPiaTUkDVhVgUaxBJ2rA4WaAMHG7tgSv9BOOQ';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+let currentUser = null;
+
+async function withTimeout(promise, ms = 20000) {
+  const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("請求逾時")), ms));
+  return Promise.race([promise, timeout]);
+}
+
+// ===================== AUTH =====================
+function showLogin() {
+  document.getElementById('loginPage').style.display = 'flex';
+  document.getElementById('appContainer').style.display = 'none';
+  document.getElementById('loginLoading').style.display = 'none';
+  const saved = localStorage.getItem('remembered_login');
+  if (saved) {
+    try {
+      const { email, password } = JSON.parse(saved);
+      document.getElementById('loginEmail').value = email || '';
+      document.getElementById('loginPassword').value = password || '';
+      document.getElementById('rememberMe').checked = true;
+    } catch(e) {}
+  }
+}
+
+function showApp() {
+  document.getElementById('loginPage').style.display = 'none';
+  document.getElementById('appContainer').style.display = 'block';
+  // Show user info
+  const bar = document.getElementById('userBar');
+  const nameEl = document.getElementById('userDisplayName');
+  if (bar && currentUser) {
+    bar.style.display = 'flex';
+    const meta = currentUser.user_metadata || {};
+    nameEl.textContent = meta.full_name || meta.name || currentUser.email || '使用者';
+  }
+}
+
+async function doLineLogin() {
+  document.getElementById('loginLoading').style.display = 'block';
+  const { data, error } = await withTimeout(sb.auth.signInWithOAuth({
+    provider: 'custom:line',
+    options: { redirectTo: window.location.origin + window.location.pathname, queryParams: { prompt: 'consent' } }
+  }));
+  if (error) { alert('登入失敗: ' + error.message); document.getElementById('loginLoading').style.display = 'none'; }
+}
+
+async function doEmailLogin() {
+  const email = document.getElementById('loginEmail').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  if (!email || !password) { alert('請輸入信箱和密碼'); return; }
+  document.getElementById('loginLoading').style.display = 'block';
+  const { data, error } = await withTimeout(sb.auth.signInWithPassword({ email, password }));
+  if (error) {
+    alert('登入失敗: ' + error.message);
+    document.getElementById('loginLoading').style.display = 'none';
+    return;
+  }
+  if (document.getElementById('rememberMe').checked) {
+    localStorage.setItem('remembered_login', JSON.stringify({ email, password }));
+  } else {
+    localStorage.removeItem('remembered_login');
+  }
+}
+
+async function doLogout() {
+  if (!confirm('確定登出？')) return;
+  await withTimeout(sb.auth.signOut());
+  currentUser = null;
+  showLogin();
+}
+
+// ===================== SUPABASE DATA LAYER =====================
+// These replace localStorage for persistent data when logged in.
+// In-memory caches are populated on login.
+
+async function loadAllDataFromSupabase() {
+  const uid = currentUser.id;
+
+  // Load accounts
+  const { data: accData } = await sb.from('inv_accounts').select('*').eq('user_id', uid);
+  if (accData) {
+    accounts = accData.map(r => ({
+      id: r.id, name: r.name, owner: r.owner, bank: r.bank || '', ownership_pct: r.ownership_pct ?? 100
+    }));
+  }
+
+  // Load mortgages
+  const { data: mortData } = await sb.from('inv_mortgages').select('*').eq('user_id', uid);
+  if (mortData) {
+    mortgages = mortData.map(r => ({
+      id: r.id, name: r.name, owner: r.owner, accountId: r.account_id || '',
+      propertyType: r.property_type || 'presale', totalPrice: r.total_price || 0,
+      constructionPct: r.construction_pct ?? 30, payments: r.payments || [],
+      remainingLoan: r.remaining_loan || 0, remainingMonths: r.remaining_months || 0,
+      loanRate: r.loan_rate ?? 2.5, paidPrincipal: r.paid_principal || 0
+    }));
+  }
+
+  // Load trades/funds/income for each market
+  for (const market of ['us', 'tw']) {
+    const { data: trades } = await sb.from(`inv_${market}_trades`).select('*').eq('user_id', uid);
+    if (trades) {
+      // Group by account_id and store in memory via _supabaseCache
+      const grouped = {};
+      for (const t of trades) {
+        if (!grouped[t.account_id]) grouped[t.account_id] = [];
+        grouped[t.account_id].push({
+          id: t.id, date: t.date, ticker: t.ticker, type: t.type,
+          shares: t.shares, price: t.price, fee: t.fee || 0,
+          adjust: t.adjust || 0, investAmount: t.invest_amount || 0,
+          actualCost: t.actual_cost || 0
+        });
+      }
+      for (const [accId, arr] of Object.entries(grouped)) {
+        _supabaseCache[`inv_${market}_trades_${accId}`] = arr;
+      }
+    }
+
+    const { data: funds } = await sb.from(`inv_${market}_funds`).select('*').eq('user_id', uid);
+    if (funds) {
+      const grouped = {};
+      for (const f of funds) {
+        if (!grouped[f.account_id]) grouped[f.account_id] = [];
+        grouped[f.account_id].push({
+          id: f.id, date: f.date, type: f.type, amount: f.amount,
+          twdAmount: f.twd_amount || 0, rate: f.rate || 0, note: f.note || ''
+        });
+      }
+      for (const [accId, arr] of Object.entries(grouped)) {
+        _supabaseCache[`inv_${market}_funds_${accId}`] = arr;
+      }
+    }
+
+    const { data: income } = await sb.from(`inv_${market}_income`).select('*').eq('user_id', uid);
+    if (income) {
+      const grouped = {};
+      for (const i of income) {
+        if (!grouped[i.account_id]) grouped[i.account_id] = [];
+        grouped[i.account_id].push({
+          id: i.id, date: i.date, type: i.type, source: i.source || '',
+          amount: i.amount, note: i.note || ''
+        });
+      }
+      for (const [accId, arr] of Object.entries(grouped)) {
+        _supabaseCache[`inv_${market}_income_${accId}`] = arr;
+      }
+    }
+  }
+
+  // Load user settings (finnhub key)
+  const { data: settings } = await sb.from('inv_user_settings').select('*').eq('user_id', uid).maybeSingle();
+  if (settings) {
+    if (settings.finnhub_key) {
+      localStorage.setItem('us_finnhub_key', settings.finnhub_key);
+      localStorage.setItem('finnhub_key', settings.finnhub_key);
+    }
+  }
+}
+
+// In-memory cache for account data (trades/funds/income)
+const _supabaseCache = {};
+
+async function saveAccountsToSupabase() {
+  if (!currentUser) return;
+  const uid = currentUser.id;
+  // Upsert all accounts
+  const rows = accounts.map(a => ({
+    id: a.id, user_id: uid, name: a.name, owner: a.owner,
+    bank: a.bank || '', market: 'all',
+    ownership_pct: a.ownership_pct ?? 100
+  }));
+  // Delete accounts not in current list, then upsert
+  const currentIds = accounts.map(a => a.id);
+  if (currentIds.length === 0) {
+    await sb.from('inv_accounts').delete().eq('user_id', uid);
+  } else {
+    await sb.from('inv_accounts').delete().eq('user_id', uid).not('id', 'in', `(${currentIds.join(',')})`);
+    await sb.from('inv_accounts').upsert(rows, { onConflict: 'id' });
+  }
+}
+
+async function saveMortgagesToSupabase() {
+  if (!currentUser) return;
+  const uid = currentUser.id;
+  const rows = mortgages.map(m => ({
+    id: m.id, user_id: uid, name: m.name, owner: m.owner,
+    account_id: m.accountId || null, property_type: m.propertyType || 'presale',
+    total_price: m.totalPrice || 0, construction_pct: m.constructionPct ?? 30,
+    payments: m.payments || [], remaining_loan: m.remainingLoan || 0,
+    remaining_months: m.remainingMonths || 0, loan_rate: m.loanRate ?? 2.5,
+    paid_principal: m.paidPrincipal || 0
+  }));
+  const currentIds = mortgages.map(m => m.id);
+  if (currentIds.length === 0) {
+    await sb.from('inv_mortgages').delete().eq('user_id', uid);
+  } else {
+    await sb.from('inv_mortgages').delete().eq('user_id', uid).not('id', 'in', `(${currentIds.join(',')})`);
+    await sb.from('inv_mortgages').upsert(rows, { onConflict: 'id' });
+  }
+}
+
+async function saveAccountDataToSupabase(accId, market, key, data) {
+  if (!currentUser) return;
+  const uid = currentUser.id;
+  const table = `inv_${market}_${key}`;
+
+  // Delete existing rows for this account
+  await sb.from(table).delete().eq('user_id', uid).eq('account_id', accId);
+
+  if (data.length === 0) return;
+
+  let rows;
+  if (key === 'trades') {
+    rows = data.map(t => ({
+      user_id: uid, account_id: accId, date: t.date, ticker: t.ticker,
+      type: t.type, shares: t.shares, price: t.price, fee: t.fee || 0,
+      adjust: t.adjust || 0, invest_amount: t.investAmount || 0,
+      actual_cost: t.actualCost || 0
+    }));
+  } else if (key === 'funds') {
+    rows = data.map(f => ({
+      user_id: uid, account_id: accId, date: f.date, type: f.type,
+      amount: f.amount, twd_amount: f.twdAmount || 0, rate: f.rate || 0,
+      note: f.note || ''
+    }));
+  } else if (key === 'income') {
+    rows = data.map(i => ({
+      user_id: uid, account_id: accId, date: i.date, type: i.type,
+      source: i.source || '', amount: i.amount, note: i.note || ''
+    }));
+  }
+
+  if (rows && rows.length > 0) {
+    // Insert in batches of 500
+    for (let i = 0; i < rows.length; i += 500) {
+      await sb.from(table).insert(rows.slice(i, i + 500));
+    }
+  }
+}
+
+async function deleteAccountFromSupabase(accId) {
+  if (!currentUser) return;
+  const uid = currentUser.id;
+  await sb.from('inv_accounts').delete().eq('user_id', uid).eq('id', accId);
+  for (const market of ['us', 'tw']) {
+    for (const key of ['trades', 'funds', 'income']) {
+      await sb.from(`inv_${market}_${key}`).delete().eq('user_id', uid).eq('account_id', accId);
+    }
+  }
+}
+
+async function saveFinnhubKeyToSupabase(key) {
+  if (!currentUser) return;
+  const uid = currentUser.id;
+  await sb.from('inv_user_settings').upsert({
+    user_id: uid, finnhub_key: key, settings: {}
+  }, { onConflict: 'user_id' });
+}
+
+async function migrateLocalStorageToSupabase() {
+  if (!currentUser) return;
+  // Check if there's local data to migrate
+  const localAccounts = JSON.parse(localStorage.getItem('inv_accounts') || '[]');
+  if (localAccounts.length === 0) { alert('localStorage 中沒有資料可遷移'); return; }
+
+  if (!confirm(`將 localStorage 中的 ${localAccounts.length} 個帳戶遷移到雲端？\n（雲端現有資料會被覆蓋）`)) return;
+
+  // Temporarily set accounts from localStorage
+  const origAccounts = accounts;
+  const origMortgages = mortgages;
+  accounts = localAccounts;
+  // Ensure bank and ownership_pct fields exist
+  for (const a of accounts) {
+    if (!a.bank) a.bank = '';
+    if (a.ownership_pct === undefined) a.ownership_pct = 100;
+  }
+  mortgages = JSON.parse(localStorage.getItem('inv_mortgages') || '[]');
+
+  await saveAccountsToSupabase();
+  await saveMortgagesToSupabase();
+
+  // Migrate trades/funds/income
+  for (const acc of accounts) {
+    for (const market of ['us', 'tw']) {
+      for (const key of ['trades', 'funds', 'income']) {
+        const data = JSON.parse(localStorage.getItem(`inv_${market}_${key}_${acc.id}`) || '[]');
+        if (data.length > 0) {
+          _supabaseCache[`inv_${market}_${key}_${acc.id}`] = data;
+          await saveAccountDataToSupabase(acc.id, market, key, data);
+        }
+      }
+    }
+  }
+
+  // Migrate finnhub key
+  const fk = localStorage.getItem('us_finnhub_key') || localStorage.getItem('finnhub_key');
+  if (fk) await saveFinnhubKeyToSupabase(fk);
+
+  alert('✅ 遷移完成！資料已上傳到雲端。');
+  // Reload from Supabase to confirm
+  await loadAllDataFromSupabase();
+  initApp();
+}
+
+// ===================== AUTH INIT =====================
+async function authInit() {
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get('code');
+  if (code) {
+    try {
+      const { data, error } = await withTimeout(sb.auth.exchangeCodeForSession(code));
+      if (error) console.error('Code exchange error:', error);
+    } catch(e) { console.error('Exchange error:', e); }
+    history.replaceState(null, '', window.location.pathname);
+  }
+  if (window.location.hash && window.location.hash.includes('access_token')) {
+    await withTimeout(sb.auth.getSession());
+    history.replaceState(null, '', window.location.pathname);
+  }
+  const { data: { session } } = await withTimeout(sb.auth.getSession());
+  if (session) {
+    currentUser = session.user;
+    document.getElementById('loginLoading').style.display = 'block';
+    document.getElementById('loginPage').style.display = 'flex';
+    await loadAllDataFromSupabase();
+    showApp();
+    initApp();
+  } else {
+    showLogin();
+  }
+  sb.auth.onAuthStateChange(async (event, session) => {
+    if (event === 'SIGNED_IN' && session) {
+      currentUser = session.user;
+      document.getElementById('loginLoading').style.display = 'block';
+      document.getElementById('loginPage').style.display = 'flex';
+      await loadAllDataFromSupabase();
+      showApp();
+      initApp();
+    } else if (event === 'SIGNED_OUT') {
+      currentUser = null;
+      showLogin();
+    } else if (event === 'TOKEN_REFRESHED' && session) {
+      currentUser = session.user;
+    }
+  });
+
+  // Auto refresh session
+  document.addEventListener('visibilitychange', async () => {
+    if (document.visibilityState === 'visible' && currentUser) {
+      try {
+        const { data, error } = await sb.auth.refreshSession();
+        if (error || !data?.session) {
+          const { data: d2 } = await sb.auth.getSession();
+          if (!d2?.session) { alert('登入已過期，請重新登入'); showLogin(); return; }
+        }
+      } catch(e) { console.warn('Session refresh failed:', e); }
+    }
+  });
+}
+
 // 統一現金計算: 計算單筆交易的現金影響
 // buy: -(shares*price + fee) + adjust
 // sell: +(shares*price - fee) + adjust
@@ -689,26 +1124,35 @@ function calcTradeCashImpact(t, market) {
 }
 
 // ===== State & Data =====
-let accounts = JSON.parse(localStorage.getItem('inv_accounts') || '[]');
+let accounts = [];
 let prices = JSON.parse(localStorage.getItem('stock_prices') || '{}');
 let usdTwdRate = parseFloat(localStorage.getItem('usd_twd_rate') || '32');
-let mortgages = JSON.parse(localStorage.getItem('inv_mortgages') || '[]');
+let mortgages = [];
 let currentOwnerFilter = '';
 let dcaLastAmounts = JSON.parse(localStorage.getItem('dca_last_amounts') || '{}');
 
 let currentUSAccount = null;
 let currentTWAccount = null;
 
-function saveAccounts() { localStorage.setItem('inv_accounts', JSON.stringify(accounts)); }
-function saveMortgages() { localStorage.setItem('inv_mortgages', JSON.stringify(mortgages)); }
+function saveAccounts() {
+  // Save to Supabase (fire-and-forget with error logging)
+  saveAccountsToSupabase().catch(e => console.error('saveAccounts error:', e));
+}
+function saveMortgages() {
+  saveMortgagesToSupabase().catch(e => console.error('saveMortgages error:', e));
+}
 
-// Data access per account (market-aware)
+// Data access per account (market-aware) — reads from in-memory cache
 function getAccountData(id, market, key) {
-  return JSON.parse(localStorage.getItem(`inv_${market}_${key}_${id}`) || '[]');
+  const cacheKey = `inv_${market}_${key}_${id}`;
+  return _supabaseCache[cacheKey] || [];
 }
 
 function saveAccountData(id, market, key, data) {
-  localStorage.setItem(`inv_${market}_${key}_${id}`, JSON.stringify(data));
+  const cacheKey = `inv_${market}_${key}_${id}`;
+  _supabaseCache[cacheKey] = data;
+  // Save to Supabase async
+  saveAccountDataToSupabase(id, market, key, data).catch(e => console.error('saveAccountData error:', e));
 }
 
 // Migrate old data format
@@ -768,8 +1212,8 @@ function migrateOldData() {
   if (needSave) saveAccounts();
 }
 
-// Init
-function init() {
+// Init (called after auth + data load)
+function initApp() {
   // 隱藏已關閉的教學 banner
   ['overview','us','tw','dca','mortgage','accounts'].forEach(tab => {
     if (localStorage.getItem('hide_tutorial_' + tab)) {
@@ -778,11 +1222,17 @@ function init() {
     }
   });
 
-  migrateOldData();
-  
+  // Ensure bank and ownership_pct on all accounts
+  let needSave = false;
+  for (const a of accounts) {
+    if (a.bank === undefined) { a.bank = ''; needSave = true; }
+    if (a.ownership_pct === undefined) { a.ownership_pct = 100; needSave = true; }
+  }
+  if (needSave) saveAccounts();
+
   if (accounts.length === 0) {
     const id = Date.now().toString();
-    accounts.push({ id, name: '帳戶 1', owner: '帳戶 1' });
+    accounts.push({ id, name: '帳戶 1', owner: '帳戶 1', bank: '', ownership_pct: 100 });
     saveAccounts();
   }
 
@@ -898,6 +1348,7 @@ function saveUSApiKey() {
   const key = document.getElementById('usApiKey').value.trim();
   localStorage.setItem('us_finnhub_key', key);
   localStorage.setItem('finnhub_key', key); // 相容舊版
+  saveFinnhubKeyToSupabase(key).catch(e => console.error('saveFinnhubKey error:', e));
   alert('API Key 已儲存');
 }
 
@@ -1902,6 +2353,7 @@ function renderOverviewTab() {
     accSection.innerHTML = '';
     // 趨勢圖放在 chartsSection（共用）
     renderOverviewCharts(ownerGroups);
+    renderMergedPortfolio();
     return;
   }
 
@@ -1928,6 +2380,7 @@ function renderOverviewTab() {
 
   // Charts
   renderOverviewCharts();
+  renderMergedPortfolio();
 }
 
 function renderAccountCards(accs, morts) {
@@ -3162,14 +3615,18 @@ function renderMortgageTab() {
 // ===== Accounts Tab =====
 function addAccount() {
   const name = document.getElementById('newAccountName').value.trim();
+  const bank = (document.getElementById('newAccountBank')?.value || '').trim();
+  const pct = parseFloat(document.getElementById('newAccountPct')?.value) || 100;
 
   if (!name) { alert('請輸入帳戶名稱'); return; }
 
   const id = Date.now().toString();
-  accounts.push({ id, name, owner: name });
+  accounts.push({ id, name, owner: name, bank, ownership_pct: pct });
   saveAccounts();
 
   document.getElementById('newAccountName').value = '';
+  if (document.getElementById('newAccountBank')) document.getElementById('newAccountBank').value = '';
+  if (document.getElementById('newAccountPct')) document.getElementById('newAccountPct').value = '100';
 
   renderAccountSelectors();
   renderAccountsTab();
@@ -3178,17 +3635,14 @@ function addAccount() {
 function deleteAccount(id) {
   if (!confirm('確定刪除此帳戶及其所有資料？')) return;
   accounts = accounts.filter(a => a.id !== id);
-  // Remove both US and TW data
-  localStorage.removeItem(`inv_us_trades_${id}`);
-  localStorage.removeItem(`inv_us_funds_${id}`);
-  localStorage.removeItem(`inv_us_income_${id}`);
-  localStorage.removeItem(`inv_tw_trades_${id}`);
-  localStorage.removeItem(`inv_tw_funds_${id}`);
-  localStorage.removeItem(`inv_tw_income_${id}`);
-  // Also clean up old format keys
-  localStorage.removeItem(`inv_trades_${id}`);
-  localStorage.removeItem(`inv_funds_${id}`);
-  localStorage.removeItem(`inv_income_${id}`);
+  // Remove from in-memory cache
+  for (const market of ['us', 'tw']) {
+    for (const key of ['trades', 'funds', 'income']) {
+      delete _supabaseCache[`inv_${market}_${key}_${id}`];
+    }
+  }
+  // Remove from Supabase
+  deleteAccountFromSupabase(id).catch(e => console.error('deleteAccount error:', e));
   saveAccounts();
   renderAccountSelectors();
   renderAccountsTab();
@@ -3196,14 +3650,35 @@ function deleteAccount(id) {
 
 // ===== 完整備份/還原 (整個 localStorage) =====
 function backupAllLocalStorage() {
+  // Build backup from in-memory data (Supabase-sourced) + localStorage caches
   const backup = {};
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    backup[key] = localStorage.getItem(key);
+
+  // Save accounts and mortgages
+  backup['inv_accounts'] = JSON.stringify(accounts);
+  backup['inv_mortgages'] = JSON.stringify(mortgages);
+
+  // Save all account data from cache
+  for (const acc of accounts) {
+    for (const market of ['us', 'tw']) {
+      for (const key of ['trades', 'funds', 'income']) {
+        const data = getAccountData(acc.id, market, key);
+        if (data.length > 0) {
+          backup[`inv_${market}_${key}_${acc.id}`] = JSON.stringify(data);
+        }
+      }
+    }
   }
+
+  // Save price caches from localStorage
+  const priceCacheKeys = ['stock_prices', 'tw_stock_prices', 'usd_twd_rate', 'us_finnhub_key', 'finnhub_key', 'dca_last_amounts'];
+  for (const k of priceCacheKeys) {
+    const v = localStorage.getItem(k);
+    if (v) backup[k] = v;
+  }
+
   const wrapper = {
     _type: 'investment_tracker_full_backup',
-    _version: 1,
+    _version: 2,
     _timestamp: new Date().toISOString(),
     _keys: Object.keys(backup).length,
     data: backup
@@ -3225,17 +3700,15 @@ function restoreFromBackup(event) {
   const file = event.target.files[0];
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = function(e) {
+  reader.onload = async function(e) {
     try {
       const raw = e.target.result.replace(/^\uFEFF/, ''); // 移除 BOM
       const wrapper = JSON.parse(raw);
       let data;
-      
+
       if (wrapper._type === 'investment_tracker_full_backup' && wrapper.data) {
-        // 新版完整備份格式
         data = wrapper.data;
       } else if (typeof wrapper === 'object' && !wrapper._type) {
-        // 可能是舊版匯出或直接的 key-value
         data = wrapper;
       } else {
         alert('❌ 無法識別的備份格式');
@@ -3245,15 +3718,43 @@ function restoreFromBackup(event) {
       const keyCount = Object.keys(data).length;
       if (!confirm(`即將還原 ${keyCount} 筆資料，現有資料會被覆蓋。\n\n備份時間：${wrapper._timestamp || '未知'}\n\n確定繼續？`)) return;
 
-      // 清空再寫入
-      localStorage.clear();
+      // Write to localStorage first (for price caches etc.)
       for (const [key, value] of Object.entries(data)) {
-        if (key.startsWith('_')) continue; // 跳過 metadata
+        if (key.startsWith('_')) continue;
         localStorage.setItem(key, value);
       }
 
-      alert(`✅ 已還原 ${keyCount} 筆資料，頁面即將重新載入`);
-      location.reload();
+      // Parse and migrate to Supabase
+      const lsAccounts = JSON.parse(data['inv_accounts'] || '[]');
+      if (lsAccounts.length > 0 && currentUser) {
+        accounts = lsAccounts;
+        for (const a of accounts) {
+          if (!a.bank) a.bank = '';
+          if (a.ownership_pct === undefined) a.ownership_pct = 100;
+        }
+        await saveAccountsToSupabase();
+
+        for (const acc of accounts) {
+          for (const market of ['us', 'tw']) {
+            for (const key of ['trades', 'funds', 'income']) {
+              const arr = JSON.parse(data[`inv_${market}_${key}_${acc.id}`] || '[]');
+              if (arr.length > 0) {
+                _supabaseCache[`inv_${market}_${key}_${acc.id}`] = arr;
+                await saveAccountDataToSupabase(acc.id, market, key, arr);
+              }
+            }
+          }
+        }
+
+        const lsMortgages = JSON.parse(data['inv_mortgages'] || '[]');
+        if (lsMortgages.length > 0) {
+          mortgages = lsMortgages;
+          await saveMortgagesToSupabase();
+        }
+      }
+
+      alert(`✅ 已還原 ${keyCount} 筆資料`);
+      initApp();
     } catch (err) {
       alert('❌ 備份檔案格式錯誤：' + err.message);
     }
@@ -3308,7 +3809,7 @@ function importAccountJSON(event, marketFilter) {
   const file = event.target.files[0];
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = function(e) {
+  reader.onload = async function(e) {
     try {
       let data = JSON.parse(e.target.result);
       // 應用修正
@@ -3317,7 +3818,6 @@ function importAccountJSON(event, marketFilter) {
 
       // 格式1: 舊版美股格式 (stock_trades/stock_funds/stock_income)
       if (data.trades && !data.accounts) {
-        // 找到當前選中的帳戶
         let targetAccId;
         const market = marketFilter || 'us';
         if (market === 'us') {
@@ -3326,23 +3826,20 @@ function importAccountJSON(event, marketFilter) {
           targetAccId = document.getElementById('twAccountSelect')?.value;
         }
         if (!targetAccId) {
-          if (accounts.length === 0) {
-            alert('請先在帳戶管理中建立帳戶');
-            return;
-          }
+          if (accounts.length === 0) { alert('請先在帳戶管理中建立帳戶'); return; }
           targetAccId = accounts[0].id;
         }
 
         if (data.trades) {
-          localStorage.setItem(`inv_${market}_trades_${targetAccId}`, JSON.stringify(data.trades));
+          saveAccountData(targetAccId, market, 'trades', data.trades);
           imported.trades = data.trades.length;
         }
         if (data.funds) {
-          localStorage.setItem(`inv_${market}_funds_${targetAccId}`, JSON.stringify(data.funds));
+          saveAccountData(targetAccId, market, 'funds', data.funds);
           imported.funds = data.funds.length;
         }
         if (data.income) {
-          localStorage.setItem(`inv_${market}_income_${targetAccId}`, JSON.stringify(data.income));
+          saveAccountData(targetAccId, market, 'income', data.income);
           imported.income = data.income.length;
         }
 
@@ -3350,33 +3847,30 @@ function importAccountJSON(event, marketFilter) {
       }
       // 格式2: 全系統匯出格式 (含 accounts)
       else if (data.accounts) {
-        // 匯入帳戶
         accounts = data.accounts;
-        saveAccounts();
+        // Ensure bank and ownership_pct fields
         for (const acc of accounts) {
-          // New format (us_trades_xxx, tw_trades_xxx)
+          if (!acc.bank) acc.bank = '';
+          if (acc.ownership_pct === undefined) acc.ownership_pct = 100;
+          delete acc.market;
+        }
+        saveAccounts();
+
+        for (const acc of accounts) {
           for (const m of ['us', 'tw']) {
-            if (data[`${m}_trades_${acc.id}`]) localStorage.setItem(`inv_${m}_trades_${acc.id}`, JSON.stringify(data[`${m}_trades_${acc.id}`]));
-            if (data[`${m}_funds_${acc.id}`]) localStorage.setItem(`inv_${m}_funds_${acc.id}`, JSON.stringify(data[`${m}_funds_${acc.id}`]));
-            if (data[`${m}_income_${acc.id}`]) localStorage.setItem(`inv_${m}_income_${acc.id}`, JSON.stringify(data[`${m}_income_${acc.id}`]));
-          }
-          // Old format (trades_xxx) — put into the market from the account's old market field, or default to us
-          if (data[`trades_${acc.id}`]) {
-            const m = acc.market || 'us';
-            localStorage.setItem(`inv_${m}_trades_${acc.id}`, JSON.stringify(data[`trades_${acc.id}`]));
-          }
-          if (data[`funds_${acc.id}`]) {
-            const m = acc.market || 'us';
-            localStorage.setItem(`inv_${m}_funds_${acc.id}`, JSON.stringify(data[`funds_${acc.id}`]));
-          }
-          if (data[`income_${acc.id}`]) {
-            const m = acc.market || 'us';
-            localStorage.setItem(`inv_${m}_income_${acc.id}`, JSON.stringify(data[`income_${acc.id}`]));
+            for (const key of ['trades', 'funds', 'income']) {
+              let arr = data[`${m}_${key}_${acc.id}`];
+              // Old format fallback
+              if (!arr && data[`${key}_${acc.id}`]) {
+                arr = data[`${key}_${acc.id}`];
+              }
+              if (arr && arr.length > 0) {
+                saveAccountData(acc.id, m, key, arr);
+              }
+            }
           }
         }
-        // Strip market field from imported accounts
-        for (const acc of accounts) { delete acc.market; }
-        saveAccounts();
+
         if (data.mortgages) {
           mortgages = data.mortgages;
           saveMortgages();
@@ -3388,7 +3882,7 @@ function importAccountJSON(event, marketFilter) {
         return;
       }
 
-      init();
+      initApp();
     } catch (err) {
       alert('❌ 匯入失敗: ' + err.message);
     }
@@ -3397,37 +3891,33 @@ function importAccountJSON(event, marketFilter) {
   event.target.value = '';
 }
 
-function clearAllData() {
+async function clearAllData() {
   if (!confirm('⚠️ 確定清空所有帳戶及交易資料？此操作無法復原！')) return;
   if (!confirm('真的確定？')) return;
 
-  for (const acc of accounts) {
-    localStorage.removeItem(`inv_us_trades_${acc.id}`);
-    localStorage.removeItem(`inv_us_funds_${acc.id}`);
-    localStorage.removeItem(`inv_us_income_${acc.id}`);
-    localStorage.removeItem(`inv_tw_trades_${acc.id}`);
-    localStorage.removeItem(`inv_tw_funds_${acc.id}`);
-    localStorage.removeItem(`inv_tw_income_${acc.id}`);
-    // Old format
-    localStorage.removeItem(`inv_trades_${acc.id}`);
-    localStorage.removeItem(`inv_funds_${acc.id}`);
-    localStorage.removeItem(`inv_income_${acc.id}`);
+  // Clear Supabase data
+  if (currentUser) {
+    const uid = currentUser.id;
+    for (const table of ['inv_us_trades','inv_us_funds','inv_us_income','inv_tw_trades','inv_tw_funds','inv_tw_income','inv_accounts','inv_mortgages']) {
+      await sb.from(table).delete().eq('user_id', uid);
+    }
+    await sb.from('inv_user_settings').delete().eq('user_id', uid);
   }
+
+  // Clear in-memory
+  for (const key of Object.keys(_supabaseCache)) delete _supabaseCache[key];
   accounts = [];
   mortgages = [];
-  localStorage.removeItem('inv_accounts');
-  localStorage.removeItem('inv_mortgages');
   localStorage.removeItem('stock_prices');
-  saveAccounts();
-  saveMortgages();
   location.reload();
 }
 
 function renderAccountsTab() {
   // 更新表頭
   const thead = document.querySelector('#accountsBody')?.closest('table')?.querySelector('thead');
-  if (thead) thead.innerHTML = '<tr><th>帳戶名稱</th><th>資料筆數</th><th>關聯房產</th><th>操作</th></tr>';
+  if (thead) thead.innerHTML = '<tr><th>帳戶名稱</th><th>銀行/券商</th><th>持有比例</th><th>資料筆數</th><th>關聯房產</th><th>操作</th></tr>';
 
+  const inputStyle = 'padding:4px 6px;border:1px solid rgba(255,255,255,0.15);border-radius:4px;background:rgba(255,255,255,0.08);color:#fff;font-size:0.9em';
   document.getElementById('accountsBody').innerHTML = accounts.map(acc => {
     const usTrades = getAccountData(acc.id, 'us', 'trades');
     const twTrades = getAccountData(acc.id, 'tw', 'trades');
@@ -3435,12 +3925,14 @@ function renderAccountsTab() {
     const twFunds = getAccountData(acc.id, 'tw', 'funds');
     const accMortgages = mortgages.filter(m => m.accountId === acc.id);
     return `<tr>
-      <td><input value="${acc.name}" style="width:140px;padding:4px 6px;border:1px solid rgba(255,255,255,0.15);border-radius:4px;background:rgba(255,255,255,0.08);color:#fff;font-size:0.9em;font-weight:600" onchange="const a=accounts.find(x=>x.id==='${acc.id}');a.name=this.value;a.owner=this.value;saveAccounts()"></td>
+      <td><input value="${acc.name}" style="width:120px;${inputStyle};font-weight:600" onchange="const a=accounts.find(x=>x.id==='${acc.id}');a.name=this.value;a.owner=this.value;saveAccounts()"></td>
+      <td><input value="${acc.bank || ''}" style="width:90px;${inputStyle}" placeholder="券商" onchange="const a=accounts.find(x=>x.id==='${acc.id}');a.bank=this.value;saveAccounts()"></td>
+      <td><input type="number" value="${acc.ownership_pct ?? 100}" style="width:60px;${inputStyle};text-align:center" min="0" max="100" step="1" onchange="const a=accounts.find(x=>x.id==='${acc.id}');a.ownership_pct=parseFloat(this.value)||100;saveAccounts()">%</td>
       <td style="font-size:0.8em;color:#888">🇺🇸 ${usTrades.length + usFunds.length} 筆 · 🇹🇼 ${twTrades.length + twFunds.length} 筆</td>
       <td style="font-size:0.8em;color:#888">${accMortgages.length > 0 ? accMortgages.map(m => '🏠 ' + m.name).join(', ') : '-'}</td>
       <td><button class="btn-danger" onclick="deleteAccount('${acc.id}')">刪除</button></td>
     </tr>`;
-  }).join('') || '<tr><td colspan="4" style="text-align:center;color:#666;padding:20px">尚無帳戶</td></tr>';
+  }).join('') || '<tr><td colspan="6" style="text-align:center;color:#666;padding:20px">尚無帳戶</td></tr>';
 }
 
 // ===== Charts =====
@@ -4053,6 +4545,140 @@ function onOwnerRangeSelect(range, prefix) {
 }
 
 let _lastOwnerGroups = null;
+// ===== Merged Portfolio (合併總覽) =====
+function renderMergedPortfolio() {
+  const section = document.getElementById('mergedPortfolioSection');
+  if (!section) return;
+
+  // Only show when viewing "全部合計" or specific owner (not "按戶名分開")
+  if (currentOwnerFilter === '__by_owner__') { section.innerHTML = ''; return; }
+
+  const filteredAccounts = currentOwnerFilter
+    ? accounts.filter(a => a.owner === currentOwnerFilter)
+    : accounts;
+
+  if (filteredAccounts.length === 0) { section.innerHTML = ''; return; }
+
+  // Collect all holdings across accounts, weighted by ownership_pct
+  const mergedStocks = {}; // ticker -> { shares, marketValue, weightedValue, market, accounts: [] }
+  let totalWeightedValueTWD = 0;
+
+  for (const acc of filteredAccounts) {
+    const pct = (acc.ownership_pct ?? 100) / 100;
+
+    // US stocks
+    const usTrades = getAccountData(acc.id, 'us', 'trades');
+    const usIncome = getAccountData(acc.id, 'us', 'income');
+    const usAnalysis = analyzeStocks(usTrades, 'us', usIncome);
+    for (const s of usAnalysis) {
+      if (s.isClosed || s.marketValue <= 0) continue;
+      const key = s.ticker + '_us';
+      if (!mergedStocks[key]) mergedStocks[key] = { ticker: s.ticker, market: 'us', totalShares: 0, totalWeightedShares: 0, marketValue: 0, weightedValue: 0, weightedValueTWD: 0, accounts: [] };
+      mergedStocks[key].totalShares += s.shares;
+      mergedStocks[key].totalWeightedShares += s.shares * pct;
+      mergedStocks[key].marketValue += s.marketValue;
+      mergedStocks[key].weightedValue += s.marketValue * pct;
+      mergedStocks[key].weightedValueTWD += s.marketValue * pct * usdTwdRate;
+      mergedStocks[key].accounts.push({ name: acc.name, bank: acc.bank, shares: s.shares, pct: acc.ownership_pct, value: s.marketValue });
+      totalWeightedValueTWD += s.marketValue * pct * usdTwdRate;
+    }
+
+    // TW stocks
+    const twTrades = getAccountData(acc.id, 'tw', 'trades');
+    const twIncome = getAccountData(acc.id, 'tw', 'income');
+    const twAnalysis = analyzeStocks(twTrades, 'tw', twIncome);
+    for (const s of twAnalysis) {
+      if (s.isClosed || s.marketValue <= 0) continue;
+      const key = s.ticker + '_tw';
+      if (!mergedStocks[key]) mergedStocks[key] = { ticker: s.ticker, market: 'tw', totalShares: 0, totalWeightedShares: 0, marketValue: 0, weightedValue: 0, weightedValueTWD: 0, accounts: [] };
+      mergedStocks[key].totalShares += s.shares;
+      mergedStocks[key].totalWeightedShares += s.shares * pct;
+      mergedStocks[key].marketValue += s.marketValue;
+      mergedStocks[key].weightedValue += s.marketValue * pct;
+      mergedStocks[key].weightedValueTWD += s.marketValue * pct;
+      mergedStocks[key].accounts.push({ name: acc.name, bank: acc.bank, shares: s.shares, pct: acc.ownership_pct, value: s.marketValue });
+      totalWeightedValueTWD += s.marketValue * pct;
+    }
+  }
+
+  const entries = Object.values(mergedStocks).sort((a, b) => b.weightedValueTWD - a.weightedValueTWD);
+  if (entries.length === 0) { section.innerHTML = ''; return; }
+
+  let html = `
+    <div class="table-container">
+      <div class="table-header" onclick="document.getElementById('mergedPortfolioPanel').style.display=document.getElementById('mergedPortfolioPanel').style.display==='none'?'block':'none';this.querySelector('.arrow').classList.toggle('open')" style="cursor:pointer;user-select:none">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="arrow" style="transition:transform 0.2s">▼</span>
+          <h2>🔗 合併總覽（按持有比例加權）</h2>
+        </div>
+        <div style="font-size:0.85em;color:#fbbf24;font-weight:600">${fmtTWD(totalWeightedValueTWD)}</div>
+      </div>
+      <div id="mergedPortfolioPanel" style="overflow-x:auto">
+        <table>
+          <thead><tr><th>股票</th><th>市場</th><th>總股數</th><th>加權股數</th><th>原始市值</th><th>加權市值</th><th>加權市值 TWD</th><th>佔比</th><th>帳戶明細</th></tr></thead>
+          <tbody>`;
+
+  for (const e of entries) {
+    const flag = e.market === 'us' ? '🇺🇸' : '🇹🇼';
+    const currency = e.market === 'us' ? 'USD' : 'TWD';
+    const fmtFn = e.market === 'us' ? fmt : fmtTWD;
+    const pctOfTotal = totalWeightedValueTWD > 0 ? (e.weightedValueTWD / totalWeightedValueTWD * 100).toFixed(1) : '0.0';
+    const accDetails = e.accounts.map(a => `${a.name}${a.bank ? '(' + a.bank + ')' : ''}: ${a.shares}股 x${a.pct}%`).join('<br>');
+
+    html += `<tr>
+      <td><span style="color:#67e8f9;font-weight:600">${e.ticker}</span></td>
+      <td>${flag}</td>
+      <td>${e.totalShares.toLocaleString('en-US', {maximumFractionDigits: 4})}</td>
+      <td>${e.totalWeightedShares.toLocaleString('en-US', {maximumFractionDigits: 4})}</td>
+      <td>${fmtFn(e.marketValue)}</td>
+      <td>${fmtFn(e.weightedValue)}</td>
+      <td style="color:#fbbf24">${fmtTWD(e.weightedValueTWD)}</td>
+      <td>${pctOfTotal}%</td>
+      <td style="font-size:0.75em;color:#888">${accDetails}</td>
+    </tr>`;
+  }
+
+  html += `</tbody></table>
+      </div>
+    </div>`;
+
+  // Account overview table showing all accounts with ownership_pct
+  html += `
+    <div class="table-container" style="margin-top:12px">
+      <div class="table-header"><h2>📋 帳戶持有比例一覽</h2></div>
+      <div style="overflow-x:auto">
+        <table>
+          <thead><tr><th>帳戶</th><th>銀行/券商</th><th>持有比例</th><th>美股市值 USD</th><th>台股市值 TWD</th><th>加權合計 TWD</th></tr></thead>
+          <tbody>`;
+
+  for (const acc of filteredAccounts) {
+    const pct = acc.ownership_pct ?? 100;
+    const usTrades = getAccountData(acc.id, 'us', 'trades');
+    const usIncome = getAccountData(acc.id, 'us', 'income');
+    const usAnalysis = analyzeStocks(usTrades, 'us', usIncome);
+    let usMV = 0; for (const s of usAnalysis) if (!s.isClosed) usMV += s.marketValue;
+
+    const twTrades = getAccountData(acc.id, 'tw', 'trades');
+    const twIncome = getAccountData(acc.id, 'tw', 'income');
+    const twAnalysis = analyzeStocks(twTrades, 'tw', twIncome);
+    let twMV = 0; for (const s of twAnalysis) if (!s.isClosed) twMV += s.marketValue;
+
+    const weightedTWD = (usMV * usdTwdRate + twMV) * pct / 100;
+
+    html += `<tr>
+      <td style="font-weight:600">${acc.name}</td>
+      <td style="color:#888">${acc.bank || '-'}</td>
+      <td style="color:#a78bfa;font-weight:600">${pct}%</td>
+      <td>${usMV > 0 ? fmt(usMV) : '-'}</td>
+      <td>${twMV > 0 ? fmtTWD(twMV) : '-'}</td>
+      <td style="color:#fbbf24;font-weight:600">${fmtTWD(weightedTWD)}</td>
+    </tr>`;
+  }
+
+  html += `</tbody></table></div></div>`;
+  section.innerHTML = html;
+}
+
 function renderOverviewCharts(ownerGroups) {
   if (typeof Chart === 'undefined') return;
   Chart.defaults.color = '#aaa';
@@ -4206,7 +4832,7 @@ function renderOverviewCharts(ownerGroups) {
 }
 
 // Init
-window.addEventListener('DOMContentLoaded', init);
+window.addEventListener('DOMContentLoaded', authInit);
 </script>
 </body>
 </html>
