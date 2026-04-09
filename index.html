@@ -463,12 +463,16 @@
               <label>類型</label>
               <select id="usQiTradeType"><option value="buy">買入</option><option value="sell">賣出</option></select>
             </div>
+            <div class="form-group" style="flex:0 0 100px">
+              <label>手續費率</label>
+              <input type="number" id="usQiFeeRate" placeholder="不填=0" step="0.001" min="0" style="font-size:0.85em">
+            </div>
           </div>
           <div class="form-group">
-            <label>每行一筆：<code>日期 股數 價格</code></label>
-            <textarea id="usQiTradeText" rows="6" placeholder="2024.3.5 10 250&#10;2024.4.1 5 260&#10;3.15 20 245" style="font-family:monospace;font-size:0.88em"></textarea>
+            <label>每行一筆：<code>日期 股數 價格 (手續費)</code></label>
+            <textarea id="usQiTradeText" rows="6" placeholder="2024.3.5 10 250&#10;2024.4.1 5 260&#10;3.15 20 245 5.99（個別手續費覆蓋預設）" style="font-family:monospace;font-size:0.88em"></textarea>
           </div>
-          <div style="color:#666;font-size:0.75em;margin:4px 0 8px">格式：<code>日期 股數 價格</code>，例 <code>2024.3.5 10 250</code> = 10股@$250</div>
+          <div style="color:#666;font-size:0.75em;margin:4px 0 8px">格式：<code>日期 股數 價格 (手續費)</code>・手續費率不填=0・行內第4欄可覆蓋預設</div>
           <button class="btn btn-add" onclick="submitUSQITrade()">✅ 快速送出</button>
         </div>
         <!-- Fund mode -->
@@ -627,12 +631,16 @@
               <label>類型</label>
               <select id="twQiTradeType"><option value="buy">買入</option><option value="sell">賣出</option></select>
             </div>
+            <div class="form-group" style="flex:0 0 120px">
+              <label>手續費率 ‰</label>
+              <input type="number" id="twQiFeeRate" value="1.425" step="0.001" min="0" style="font-size:0.85em">
+            </div>
           </div>
           <div class="form-group">
-            <label>每行一筆：<code>日期 股數 價格</code></label>
-            <textarea id="twQiTradeText" rows="6" placeholder="2024.3.5 1000 580&#10;2024.4.1 500 595&#10;3.15 2000 570" style="font-family:monospace;font-size:0.88em"></textarea>
+            <label>每行一筆：<code>日期 股數 價格 (手續費)</code></label>
+            <textarea id="twQiTradeText" rows="6" placeholder="2024.3.5 1000 580&#10;2024.4.1 500 595&#10;3.15 2000 570 500（個別手續費覆蓋預設）" style="font-family:monospace;font-size:0.88em"></textarea>
           </div>
-          <div style="color:#666;font-size:0.75em;margin:4px 0 8px">格式：<code>日期 股數 價格</code>，例 <code>2024.3.5 1000 580</code> = 1000股@$580（手續費自動計算）</div>
+          <div style="color:#666;font-size:0.75em;margin:4px 0 8px">格式：<code>日期 股數 價格 (手續費)</code>・預設手續費率千分之1.425・行內第4欄可覆蓋預設</div>
           <button class="btn btn-add" onclick="submitTWQITrade()">✅ 快速送出</button>
         </div>
         <!-- Fund mode -->
@@ -2285,6 +2293,7 @@ function parseQILines(text) {
 function submitUSQITrade() {
   const ticker = document.getElementById('usQiTradeTicker').value.trim().toUpperCase();
   const type = document.getElementById('usQiTradeType').value;
+  const feeRate = parseFloat(document.getElementById('usQiFeeRate')?.value) || 0;
   const text = document.getElementById('usQiTradeText').value;
   if (!ticker) { alert('請輸入股票代號'); return; }
   const lines = parseQILines(text);
@@ -2298,8 +2307,9 @@ function submitUSQITrade() {
     const date = parseFlexDate(parts[0]);
     const shares = parseFloat(parts[1]);
     const price = parseFloat(parts[2]);
+    const fee = parts.length >= 4 ? parseFloat(parts[3]) : (feeRate > 0 ? shares * price * feeRate : 0);
     if (isNaN(shares) || isNaN(price) || shares <= 0 || price <= 0) { errors.push(`行 ${i+1}: 數值不正確 "${line}"`); return; }
-    data.push({ id: Date.now() + count, date, ticker, type, shares, price, fee: 0, adjust: 0 });
+    data.push({ id: Date.now() + count, date, ticker, type, shares, price, fee: fee || 0, adjust: 0 });
     count++;
   });
   if (errors.length > 0 && count === 0) { alert('解析錯誤:\n' + errors.join('\n')); return; }
@@ -2401,6 +2411,8 @@ function submitUSQIIncome() {
 function submitTWQITrade() {
   const ticker = document.getElementById('twQiTradeTicker').value.trim();
   const type = document.getElementById('twQiTradeType').value;
+  const feeRatePermille = parseFloat(document.getElementById('twQiFeeRate')?.value);
+  const feeRate = !isNaN(feeRatePermille) ? feeRatePermille / 1000 : 0.001425;
   const text = document.getElementById('twQiTradeText').value;
   if (!ticker) { alert('請輸入股票代號'); return; }
   const resolved = resolveTWTicker(ticker);
@@ -2416,8 +2428,8 @@ function submitTWQITrade() {
     const shares = parseFloat(parts[1]);
     const price = parseFloat(parts[2]);
     if (isNaN(shares) || isNaN(price) || shares <= 0 || price <= 0) { errors.push(`行 ${i+1}: 數值不正確 "${line}"`); return; }
-    const fee = Math.floor(shares * price * 0.001425);
-    data.push({ id: Date.now() + count, date, ticker: resolved, type, shares, price, fee, adjust: 0 });
+    const fee = parts.length >= 4 ? parseFloat(parts[3]) : Math.floor(shares * price * feeRate);
+    data.push({ id: Date.now() + count, date, ticker: resolved, type, shares, price, fee: fee || 0, adjust: 0 });
     count++;
   });
   if (errors.length > 0 && count === 0) { alert('解析錯誤:\n' + errors.join('\n')); return; }
