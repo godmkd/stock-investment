@@ -986,9 +986,16 @@ async function saveAccountDataToSupabase(accId, market, key, data) {
   }
 
   if (rows && rows.length > 0) {
+    // Ensure unique IDs — deduplicate and regenerate if needed
+    const seenIds = new Set();
+    rows.forEach((r, idx) => {
+      if (!r.id || seenIds.has(r.id)) r.id = Date.now() * 1000 + idx;
+      seenIds.add(r.id);
+    });
     // Insert in batches of 500
     for (let i = 0; i < rows.length; i += 500) {
-      await sb.from(table).insert(rows.slice(i, i + 500));
+      const { error } = await sb.from(table).insert(rows.slice(i, i + 500));
+      if (error) console.error(`saveAccountData ${table} batch error:`, error.message);
     }
   }
 }
@@ -2485,8 +2492,30 @@ function onTWAccountChange() {
 function renderMarketOverview(market) {
   const container = document.getElementById(market === 'us' ? 'usMarketOverview' : 'twMarketOverview');
   const marketAccounts = accounts.filter(a => !a.market || a.market === market);
-  const currency = market === 'us' ? 'USD' : 'TWD';
   const flag = market === 'us' ? '🇺🇸' : '🇹🇼';
+
+  // Group by owner
+  const owners = [...new Set(marketAccounts.map(a => a.owner || a.name))];
+  if (owners.length <= 1) {
+    // Single owner — show flat overview
+    renderMarketOverviewForAccounts(container, marketAccounts, flag, market);
+    return;
+  }
+  // Multiple owners — show per-owner sections
+  let html = '';
+  owners.forEach(owner => {
+    const ownerAccs = marketAccounts.filter(a => (a.owner || a.name) === owner);
+    html += `<div style="margin-bottom:20px"><h3 style="color:#67e8f9;margin-bottom:8px">👤 ${owner}</h3><div id="mktOvw_${market}_${owner.replace(/\s/g,'_')}"></div></div>`;
+  });
+  container.innerHTML = html;
+  owners.forEach(owner => {
+    const ownerAccs = marketAccounts.filter(a => (a.owner || a.name) === owner);
+    const div = document.getElementById(`mktOvw_${market}_${owner.replace(/\s/g,'_')}`);
+    if (div) renderMarketOverviewForAccounts(div, ownerAccs, flag, market);
+  });
+}
+
+function renderMarketOverviewForAccounts(container, marketAccounts, flag, market) {
 
   let allAnalysis = [];
   let totalMV = 0, totalCash = 0, totalFundIn = 0, totalIncome = 0;
@@ -3968,11 +3997,14 @@ function restoreFromBackup(event) {
       const lsAccounts = JSON.parse(data['inv_accounts'] || '[]');
       if (lsAccounts.length > 0 && currentUser) {
         accounts = lsAccounts;
+        let totalSaved = 0;
         for (const a of accounts) {
           if (!a.bank) a.bank = '';
+          if (!a.market) a.market = '';
           if (a.ownership_pct === undefined) a.ownership_pct = 100;
         }
         await saveAccountsToSupabase();
+        totalSaved += accounts.length;
 
         for (const acc of accounts) {
           for (const market of ['us', 'tw']) {
@@ -3981,6 +4013,7 @@ function restoreFromBackup(event) {
               if (arr.length > 0) {
                 _supabaseCache[`inv_${market}_${key}_${acc.id}`] = arr;
                 await saveAccountDataToSupabase(acc.id, market, key, arr);
+                totalSaved += arr.length;
               }
             }
           }
@@ -3990,10 +4023,11 @@ function restoreFromBackup(event) {
         if (lsMortgages.length > 0) {
           mortgages = lsMortgages;
           await saveMortgagesToSupabase();
+          totalSaved += mortgages.length;
         }
       }
 
-      alert(`✅ 已還原 ${keyCount} 筆資料`);
+      alert(`✅ 已還原並同步到雲端！共 ${totalSaved} 筆資料`);
       initApp();
     } catch (err) {
       alert('❌ 備份檔案格式錯誤：' + err.message);
@@ -4159,22 +4193,53 @@ function renderAccountsTab() {
   const inputStyle = 'padding:4px 6px;border:1px solid rgba(255,255,255,0.15);border-radius:4px;background:rgba(255,255,255,0.08);color:#fff;font-size:0.9em';
   const marketLabel = m => m === 'us' ? '🇺🇸 美股' : m === 'tw' ? '🇹🇼 台股' : '通用';
 
-  document.getElementById('accountsBody').innerHTML = accounts.map(acc => {
-    const usTrades = getAccountData(acc.id, 'us', 'trades');
-    const twTrades = getAccountData(acc.id, 'tw', 'trades');
-    const usFunds = getAccountData(acc.id, 'us', 'funds');
-    const twFunds = getAccountData(acc.id, 'tw', 'funds');
-    const totalRecords = usTrades.length + twTrades.length + usFunds.length + twFunds.length;
-    return `<tr>
-      <td><input value="${acc.owner || acc.name}" style="width:100px;${inputStyle};font-weight:600" onchange="const a=accounts.find(x=>x.id==='${acc.id}');a.name=this.value;a.owner=this.value;saveAccounts()"></td>
-      <td>${acc.bank ? `<input value="${acc.bank}" style="width:90px;${inputStyle}" onchange="const a=accounts.find(x=>x.id==='${acc.id}');a.bank=this.value;saveAccounts()">` : '<span style="color:#666">-</span>'}</td>
-      <td style="font-size:0.82em">${marketLabel(acc.market)}</td>
-      <td>${acc.bank ? `<input type="number" value="${acc.ownership_pct ?? 100}" style="width:55px;${inputStyle};text-align:center" min="0" max="100" step="1" onchange="const a=accounts.find(x=>x.id==='${acc.id}');a.ownership_pct=parseFloat(this.value)||100;saveAccounts()">%` : '-'}</td>
-      <td style="font-size:0.8em;color:#888">${totalRecords} 筆</td>
-      <td><button class="btn-danger" onclick="deleteAccount('${acc.id}')">刪除</button></td>
-    </tr>`;
-  }).join('') || '<tr><td colspan="6" style="text-align:center;color:#666;padding:20px">尚無帳戶，請先新增持有人</td></tr>';
+  // Group by owner
+  const owners = [...new Set(accounts.map(a => a.owner || a.name))];
+  let html = '';
+  owners.forEach(owner => {
+    const ownerAccs = accounts.filter(a => (a.owner || a.name) === owner);
+    // Owner header row
+    html += `<tr style="background:rgba(99,179,237,0.08)"><td colspan="6" style="padding:8px 12px;font-weight:700;color:#67e8f9">👤 ${owner}
+      <button class="btn-danger" style="float:right;padding:2px 8px;font-size:0.75em;border-radius:4px;border:none;cursor:pointer" onclick="deleteOwner('${owner}')">刪除持有人</button></td></tr>`;
+    // Bank account rows
+    ownerAccs.filter(a => a.bank).forEach(acc => {
+      const usTrades = getAccountData(acc.id, 'us', 'trades');
+      const twTrades = getAccountData(acc.id, 'tw', 'trades');
+      const usFunds = getAccountData(acc.id, 'us', 'funds');
+      const twFunds = getAccountData(acc.id, 'tw', 'funds');
+      const totalRecords = usTrades.length + twTrades.length + usFunds.length + twFunds.length;
+      html += `<tr>
+        <td></td>
+        <td><input value="${acc.bank}" style="width:90px;${inputStyle}" onchange="const a=accounts.find(x=>x.id==='${acc.id}');a.bank=this.value;saveAccounts()"></td>
+        <td style="font-size:0.82em">${marketLabel(acc.market)}</td>
+        <td><input type="number" value="${acc.ownership_pct ?? 100}" style="width:55px;${inputStyle};text-align:center" min="0" max="100" step="1" onchange="const a=accounts.find(x=>x.id==='${acc.id}');a.ownership_pct=parseFloat(this.value)||100;saveAccounts()">%</td>
+        <td style="font-size:0.8em;color:#888">${totalRecords} 筆</td>
+        <td><button class="btn-danger" onclick="deleteAccount('${acc.id}')" style="padding:2px 8px;font-size:0.75em;border-radius:4px;border:none;cursor:pointer">刪除</button></td>
+      </tr>`;
+    });
+    // If owner has no bank accounts, show placeholder
+    if (!ownerAccs.some(a => a.bank)) {
+      html += `<tr><td></td><td colspan="5" style="color:#666;font-size:0.82em;padding:6px">尚無銀行帳戶，請到美股/台股頁面新增</td></tr>`;
+    }
+  });
+  document.getElementById('accountsBody').innerHTML = html || '<tr><td colspan="6" style="text-align:center;color:#666;padding:20px">尚無帳戶，請先新增持有人</td></tr>';
 }
+
+window.deleteOwner = function(owner) {
+  const ownerAccs = accounts.filter(a => (a.owner || a.name) === owner);
+  const totalRecords = ownerAccs.reduce((s, a) => {
+    return s + getAccountData(a.id,'us','trades').length + getAccountData(a.id,'tw','trades').length;
+  }, 0);
+  if (!confirm(`確定刪除持有人「${owner}」及其所有 ${ownerAccs.length} 個銀行帳戶和 ${totalRecords} 筆交易？`)) return;
+  ownerAccs.forEach(a => {
+    for (const m of ['us','tw']) for (const k of ['trades','funds','income']) delete _supabaseCache[`inv_${m}_${k}_${a.id}`];
+    deleteAccountFromSupabase(a.id).catch(e => console.error(e));
+  });
+  accounts = accounts.filter(a => (a.owner || a.name) !== owner);
+  saveAccounts();
+  renderAccountSelectors();
+  renderAccountsTab();
+};
 
 // ===== Charts =====
 const chartColors = ['#f59e0b','#3b82f6','#ef4444','#8b5cf6','#10b981','#f97316','#06b6d4','#ec4899','#84cc16','#a78bfa','#fbbf24','#14b8a6'];
