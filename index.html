@@ -2690,36 +2690,42 @@ function getAccountTotalIncome(accountId, market) {
 }
 
 // ===== Render: Overview =====
-function calcOwnerSummary(ownerAccounts, ownerMortgages) {
+function calcOwnerSummary(ownerAccounts, ownerMortgages, applyPct = true) {
   let usStocksValue = 0, usNetCash = 0, usNetFunded = 0;
   let twStocksValue = 0, twNetCash = 0, twNetFunded = 0;
 
   for (const acc of ownerAccounts) {
+    const pct = applyPct ? (acc.ownership_pct ?? 100) / 100 : 1;
+
     // US side
     const usTrades = getAccountData(acc.id, 'us', 'trades');
     const usFunds = getAccountData(acc.id, 'us', 'funds');
     const usIncome = getAccountData(acc.id, 'us', 'income');
     const usAnalysis = analyzeStocks(usTrades, 'us', usIncome);
-    for (const stock of usAnalysis) if (!stock.isClosed) usStocksValue += stock.marketValue;
+    let usMV = 0;
+    for (const stock of usAnalysis) if (!stock.isClosed) usMV += stock.marketValue;
+    usStocksValue += usMV * pct;
     let usCash = 0;
     for (const f of usFunds) usCash += f.type === 'deposit' ? f.amount : -f.amount;
     for (const t of usTrades) usCash += calcTradeCashImpact(t, 'us');
     usCash += usIncome.reduce((s, i) => s + i.amount, 0);
-    usNetCash += usCash;
-    usNetFunded += getAccountFunds(acc.id, 'us').netAmount;
+    usNetCash += usCash * pct;
+    usNetFunded += getAccountFunds(acc.id, 'us').netAmount * pct;
 
     // TW side
     const twTrades = getAccountData(acc.id, 'tw', 'trades');
     const twFunds = getAccountData(acc.id, 'tw', 'funds');
     const twIncome = getAccountData(acc.id, 'tw', 'income');
     const twAnalysis = analyzeStocks(twTrades, 'tw', twIncome);
-    for (const stock of twAnalysis) if (!stock.isClosed) twStocksValue += stock.marketValue;
+    let twMV = 0;
+    for (const stock of twAnalysis) if (!stock.isClosed) twMV += stock.marketValue;
+    twStocksValue += twMV * pct;
     let twCash = 0;
     for (const f of twFunds) twCash += f.type === 'deposit' ? f.amount : -f.amount;
     for (const t of twTrades) twCash += calcTradeCashImpact(t, 'tw');
     twCash += twIncome.reduce((s, i) => s + i.amount, 0);
-    twNetCash += twCash;
-    twNetFunded += getAccountFunds(acc.id, 'tw').netAmount;
+    twNetCash += twCash * pct;
+    twNetFunded += getAccountFunds(acc.id, 'tw').netAmount * pct;
   }
 
   const usNetWorth = usStocksValue + usNetCash; // USD
@@ -2907,7 +2913,7 @@ function renderOverviewTab() {
     return;
   }
 
-  const summary = calcOwnerSummary(filteredAccounts, filteredMortgages);
+  const summary = calcOwnerSummary(filteredAccounts, filteredMortgages, !!currentOwnerFilter);
   const titleText = currentOwnerFilter ? '👤 ' + currentOwnerFilter : '';
   summaryEl.innerHTML = renderOwnerBlock(titleText, summary, filteredMortgages);
   accSection.innerHTML = renderAccountCards(filteredAccounts, filteredMortgages);
@@ -3085,20 +3091,15 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
   destroyChart(`mktOvwPie_${market}`);
   destroyChart(`mktOvwTrend_${market}`);
 
-  const rawNW = rawMV + rawCash;
-  const rawPL = rawNW - rawFundIn;
-  const rawRet = rawFundIn > 0 ? (rawPL / rawFundIn * 100) : 0;
-  const rawIncome = accountSummaries.reduce((s, a) => s + (a.income / a.ownPct), 0); // undo weighting
-
   container.innerHTML = `
     <div class="summary">
-      <div class="card"><div class="label">總淨值</div><div class="value blue">${fmtMkt(rawNW)}</div></div>
-      <div class="card"><div class="label">持倉市值</div><div class="value">${fmtMkt(rawMV)}</div></div>
-      <div class="card"><div class="label">現金</div><div class="value yellow">${fmtMkt(rawCash)}</div></div>
-      <div class="card"><div class="label">投入金額</div><div class="value">${fmtMkt(rawFundIn)}</div></div>
-      <div class="card"><div class="label">累計配息</div><div class="value ${rawIncome>=0?'green':'red'}">+${fmtMkt(rawIncome)}</div></div>
-      <div class="card"><div class="label">總損益</div><div class="value ${rawPL>=0?'green':'red'}">${rawPL>=0?'+':''}${fmtMkt(rawPL)}</div></div>
-      <div class="card"><div class="label">投報率</div><div class="value ${rawRet>=0?'green':'red'}">${rawRet>=0?'+':''}${rawRet.toFixed(2)}%</div></div>
+      <div class="card"><div class="label">總淨值</div><div class="value blue">${fmtMkt(totalNetWorth)}</div></div>
+      <div class="card"><div class="label">持倉市值</div><div class="value">${fmtMkt(totalMV)}</div></div>
+      <div class="card"><div class="label">現金</div><div class="value yellow">${fmtMkt(totalCash)}</div></div>
+      <div class="card"><div class="label">投入金額</div><div class="value">${fmtMkt(totalFundIn)}</div></div>
+      <div class="card"><div class="label">累計配息</div><div class="value ${totalIncome>=0?'green':'red'}">+${fmtMkt(totalIncome)}</div></div>
+      <div class="card"><div class="label">總損益</div><div class="value ${totalPL>=0?'green':'red'}">${totalPL>=0?'+':''}${fmtMkt(totalPL)}</div></div>
+      <div class="card"><div class="label">投報率</div><div class="value ${totalRet>=0?'green':'red'}">${totalRet>=0?'+':''}${totalRet.toFixed(2)}%</div></div>
     </div>
 
     ${pieData.length > 0 ? `
