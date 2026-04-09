@@ -2970,9 +2970,10 @@ function renderTWTab() {
       const mv = s.marketValue;
       const dayInfo = s.dayChange !== null ? `<br><span style="font-size:0.75em" class="${plClass(s.dayChange)}">今日 ${fmtPct(s.dayChange)}</span>` : '';
       const twDisplay = getTWTickerDisplay(s.ticker);
-      const codeLabel = twDisplay.code ? `<br><span style="font-size:0.7em;color:#888">${twDisplay.code}</span>` : '';
+      const twName = twCodeToName[s.ticker] || twPrices[s.ticker]?.name || s.ticker;
+      const codeLabel = twName !== s.ticker ? `<br><span style="font-size:0.7em;color:#888">${s.ticker}</span>` : '';
       return `<tr style="${s.isClosed ? 'opacity:0.55' : ''}">
-        <td><span style="color:#67e8f9;font-weight:600">${s.ticker}</span>${codeLabel}${dayInfo}</td>
+        <td><span style="color:#67e8f9;font-weight:600">${twName}</span>${codeLabel}${dayInfo}</td>
         <td>${s.currentPrice !== null ? fmtTWD2(s.currentPrice) : '<span style="color:#666">--</span>'}</td>
         <td>${s.isClosed ? '-' : s.shares.toLocaleString('en-US', {maximumFractionDigits: 4})}</td>
         <td>${s.isClosed ? '-' : fmtTWD2(s.avgPrice)}</td>
@@ -3035,11 +3036,13 @@ function renderStockSections(containerId, analysis, trades, market) {
       <h2 style="color:#a78bfa">📜 個股交易紀錄</h2>
     </div>
   ` + analysis.map(s => {
-    const tickerTrades = trades.filter(t => t.ticker === s.ticker).sort((a, b) => a.date.localeCompare(b.date));
+    // Match trades by normalized key (e.g., both "台積電" and "2330" → "2330")
+    const tickerTrades = trades.filter(t => normalizeTickerKey(t.ticker, market) === s.ticker).sort((a, b) => a.date.localeCompare(b.date));
     const buys = tickerTrades.filter(t => t.type === 'buy');
     const sells = tickerTrades.filter(t => t.type === 'sell');
     const twDisplay = isTW ? getTWTickerDisplay(s.ticker) : null;
-    const codeLabel = twDisplay && twDisplay.code ? ` <span style="color:#888;font-size:0.8em">(${twDisplay.code})</span>` : '';
+    const stockName = isTW ? (twCodeToName[s.ticker] || twPrices[s.ticker]?.name || s.ticker) : s.ticker;
+    const codeLabel = isTW && stockName !== s.ticker ? ` <span style="color:#888;font-size:0.8em">(${s.ticker})</span>` : '';
 
     const summaryText = s.isClosed
       ? `已清倉 | 投入 ${fmtAmt(s.totalBought)} | 回收 ${fmtAmt(s.totalSold)} | 損益 ${(s.totalPL>=0?'+':'') + fmtAmt(s.totalPL)}`
@@ -3082,7 +3085,7 @@ function renderStockSections(containerId, analysis, trades, market) {
              style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;cursor:pointer;background:rgba(255,255,255,0.03);user-select:none">
           <div style="display:flex;align-items:center;gap:12px">
             <span class="arrow" style="color:#666;transition:transform 0.2s;display:inline-block">▶</span>
-            <span style="font-size:1.1em;font-weight:700;color:#67e8f9">${s.ticker}${codeLabel}</span>
+            <span style="font-size:1.1em;font-weight:700;color:#67e8f9">${isTW ? stockName : s.ticker}${codeLabel}</span>
             <span style="font-size:0.8em;color:#aaa">${summaryText}</span>
           </div>
           ${retBadge}
