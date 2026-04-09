@@ -2791,10 +2791,10 @@ function renderUSTab() {
   };
   document.getElementById('usFundsPanel').innerHTML = `
     <div style="overflow-x:auto">
-      <h3 style="font-size:0.85em;color:#34d399;padding:10px 14px 4px;margin:0">🟢 存入 (${usDeposits.length}筆)</h3>
+      <h3 style="font-size:0.85em;color:#34d399;padding:10px 14px 4px;margin:0">🟢 存入 (${usDeposits.length}筆) — 合計 ${fmt(usDeposits.reduce((s,f)=>s+f.amount,0))}</h3>
       <table><thead><tr><th>日期</th><th>金額 USD</th><th>支付 TWD</th><th>匯率</th><th>備註</th><th></th></tr></thead>
       <tbody>${usDeposits.length > 0 ? usDeposits.map(usFundRowFn).join('') : '<tr><td colspan="6" style="text-align:center;color:#666;padding:14px">尚無存入紀錄</td></tr>'}</tbody></table>
-      <h3 style="font-size:0.85em;color:#f87171;padding:10px 14px 4px;margin:0">🔴 提領 (${usWithdrawals.length}筆)</h3>
+      <h3 style="font-size:0.85em;color:#f87171;padding:10px 14px 4px;margin:0">🔴 提領 (${usWithdrawals.length}筆) — 合計 ${fmt(usWithdrawals.reduce((s,f)=>s+f.amount,0))}</h3>
       <table><thead><tr><th>日期</th><th>金額 USD</th><th>支付 TWD</th><th>匯率</th><th>備註</th><th></th></tr></thead>
       <tbody>${usWithdrawals.length > 0 ? usWithdrawals.map(usFundRowFn).join('') : '<tr><td colspan="6" style="text-align:center;color:#666;padding:14px">尚無提領紀錄</td></tr>'}</tbody></table>
     </div>`;
@@ -2981,10 +2981,10 @@ function renderTWTab() {
   };
   document.getElementById('twFundsPanel').innerHTML = `
     <div style="overflow-x:auto">
-      <h3 style="font-size:0.85em;color:#34d399;padding:10px 14px 4px;margin:0">🟢 存入 (${twDeposits.length}筆)</h3>
+      <h3 style="font-size:0.85em;color:#34d399;padding:10px 14px 4px;margin:0">🟢 存入 (${twDeposits.length}筆) — 合計 ${fmtTWD(twDeposits.reduce((s,f)=>s+f.amount,0))}</h3>
       <table><thead><tr><th>日期</th><th>金額 TWD</th><th>備註</th><th></th></tr></thead>
       <tbody>${twDeposits.length > 0 ? twDeposits.map(twFundRowFn).join('') : '<tr><td colspan="4" style="text-align:center;color:#666;padding:14px">尚無存入紀錄</td></tr>'}</tbody></table>
-      <h3 style="font-size:0.85em;color:#f87171;padding:10px 14px 4px;margin:0">🔴 提領 (${twWithdrawals.length}筆)</h3>
+      <h3 style="font-size:0.85em;color:#f87171;padding:10px 14px 4px;margin:0">🔴 提領 (${twWithdrawals.length}筆) — 合計 ${fmtTWD(twWithdrawals.reduce((s,f)=>s+f.amount,0))}</h3>
       <table><thead><tr><th>日期</th><th>金額 TWD</th><th>備註</th><th></th></tr></thead>
       <tbody>${twWithdrawals.length > 0 ? twWithdrawals.map(twFundRowFn).join('') : '<tr><td colspan="4" style="text-align:center;color:#666;padding:14px">尚無提領紀錄</td></tr>'}</tbody></table>
     </div>`;
@@ -3069,17 +3069,33 @@ function renderIncomeSections(panelId, income, market) {
       <tbody>${items.map(renderRow).join('')}</tbody></table></div>`;
   };
 
-  panel.innerHTML = `
-    <div style="overflow-x:auto">
-      <h3 style="font-size:0.85em;color:${typeMap.dividend.text};padding:10px 14px 4px;margin:0">${typeMap.dividend.icon} 股利 (${dividends.length}筆)</h3>
-      ${dividendHTML}
-      <h3 style="font-size:0.85em;color:${typeMap.interest.text};padding:10px 14px 4px;margin:0">${typeMap.interest.icon} 利息 (${interests.length}筆)</h3>
-      ${renderSimpleSection(interests, 'interest')}
-      <h3 style="font-size:0.85em;color:${typeMap.tax.text};padding:10px 14px 4px;margin:0">${typeMap.tax.icon} 稅 (${taxes.length}筆)</h3>
-      ${renderSimpleSection(taxes, 'tax')}
-      <h3 style="font-size:0.85em;color:${typeMap.adjust.text};padding:10px 14px 4px;margin:0">${typeMap.adjust.icon} 微調 (${adjusts.length}筆)</h3>
-      ${renderSimpleSection(adjusts, 'adjust')}
-    </div>`;
+  const collapsibleHeader = (type, items) => {
+    const t = typeMap[type];
+    const total = items.reduce((s, i) => s + i.amount, 0);
+    const totalStr = items.length > 0 ? ` ${total >= 0 ? '+' : ''}${fmtAmt(total)}` : '';
+    const uid = panelId + '_' + type;
+    return { uid, html: `<div onclick="const p=document.getElementById('${uid}');p.style.display=p.style.display==='none'?'block':'none';this.querySelector('.arrow').classList.toggle('open')"
+         style="display:flex;justify-content:space-between;align-items:center;padding:6px 14px;cursor:pointer;background:rgba(${t.color},0.05);border-radius:6px;user-select:none;margin-top:6px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="arrow" style="color:#666;transition:transform 0.2s;display:inline-block;font-size:0.8em">▶</span>
+          <span style="color:${t.text};font-weight:600">${t.icon} ${t.label}</span>
+          <span style="color:#888;font-size:0.8em">(${items.length}筆)</span>
+        </div>
+        <span style="color:${t.text};font-size:0.85em">${totalStr}</span>
+      </div>` };
+  };
+
+  const divH = collapsibleHeader('dividend', dividends);
+  const intH = collapsibleHeader('interest', interests);
+  const taxH = collapsibleHeader('tax', taxes);
+  const adjH = collapsibleHeader('adjust', adjusts);
+
+  panel.innerHTML = `<div>
+    ${divH.html}<div id="${divH.uid}" style="display:none">${dividendHTML}</div>
+    ${intH.html}<div id="${intH.uid}" style="display:none">${renderSimpleSection(interests, 'interest')}</div>
+    ${taxH.html}<div id="${taxH.uid}" style="display:none">${renderSimpleSection(taxes, 'tax')}</div>
+    ${adjH.html}<div id="${adjH.uid}" style="display:none">${renderSimpleSection(adjusts, 'adjust')}</div>
+  </div>`;
 }
 
 // ===== Per-Stock Trade Details (collapsible) =====
