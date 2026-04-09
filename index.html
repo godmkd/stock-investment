@@ -828,12 +828,16 @@ async function doLogout() {
 async function loadAllDataFromSupabase() {
   const uid = currentUser.id;
 
-  // Load accounts
-  const { data: accData } = await sb.from('inv_accounts').select('*').eq('user_id', uid);
-  if (accData) {
+  // Load accounts from Supabase, fallback to localStorage
+  const { data: accData, error: accErr } = await sb.from('inv_accounts').select('*').eq('user_id', uid);
+  if (accErr) console.error('Load accounts error:', accErr.message);
+  if (accData && accData.length > 0) {
     accounts = accData.map(r => ({
       id: r.id, name: r.name, owner: r.owner, bank: r.bank || '', market: r.market || '', ownership_pct: r.ownership_pct ?? 100
     }));
+  } else {
+    // Fallback to localStorage
+    try { const ls = JSON.parse(localStorage.getItem('inv_accounts') || '[]'); if (ls.length > 0) accounts = ls; } catch(e) {}
   }
 
   // Load mortgages
@@ -1168,7 +1172,8 @@ let currentUSAccount = null;
 let currentTWAccount = null;
 
 function saveAccounts() {
-  // Save to Supabase (fire-and-forget with error logging)
+  // Also keep in localStorage as fallback
+  localStorage.setItem('inv_accounts', JSON.stringify(accounts));
   saveAccountsToSupabase().catch(e => console.error('saveAccounts error:', e));
 }
 function saveMortgages() {
@@ -1178,12 +1183,20 @@ function saveMortgages() {
 // Data access per account (market-aware) — reads from in-memory cache
 function getAccountData(id, market, key) {
   const cacheKey = `inv_${market}_${key}_${id}`;
-  return _supabaseCache[cacheKey] || [];
+  if (_supabaseCache[cacheKey] && _supabaseCache[cacheKey].length > 0) return _supabaseCache[cacheKey];
+  // Fallback to localStorage
+  try {
+    const ls = JSON.parse(localStorage.getItem(cacheKey) || '[]');
+    if (ls.length > 0) { _supabaseCache[cacheKey] = ls; return ls; }
+  } catch(e) {}
+  return [];
 }
 
 function saveAccountData(id, market, key, data) {
   const cacheKey = `inv_${market}_${key}_${id}`;
   _supabaseCache[cacheKey] = data;
+  // Also keep in localStorage as fallback
+  localStorage.setItem(cacheKey, JSON.stringify(data));
   // Save to Supabase async
   saveAccountDataToSupabase(id, market, key, data).catch(e => console.error('saveAccountData error:', e));
 }
@@ -4136,41 +4149,46 @@ function importAccountJSON(event, marketFilter) {
         }
 
         if (data.trades) {
-          saveAccountData(targetAccId, market, 'trades', data.trades);
+          const cacheKey = `inv_${market}_trades_${targetAccId}`;
+          _supabaseCache[cacheKey] = data.trades;
+          await saveAccountDataToSupabase(targetAccId, market, 'trades', data.trades);
           imported.trades = data.trades.length;
         }
         if (data.funds) {
-          saveAccountData(targetAccId, market, 'funds', data.funds);
+          const cacheKey = `inv_${market}_funds_${targetAccId}`;
+          _supabaseCache[cacheKey] = data.funds;
+          await saveAccountDataToSupabase(targetAccId, market, 'funds', data.funds);
           imported.funds = data.funds.length;
         }
         if (data.income) {
-          saveAccountData(targetAccId, market, 'income', data.income);
+          const cacheKey = `inv_${market}_income_${targetAccId}`;
+          _supabaseCache[cacheKey] = data.income;
+          await saveAccountDataToSupabase(targetAccId, market, 'income', data.income);
           imported.income = data.income.length;
         }
 
-        alert(`✅ 匯入成功！\n交易: ${imported.trades} 筆\n資金: ${imported.funds} 筆\n配息/利息: ${imported.income} 筆`);
+        alert(`✅ 匯入成功並已同步雲端！\n交易: ${imported.trades} 筆\n資金: ${imported.funds} 筆\n配息/利息: ${imported.income} 筆`);
       }
       // 格式2: 全系統匯出格式 (含 accounts)
       else if (data.accounts) {
         accounts = data.accounts;
-        // Ensure bank and ownership_pct fields
         for (const acc of accounts) {
           if (!acc.bank) acc.bank = '';
+          if (!acc.market) acc.market = '';
           if (acc.ownership_pct === undefined) acc.ownership_pct = 100;
-          delete acc.market;
         }
-        saveAccounts();
+        await saveAccountsToSupabase();
 
+        let totalImported = 0;
         for (const acc of accounts) {
           for (const m of ['us', 'tw']) {
             for (const key of ['trades', 'funds', 'income']) {
               let arr = data[`${m}_${key}_${acc.id}`];
-              // Old format fallback
-              if (!arr && data[`${key}_${acc.id}`]) {
-                arr = data[`${key}_${acc.id}`];
-              }
+              if (!arr && data[`${key}_${acc.id}`]) arr = data[`${key}_${acc.id}`];
               if (arr && arr.length > 0) {
-                saveAccountData(acc.id, m, key, arr);
+                _supabaseCache[`inv_${m}_${key}_${acc.id}`] = arr;
+                await saveAccountDataToSupabase(acc.id, m, key, arr);
+                totalImported += arr.length;
               }
             }
           }
@@ -4178,9 +4196,9 @@ function importAccountJSON(event, marketFilter) {
 
         if (data.mortgages) {
           mortgages = data.mortgages;
-          saveMortgages();
+          await saveMortgagesToSupabase();
         }
-        alert(`✅ 匯入成功！\n帳戶: ${accounts.length} 個\n房產: ${mortgages.length} 筆`);
+        alert(`✅ 匯入成功並已同步雲端！\n帳戶: ${accounts.length} 個\n資料: ${totalImported} 筆\n房產: ${mortgages.length} 筆`);
       }
       else {
         alert('❌ 無法辨識的 JSON 格式');
