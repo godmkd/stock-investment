@@ -4515,6 +4515,15 @@ function recalcLastTwoStages(m, changedIdx, changedField) {
     secLast.pct = Math.max(0, parseFloat((remainPct - last.pct).toFixed(2)));
     secLast.amount = m.totalPrice * secLast.pct / 100;
   }
+  // 修正浮點誤差：確保所有階段金額加總 = 工程款總額
+  const targetTotal = m.totalPrice * (m.constructionPct || 30) / 100;
+  let sumAmt = 0;
+  for (let i = 0; i < m.payments.length; i++) sumAmt += (m.payments[i].amount || m.totalPrice * m.payments[i].pct / 100);
+  const diff = parseFloat((targetTotal - sumAmt).toFixed(1));
+  if (Math.abs(diff) > 0.01 && m.payments.length > 0) {
+    // 把差額加到最後一筆
+    last.amount = parseFloat((last.amount + diff).toFixed(1));
+  }
 }
 
 // 工程款：改%自動算金額，改金額自動算%
