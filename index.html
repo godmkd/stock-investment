@@ -616,7 +616,7 @@
           </div>
           <div class="form-group" style="flex:1 1 100px">
             <label>日期</label>
-            <input type="text" id="xferDate" placeholder="YYYY.MM.DD">
+            <input type="text" id="xferDate" placeholder="YYYY.MM.DD" onchange="updateXferRate()">
           </div>
         </div>
         <button class="btn btn-primary" onclick="submitTransfer()">💱 轉帳</button>
@@ -2855,15 +2855,13 @@ function fundCashImpact(f) {
   return 0;
 }
 
-function getAccountWeightedAvgRate(accountId) {
+function getAccountWeightedAvgRate(accountId, asOfDate) {
   const funds = getAccountData(accountId, 'us', 'funds');
   let totalTWD = 0, totalUSD = 0;
   for (const f of funds) {
-    if (f.type === 'deposit' && f.twdAmount) {
-      totalTWD += f.twdAmount;
-      totalUSD += f.amount;
-    }
-    if (f.type === 'transfer_in' && f.twdAmount) {
+    // If asOfDate provided, only count records on or before that date
+    if (asOfDate && f.date > asOfDate) continue;
+    if ((f.type === 'deposit' || f.type === 'transfer_in') && f.twdAmount) {
       totalTWD += f.twdAmount;
       totalUSD += f.amount;
     }
@@ -3662,7 +3660,8 @@ function populateTransferDropdowns() {
 function updateXferRate() {
   const srcId = document.getElementById('xferSourceAcc')?.value;
   if (!srcId) return;
-  const rate = getAccountWeightedAvgRate(srcId);
+  const dateStr = parseFlexDate(document.getElementById('xferDate')?.value || '');
+  const rate = getAccountWeightedAvgRate(srcId, dateStr || undefined);
   const rateEl = document.getElementById('xferRate');
   if (rateEl && rate > 0) rateEl.value = rate.toFixed(3);
 }
