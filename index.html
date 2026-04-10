@@ -3690,7 +3690,7 @@ function updateXferActual() {
   if (actualEl) actualEl.value = (amount - fee).toFixed(2);
 }
 
-function submitTransfer() {
+async function submitTransfer() {
   const srcId = document.getElementById('xferSourceAcc').value;
   const tgtId = document.getElementById('xferTargetAcc').value;
   const amount = parseFloat(document.getElementById('xferAmount').value);
@@ -3720,9 +3720,12 @@ function submitTransfer() {
     amount: amount,
     twdAmount: twdAmount,
     rate: rate,
-    note: `轉出至 ${tgtAcc ? tgtAcc.name : tgtId}` + (fee > 0 ? ` (手續費 $${fee})` : '')
+    note: `轉出至 ${tgtAcc ? accountLabel(tgtAcc) : tgtId}` + (fee > 0 ? ` (手續費 $${fee})` : '')
   });
-  saveAccountData(srcId, 'us', 'funds', srcFunds);
+  // Save source first, await completion
+  _supabaseCache[`inv_us_funds_${srcId}`] = srcFunds;
+  localStorage.setItem(`inv_us_funds_${srcId}`, JSON.stringify(srcFunds));
+  await saveAccountDataToSupabase(srcId, 'us', 'funds', srcFunds);
 
   // Create transfer_in in target account
   const tgtFunds = getAccountData(tgtId, 'us', 'funds');
@@ -3733,9 +3736,12 @@ function submitTransfer() {
     amount: actual,
     twdAmount: twdActual,
     rate: rate,
-    note: `從 ${srcAcc ? srcAcc.name : srcId} 轉入` + (fee > 0 ? ` (原 $${amount}, 手續費 $${fee})` : '')
+    note: `從 ${srcAcc ? accountLabel(srcAcc) : srcId} 轉入` + (fee > 0 ? ` (原 $${amount}, 手續費 $${fee})` : '')
   });
-  saveAccountData(tgtId, 'us', 'funds', tgtFunds);
+  // Save target, await completion
+  _supabaseCache[`inv_us_funds_${tgtId}`] = tgtFunds;
+  localStorage.setItem(`inv_us_funds_${tgtId}`, JSON.stringify(tgtFunds));
+  await saveAccountDataToSupabase(tgtId, 'us', 'funds', tgtFunds);
 
   // Clear form
   document.getElementById('xferAmount').value = '';
