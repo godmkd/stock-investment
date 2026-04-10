@@ -1857,11 +1857,50 @@ async function fetchTWPricesJsonp(tickers) {
   return results;
 }
 
+// 判斷是否在台股盤中
+function isTWMarketHours() {
+  const now = new Date();
+  const tw = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Taipei' }));
+  const h = tw.getHours(), m = tw.getMinutes();
+  const day = tw.getDay();
+  if (day === 0 || day === 6) return false; // 週末
+  const mins = h * 60 + m;
+  return mins >= 540 && mins <= 830; // 9:00 ~ 13:50
+}
+
+// Yahoo Finance 取得台股收盤價
+async function fetchTWYahooClosing(tickers) {
+  const results = {};
+  const proxies = ['https://api.allorigins.win/raw?url=', 'https://corsproxy.io/?'];
+  for (const code of tickers) {
+    const symbol = code + '.TW';
+    for (const proxy of proxies) {
+      try {
+        const url = proxy + encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=1d&interval=1d`);
+        const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+        if (!res.ok) continue;
+        const data = await res.json();
+        const meta = data?.chart?.result?.[0]?.meta;
+        if (meta && meta.regularMarketPrice > 0) {
+          const price = meta.regularMarketPrice;
+          const prevClose = meta.chartPreviousClose || meta.previousClose || price;
+          const change = prevClose > 0 ? ((price - prevClose) / prevClose * 100) : 0;
+          const name = twCodeToName[code] || code;
+          const entry = { price, prevClose, change: parseFloat(change.toFixed(2)), name, time: Date.now() };
+          results[code] = entry;
+          if (name && name !== code) results[name] = entry;
+          break; // success, skip other proxies
+        }
+      } catch(e) {}
+    }
+  }
+  return results;
+}
+
 async function refreshTWPrices() {
   const statusEl = document.getElementById('twLastUpdate');
   if (statusEl) statusEl.textContent = '更新中...';
 
-  // 收集所有持有的股票代號
   const allTickers = new Set();
   for (const acc of accounts) {
     const trades = getAccountData(acc.id, 'tw', 'trades');
@@ -1877,8 +1916,10 @@ async function refreshTWPrices() {
 
   let fetched = false;
   let method = '';
+  let count = 0;
+  const marketOpen = isTWMarketHours();
 
-  // 方法1: 本地 tw_prices.json（HTTP server 環境下）
+  // 方法1: 本地 tw_prices.json
   try {
     const res = await fetch('tw_prices.json?t=' + Date.now());
     if (res.ok) {
@@ -1886,22 +1927,50 @@ async function refreshTWPrices() {
       Object.assign(twPrices, data);
       fetched = true;
       method = '本地檔案';
+      count = Object.keys(data).length / 2;
     }
   } catch (e) {}
 
-  // 方法2: JSONP（不受 CORS 限制，瀏覽器直接可用）★ 主要方法
-  if (!fetched) {
+  // 方法2: 盤中用 TWSE 即時報價
+  if (!fetched && marketOpen) {
     try {
       const jsonpResults = await fetchTWPricesJsonp(allTickers);
       if (Object.keys(jsonpResults).length > 0) {
         Object.assign(twPrices, jsonpResults);
         fetched = true;
         method = 'TWSE 即時報價';
+        count = Object.keys(jsonpResults).length / 2;
       }
     } catch (e) { console.log('JSONP method failed:', e); }
   }
 
-  // 方法3: CORS proxy fallback（備用）
+  // 方法3: 收盤後用 Yahoo Finance（更快更新收盤價）
+  if (!fetched) {
+    try {
+      const yahooResults = await fetchTWYahooClosing(allTickers);
+      if (Object.keys(yahooResults).length > 0) {
+        Object.assign(twPrices, yahooResults);
+        fetched = true;
+        method = 'Yahoo Finance 收盤價';
+        count = Object.keys(yahooResults).length / 2;
+      }
+    } catch (e) { console.log('Yahoo method failed:', e); }
+  }
+
+  // 方法4: TWSE JSONP fallback（盤後也試一次）
+  if (!fetched) {
+    try {
+      const jsonpResults = await fetchTWPricesJsonp(allTickers);
+      if (Object.keys(jsonpResults).length > 0) {
+        Object.assign(twPrices, jsonpResults);
+        fetched = true;
+        method = 'TWSE 報價';
+        count = Object.keys(jsonpResults).length / 2;
+      }
+    } catch (e) {}
+  }
+
+  // 方法5: CORS proxy fallback
   if (!fetched) {
     try {
       const twseResults = await fetchTWSEClosingPrices(allTickers);
