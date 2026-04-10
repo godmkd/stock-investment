@@ -2859,11 +2859,20 @@ function getAccountWeightedAvgRate(accountId, asOfDate) {
   const funds = getAccountData(accountId, 'us', 'funds');
   let totalTWD = 0, totalUSD = 0;
   for (const f of funds) {
-    // If asOfDate provided, only count records on or before that date
     if (asOfDate && f.date > asOfDate) continue;
     if ((f.type === 'deposit' || f.type === 'transfer_in') && f.twdAmount) {
       totalTWD += f.twdAmount;
       totalUSD += f.amount;
+    }
+    // 提領換回台幣：扣除台幣成本和美金
+    if (f.type === 'withdraw' && f.twdAmount) {
+      totalTWD -= f.twdAmount;
+      totalUSD -= f.amount;
+    }
+    // transfer_out 也扣除
+    if (f.type === 'transfer_out' && f.twdAmount) {
+      totalTWD -= f.twdAmount;
+      totalUSD -= f.amount;
     }
   }
   return totalUSD > 0 ? totalTWD / totalUSD : 0;
