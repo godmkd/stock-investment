@@ -1108,6 +1108,15 @@ async function loadAllDataFromSupabase() {
       localStorage.setItem('us_finnhub_key', settings.finnhub_key);
       localStorage.setItem('finnhub_key', settings.finnhub_key);
     }
+    // Restore cached prices from cloud
+    if (settings.settings?.us_prices) {
+      Object.assign(prices, settings.settings.us_prices);
+      localStorage.setItem('stock_prices', JSON.stringify(prices));
+    }
+    if (settings.settings?.tw_prices) {
+      Object.assign(twPrices, settings.settings.tw_prices);
+      localStorage.setItem('tw_stock_prices', JSON.stringify(twPrices));
+    }
   }
 
   // Load DCA templates
@@ -1662,8 +1671,20 @@ async function fetchPrice(ticker) {
     if (data.c && data.c > 0) {
       prices[ticker] = { price: data.c, change: data.dp, time: Date.now() };
       localStorage.setItem('stock_prices', JSON.stringify(prices));
+      savePricesToCloud().catch(()=>{});
     }
   } catch (e) { console.error(`Fetch ${ticker} failed`, e); }
+}
+
+// Save prices to Supabase cloud
+async function savePricesToCloud() {
+  if (!currentUser) return;
+  const uid = currentUser.id;
+  const { data: existing } = await sb.from('inv_user_settings').select('settings').eq('user_id', uid).maybeSingle();
+  const s = existing?.settings || {};
+  s.us_prices = prices;
+  s.tw_prices = twPrices;
+  await sb.from('inv_user_settings').upsert({ user_id: uid, finnhub_key: localStorage.getItem('us_finnhub_key') || '', settings: s }, { onConflict: 'user_id' });
 }
 
 // ===== USD/TWD Rate =====
@@ -2005,6 +2026,7 @@ async function refreshTWPrices() {
 
   if (fetched) {
     localStorage.setItem('tw_stock_prices', JSON.stringify(twPrices));
+    savePricesToCloud().catch(()=>{});
     if (statusEl) {
       const count = [...allTickers].filter(t => twPrices[t]?.price > 0).length;
       statusEl.textContent = `最後更新：${new Date().toLocaleString('zh-TW')} (${count}/${allTickers.size} 檔，來源：${method})`;
@@ -3213,9 +3235,9 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
       <canvas id="${trendCanvasId}" style="width:100%;max-height:300px"></canvas>
     </div>
 
-    <div class="table-container" style="margin-top:16px">
+    <div class="table-container" style="margin-top:16px;overflow-x:auto">
       <div class="table-header"><h3>${flag} 各帳戶摘要</h3></div>
-      <table><thead><tr><th>帳戶</th><th>比例</th><th>淨值</th><th>投入</th><th>損益</th><th>投報率</th></tr></thead>
+      <table style="min-width:max-content"><thead><tr><th>帳戶</th><th>比例</th><th>淨值</th><th>投入</th><th>損益</th><th>投報率</th></tr></thead>
       <tbody>${accountSummaries.map(s => {
         const pl = s.netWorth - s.fundIn;
         const ret = s.fundIn > 0 ? (pl / s.fundIn * 100).toFixed(2) : '0.00';
@@ -3229,9 +3251,9 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
     </div>
 
     ${mergedList.length > 0 ? `
-    <div class="table-container" style="margin-top:16px">
+    <div class="table-container" style="margin-top:16px;overflow-x:auto">
       <div class="table-header"><h3>${flag} 合併持股 <span class="help-tip">!<span class="help-text">各帳戶持股按比例加權後合併顯示。</span></span></h3></div>
-      <table><thead><tr><th>股票</th><th>股價</th><th>總股數</th><th>市值</th><th>佔比</th></tr></thead>
+      <table style="min-width:max-content"><thead><tr><th>股票</th><th>股價</th><th>總股數</th><th>市值</th><th>佔比</th></tr></thead>
       <tbody>${mergedList.map(s => {
         const pct = totalMV > 0 ? (s.marketValue / totalMV * 100).toFixed(1) : '0.0';
         const priceStr = s.currentPrice ? (market==='tw'?fmtTWD2(s.currentPrice):fmt(s.currentPrice)) : '-';
