@@ -3734,7 +3734,7 @@ async function submitTransfer() {
     date: date,
     type: 'transfer_in',
     amount: actual,
-    twdAmount: twdActual,
+    twdAmount: twdAmount, // 台幣成本包含手續費（全額 × 匯率）
     rate: rate,
     note: `從 ${srcAcc ? accountLabel(srcAcc) : srcId} 轉入` + (fee > 0 ? ` (原 $${amount}, 手續費 $${fee})` : '')
   });
