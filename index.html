@@ -2878,6 +2878,20 @@ function getAccountWeightedAvgRate(accountId, asOfDate) {
   return totalUSD > 0 ? totalTWD / totalUSD : 0;
 }
 
+// 直接用紀錄的台幣金額計算台幣淨成本
+function getAccountTwdNetCost(accountId, asOfDate) {
+  const funds = getAccountData(accountId, 'us', 'funds');
+  let cost = 0;
+  for (const f of funds) {
+    if (asOfDate && f.date > asOfDate) continue;
+    if (f.type === 'deposit' && f.twdAmount) cost += f.twdAmount;
+    if (f.type === 'withdraw' && f.twdAmount) cost -= f.twdAmount;
+    if (f.type === 'transfer_in' && f.twdAmount) cost += f.twdAmount;
+    if (f.type === 'transfer_out' && f.twdAmount) cost -= f.twdAmount;
+  }
+  return cost;
+}
+
 function getAccountTotalIncome(accountId, market) {
   const income = getAccountData(accountId, market, 'income');
   return income.reduce((sum, item) => sum + item.amount, 0);
@@ -3313,19 +3327,13 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
   let usTwdSection = '';
   if (market === 'us') {
     let totalTwdCost = 0, totalUsdInvested = 0;
-    let allTwdAmount = 0, allUsdDeposited = 0;
+    let allTwdCost = 0;
     for (const s of accountSummaries) {
-      const funds = getAccountData(s.acc.id, 'us', 'funds');
-      for (const f of funds) {
-        if ((f.type === 'deposit' || f.type === 'transfer_in') && f.twdAmount) {
-          allTwdAmount += f.twdAmount;
-          allUsdDeposited += f.amount;
-        }
-      }
+      allTwdCost += getAccountTwdNetCost(s.acc.id);
       totalUsdInvested += s.fundIn;
     }
-    const ovwAvgRate = allUsdDeposited > 0 ? allTwdAmount / allUsdDeposited : 0;
-    const ovwTwdCost = totalFundIn * ovwAvgRate;
+    const ovwAvgRate = totalFundIn > 0 ? allTwdCost / totalFundIn : 0;
+    const ovwTwdCost = allTwdCost;
     const ovwTwdValue = totalNetWorth * usdTwdRate;
     const ovwTwdPL = ovwAvgRate > 0 ? ovwTwdValue - ovwTwdCost : 0;
     const ovwTwdRet = ovwTwdCost > 0 ? (ovwTwdPL / ovwTwdCost * 100) : 0;
@@ -3483,9 +3491,9 @@ function renderUSTab() {
     </div>
   `;
 
-  // TWD 區塊 - weighted avg rate includes deposits + transfer_in
+  // TWD 區塊 - 直接用紀錄的台幣金額
   const wAvgRate = getAccountWeightedAvgRate(currentUSAccount);
-  const twdCost = fundInfo.netAmount * wAvgRate;
+  const twdCost = getAccountTwdNetCost(currentUSAccount);
   const netWorthTWD = netWorth * usdTwdRate;
   const plTWD = wAvgRate > 0 ? (netWorthTWD - twdCost) : 0;
   const retTWD = twdCost > 0 ? (plTWD / twdCost * 100) : 0;
