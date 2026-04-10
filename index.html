@@ -1109,6 +1109,9 @@ async function loadAllDataFromSupabase() {
       localStorage.setItem('finnhub_key', settings.finnhub_key);
     }
   }
+
+  // Load DCA templates
+  await loadDcaTemplatesFromSupabase();
 }
 
 // In-memory cache for account data (trades/funds/income)
@@ -4073,11 +4076,29 @@ function nextBusinessDay(dateStr) {
   return d.toISOString().slice(0,10);
 }
 
+let _dcaTemplatesCache = null;
 function getDcaTemplates() {
+  if (_dcaTemplatesCache) return _dcaTemplatesCache;
   try { return JSON.parse(localStorage.getItem('dca_templates') || '[]'); } catch(e) { return []; }
 }
 function saveDcaTemplates(tpls) {
+  _dcaTemplatesCache = tpls;
   localStorage.setItem('dca_templates', JSON.stringify(tpls));
+  // Sync to Supabase
+  if (currentUser) {
+    const uid = currentUser.id;
+    sb.from('inv_dca_templates').upsert({ id: uid, user_id: uid, data: tpls }, { onConflict: 'id' }).then(({ error }) => {
+      if (error) console.error('Save DCA templates error:', error.message);
+    });
+  }
+}
+async function loadDcaTemplatesFromSupabase() {
+  if (!currentUser) return;
+  const { data } = await sb.from('inv_dca_templates').select('data').eq('user_id', currentUser.id).maybeSingle();
+  if (data && Array.isArray(data.data)) {
+    _dcaTemplatesCache = data.data;
+    localStorage.setItem('dca_templates', JSON.stringify(data.data));
+  }
 }
 
 // --- Template List ---
