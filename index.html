@@ -582,6 +582,45 @@
         <button class="btn btn-secondary" onclick="addUSIncomeRow()">＋ 新增一行</button>
         <button class="btn btn-add" onclick="submitUSIncome()">✅ 送出</button>
       </div>
+
+      <div style="margin-top:16px;padding:12px;background:rgba(167,139,250,0.06);border:1px solid rgba(167,139,250,0.15);border-radius:10px">
+        <h3 style="color:#a78bfa;font-size:0.95em;margin:0 0 10px">💱 帳戶轉帳</h3>
+        <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+          <div class="form-group" style="flex:1 1 140px">
+            <label>來源帳戶</label>
+            <select id="xferSourceAcc"></select>
+          </div>
+          <div class="form-group" style="flex:1 1 140px">
+            <label>目標帳戶</label>
+            <select id="xferTargetAcc"></select>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+          <div class="form-group" style="flex:1 1 100px">
+            <label>轉出金額 (USD)</label>
+            <input type="number" id="xferAmount" step="0.01" min="0" placeholder="1000" oninput="updateXferActual()">
+          </div>
+          <div class="form-group" style="flex:1 1 100px">
+            <label>手續費 (USD)</label>
+            <input type="number" id="xferFee" step="0.01" min="0" value="0" oninput="updateXferActual()">
+          </div>
+          <div class="form-group" style="flex:1 1 100px">
+            <label>實際到帳 (USD)</label>
+            <input type="number" id="xferActual" step="0.01" readonly style="opacity:0.7">
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+          <div class="form-group" style="flex:1 1 100px">
+            <label>匯率 <span style="font-size:0.8em;color:#666">(自動帶入加權均匯)</span></label>
+            <input type="number" id="xferRate" step="0.001" min="0">
+          </div>
+          <div class="form-group" style="flex:1 1 100px">
+            <label>日期</label>
+            <input type="text" id="xferDate" placeholder="YYYY.MM.DD">
+          </div>
+        </div>
+        <button class="btn btn-primary" onclick="submitTransfer()">💱 轉帳</button>
+      </div>
     </div>
   </div>
 
@@ -2799,11 +2838,37 @@ function analyzeStocks(trades, market, income) {
 function getAccountFunds(accountId, market) {
   const funds = getAccountData(accountId, market, 'funds');
   let depAmount = 0, wdAmount = 0;
+  let transferOut = 0, transferIn = 0;
   for (const f of funds) {
     depAmount += f.type === 'deposit' ? f.amount : 0;
     wdAmount += f.type === 'withdraw' ? f.amount : 0;
+    transferOut += f.type === 'transfer_out' ? f.amount : 0;
+    transferIn += f.type === 'transfer_in' ? f.amount : 0;
   }
-  return { depAmount, wdAmount, netAmount: depAmount - wdAmount };
+  // netAmount only counts deposit/withdraw (for return calc); cashAmount includes transfers
+  return { depAmount, wdAmount, transferOut, transferIn, netAmount: depAmount - wdAmount, cashAmount: depAmount - wdAmount + transferIn - transferOut };
+}
+
+function fundCashImpact(f) {
+  if (f.type === 'deposit' || f.type === 'transfer_in') return f.amount;
+  if (f.type === 'withdraw' || f.type === 'transfer_out') return -f.amount;
+  return 0;
+}
+
+function getAccountWeightedAvgRate(accountId) {
+  const funds = getAccountData(accountId, 'us', 'funds');
+  let totalTWD = 0, totalUSD = 0;
+  for (const f of funds) {
+    if (f.type === 'deposit' && f.twdAmount) {
+      totalTWD += f.twdAmount;
+      totalUSD += f.amount;
+    }
+    if (f.type === 'transfer_in' && f.twdAmount) {
+      totalTWD += f.twdAmount;
+      totalUSD += f.amount;
+    }
+  }
+  return totalUSD > 0 ? totalTWD / totalUSD : 0;
 }
 
 function getAccountTotalIncome(accountId, market) {
@@ -2828,7 +2893,7 @@ function calcOwnerSummary(ownerAccounts, ownerMortgages, applyPct = true) {
     for (const stock of usAnalysis) if (!stock.isClosed) usMV += stock.marketValue;
     usStocksValue += usMV * pct;
     let usCash = 0;
-    for (const f of usFunds) usCash += f.type === 'deposit' ? f.amount : -f.amount;
+    for (const f of usFunds) usCash += fundCashImpact(f);
     for (const t of usTrades) usCash += calcTradeCashImpact(t, 'us');
     usCash += usIncome.reduce((s, i) => s + i.amount, 0);
     usNetCash += usCash * pct;
@@ -2843,7 +2908,7 @@ function calcOwnerSummary(ownerAccounts, ownerMortgages, applyPct = true) {
     for (const stock of twAnalysis) if (!stock.isClosed) twMV += stock.marketValue;
     twStocksValue += twMV * pct;
     let twCash = 0;
-    for (const f of twFunds) twCash += f.type === 'deposit' ? f.amount : -f.amount;
+    for (const f of twFunds) twCash += fundCashImpact(f);
     for (const t of twTrades) twCash += calcTradeCashImpact(t, 'tw');
     twCash += twIncome.reduce((s, i) => s + i.amount, 0);
     twNetCash += twCash * pct;
@@ -2857,15 +2922,34 @@ function calcOwnerSummary(ownerAccounts, ownerMortgages, applyPct = true) {
   const totalAssets = usNetWorth * usdTwdRate + twNetWorth + propertyValue; // TWD
   const netAssets = totalAssets - totalDebt;
 
-  return { usStocksValue, usNetCash, usNetWorth, usNetFunded, twStocksValue, twNetCash, twNetWorth, twNetFunded, propertyValue, totalDebt, totalAssets, netAssets, ownerAccounts };
+  // Weighted avg rate for US accounts
+  let totalDepTWD = 0, totalDepUSD = 0;
+  for (const acc of ownerAccounts) {
+    const funds = getAccountData(acc.id, 'us', 'funds');
+    for (const f of funds) {
+      if ((f.type === 'deposit' || f.type === 'transfer_in') && f.twdAmount) {
+        totalDepTWD += f.twdAmount;
+        totalDepUSD += f.amount;
+      }
+    }
+  }
+  const usWeightedAvgRate = totalDepUSD > 0 ? totalDepTWD / totalDepUSD : 0;
+
+  return { usStocksValue, usNetCash, usNetWorth, usNetFunded, twStocksValue, twNetCash, twNetWorth, twNetFunded, propertyValue, totalDebt, totalAssets, netAssets, ownerAccounts, usWeightedAvgRate };
 }
 
 function renderOwnerBlock(title, summary, ownerMortgages) {
-  const { usNetWorth, usNetCash, usStocksValue, twNetWorth, twNetCash, twStocksValue, propertyValue, totalDebt, totalAssets, netAssets, usNetFunded, twNetFunded } = summary;
+  const { usNetWorth, usNetCash, usStocksValue, twNetWorth, twNetCash, twStocksValue, propertyValue, totalDebt, totalAssets, netAssets, usNetFunded, twNetFunded, usWeightedAvgRate } = summary;
   const usPL = usNetWorth - usNetFunded;
   const twPL = twNetWorth - twNetFunded;
   const usRet = usNetFunded > 0 ? (usPL / usNetFunded * 100) : 0;
   const twRet = twNetFunded > 0 ? (twPL / twNetFunded * 100) : 0;
+
+  // TWD P&L for US stocks
+  const usTwdCost = usNetFunded * usWeightedAvgRate;
+  const usTwdValue = usNetWorth * usdTwdRate;
+  const usTwdPL = usWeightedAvgRate > 0 ? usTwdValue - usTwdCost : 0;
+  const usTwdRet = usTwdCost > 0 ? (usTwdPL / usTwdCost * 100) : 0;
 
   const cardStyle = 'flex:1 1 0;min-width:130px';
   const stockTotalTWD = usNetWorth * usdTwdRate + twNetWorth;
@@ -2879,6 +2963,11 @@ function renderOwnerBlock(title, summary, ownerMortgages) {
           <div class="value blue">${fmt(usNetWorth)}</div>
           <div class="sub">投報: <span class="${plClass(usRet)}">${fmtPct(usRet)}</span></div>
         </div>
+        ${usWeightedAvgRate > 0 ? `<div class="card" style="${cardStyle}">
+          <div class="label">🇺🇸 美股台幣損益</div>
+          <div class="value ${plClass(usTwdPL)}">${(usTwdPL>=0?'+':'') + fmtTWD(usTwdPL)}</div>
+          <div class="sub">均匯 ${usWeightedAvgRate.toFixed(2)} | 投報 <span class="${plClass(usTwdRet)}">${fmtPct(usTwdRet)}</span></div>
+        </div>` : ''}
         <div class="card" style="${cardStyle}">
           <div class="label">🇹🇼 台股淨值</div>
           <div class="value orange">${fmtTWD(twNetWorth)}</div>
@@ -2920,7 +3009,7 @@ function renderOwnerAccountDetails(summary) {
     const income = getAccountData(acc.id, 'us', 'income');
     if (trades.length === 0 && funds.length === 0 && income.length === 0) continue;
     let cash = 0;
-    for (const f of funds) cash += f.type === 'deposit' ? f.amount : -f.amount;
+    for (const f of funds) cash += fundCashImpact(f);
     for (const t of trades) cash += calcTradeCashImpact(t, 'us');
     cash += income.reduce((s, i) => s + i.amount, 0);
     const analysis = analyzeStocks(trades, 'us', income);
@@ -2945,7 +3034,7 @@ function renderOwnerAccountDetails(summary) {
     const income = getAccountData(acc.id, 'tw', 'income');
     if (trades.length === 0 && funds.length === 0 && income.length === 0) continue;
     let cash = 0;
-    for (const f of funds) cash += f.type === 'deposit' ? f.amount : -f.amount;
+    for (const f of funds) cash += fundCashImpact(f);
     for (const t of trades) cash += calcTradeCashImpact(t, 'tw');
     cash += income.reduce((s, i) => s + i.amount, 0);
     const analysis = analyzeStocks(trades, 'tw', income);
@@ -3054,7 +3143,7 @@ function renderAccountCards(accs, morts) {
     let usNw = 0, usRet = 0;
     if (hasUS) {
       let cash = 0;
-      for (const f of usFunds) cash += f.type === 'deposit' ? f.amount : -f.amount;
+      for (const f of usFunds) cash += fundCashImpact(f);
       for (const t of usTrades) cash += calcTradeCashImpact(t, 'us');
       cash += usIncome.reduce((s, i) => s + i.amount, 0);
       const analysis = analyzeStocks(usTrades, 'us', usIncome);
@@ -3070,7 +3159,7 @@ function renderAccountCards(accs, morts) {
     let twNw = 0, twRet = 0;
     if (hasTW) {
       let cash = 0;
-      for (const f of twFunds) cash += f.type === 'deposit' ? f.amount : -f.amount;
+      for (const f of twFunds) cash += fundCashImpact(f);
       for (const t of twTrades) cash += calcTradeCashImpact(t, 'tw');
       cash += twIncome.reduce((s, i) => s + i.amount, 0);
       const analysis = analyzeStocks(twTrades, 'tw', twIncome);
@@ -3148,7 +3237,7 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
     let mv = 0;
     for (const s of analysis) if (!s.isClosed) mv += s.marketValue;
     let cash = 0;
-    for (const f of funds) cash += f.type === 'deposit' ? f.amount : -f.amount;
+    for (const f of funds) cash += fundCashImpact(f);
     for (const t of trades) cash += calcTradeCashImpact(t, market);
     const incTotal = income.reduce((s, i) => s + i.amount, 0);
     cash += incTotal;
@@ -3213,6 +3302,38 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
   destroyChart(`mktOvwPie_${market}`);
   destroyChart(`mktOvwTrend_${market}`);
 
+  // TWD P&L for US market overview
+  let usTwdSection = '';
+  if (market === 'us') {
+    let totalTwdCost = 0, totalUsdInvested = 0;
+    let allTwdAmount = 0, allUsdDeposited = 0;
+    for (const s of accountSummaries) {
+      const funds = getAccountData(s.acc.id, 'us', 'funds');
+      for (const f of funds) {
+        if ((f.type === 'deposit' || f.type === 'transfer_in') && f.twdAmount) {
+          allTwdAmount += f.twdAmount;
+          allUsdDeposited += f.amount;
+        }
+      }
+      totalUsdInvested += s.fundIn;
+    }
+    const ovwAvgRate = allUsdDeposited > 0 ? allTwdAmount / allUsdDeposited : 0;
+    const ovwTwdCost = totalFundIn * ovwAvgRate;
+    const ovwTwdValue = totalNetWorth * usdTwdRate;
+    const ovwTwdPL = ovwAvgRate > 0 ? ovwTwdValue - ovwTwdCost : 0;
+    const ovwTwdRet = ovwTwdCost > 0 ? (ovwTwdPL / ovwTwdCost * 100) : 0;
+    usTwdSection = `
+      <div style="grid-column:1/-1;border-top:1px solid rgba(255,255,255,0.08);margin-top:8px;padding-top:12px">
+        <div style="font-size:0.8em;color:#888;margin-bottom:8px">🇹🇼 新台幣（即時匯率 1 USD = ${usdTwdRate.toFixed(3)} TWD）</div>
+      </div>
+      <div class="card"><div class="label">加權均匯</div><div class="value">${ovwAvgRate > 0 ? ovwAvgRate.toFixed(2) : '--'}</div></div>
+      <div class="card"><div class="label">台幣成本</div><div class="value">${ovwAvgRate > 0 ? fmtTWD(ovwTwdCost) : '--'}</div></div>
+      <div class="card"><div class="label">台幣現值</div><div class="value orange">${fmtTWD(ovwTwdValue)}</div><div class="sub">匯率 ${usdTwdRate.toFixed(3)}</div></div>
+      <div class="card"><div class="label">台幣損益</div><div class="value ${plClass(ovwTwdPL)}">${ovwAvgRate > 0 ? (ovwTwdPL>=0?'+':'') + fmtTWD(ovwTwdPL) : '--'}</div></div>
+      <div class="card"><div class="label">台幣投報率</div><div class="value ${plClass(ovwTwdRet)}">${ovwAvgRate > 0 ? fmtPct(ovwTwdRet) : '--'}</div></div>
+    `;
+  }
+
   container.innerHTML = `
     <div class="summary">
       <div class="card"><div class="label">總淨值</div><div class="value blue">${fmtMkt(totalNetWorth)}</div></div>
@@ -3222,6 +3343,7 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
       <div class="card"><div class="label">累計配息</div><div class="value ${totalIncome>=0?'green':'red'}">+${fmtMkt(totalIncome)}</div></div>
       <div class="card"><div class="label">總損益</div><div class="value ${totalPL>=0?'green':'red'}">${totalPL>=0?'+':''}${fmtMkt(totalPL)}</div></div>
       <div class="card"><div class="label">投報率</div><div class="value ${totalRet>=0?'green':'red'}">${totalRet>=0?'+':''}${totalRet.toFixed(2)}%</div></div>
+      ${usTwdSection}
     </div>
 
     ${pieData.length > 0 ? `
@@ -3301,7 +3423,8 @@ function renderUSTab() {
   if (!document.getElementById('usIncomeRows') || document.getElementById('usIncomeRows').children.length === 0) {
     addUSIncomeRow();
   }
-  
+  populateTransferDropdowns();
+
   const trades = getAccountData(currentUSAccount, 'us', 'trades');
   const funds = getAccountData(currentUSAccount, 'us', 'funds');
   const income = getAccountData(currentUSAccount, 'us', 'income');
@@ -3314,7 +3437,7 @@ function renderUSTab() {
   for (const s of analysis) if (!s.isClosed) sumMV += s.marketValue;
 
   let cash = 0;
-  for (const f of funds) cash += f.type === 'deposit' ? f.amount : -f.amount;
+  for (const f of funds) cash += fundCashImpact(f);
   for (const t of trades) cash += calcTradeCashImpact(t, 'us');
   cash += incomeTotal; // 配息/利息也是現金收入
 
@@ -3353,33 +3476,37 @@ function renderUSTab() {
     </div>
   `;
 
-  // TWD 區塊
-  const twdFunded = funds.reduce((s, f) => s + (f.type === 'deposit' && f.twdAmount ? f.twdAmount : 0), 0);
-  const avgRate = twdFunded > 0 && fundInfo.netAmount > 0 ? (twdFunded / fundInfo.netAmount) : 0;
+  // TWD 區塊 - weighted avg rate includes deposits + transfer_in
+  const wAvgRate = getAccountWeightedAvgRate(currentUSAccount);
+  const twdCost = fundInfo.netAmount * wAvgRate;
   const netWorthTWD = netWorth * usdTwdRate;
-  const plTWD = twdFunded > 0 ? (netWorthTWD - twdFunded) : 0;
-  const retTWD = twdFunded > 0 ? (plTWD / twdFunded * 100) : 0;
+  const plTWD = wAvgRate > 0 ? (netWorthTWD - twdCost) : 0;
+  const retTWD = twdCost > 0 ? (plTWD / twdCost * 100) : 0;
 
   document.getElementById('usSummary').innerHTML += `
     <div style="grid-column:1/-1;border-top:1px solid rgba(255,255,255,0.08);margin-top:8px;padding-top:12px">
       <div style="font-size:0.8em;color:#888;margin-bottom:8px">🇹🇼 新台幣（即時匯率 1 USD = ${usdTwdRate.toFixed(3)} TWD）</div>
     </div>
     <div class="card">
-      <div class="label">總淨值 TWD</div>
-      <div class="value orange">${fmtTWD(netWorthTWD)}</div>
+      <div class="label">加權均匯</div>
+      <div class="value">${wAvgRate > 0 ? wAvgRate.toFixed(2) : '--'}</div>
     </div>
     <div class="card">
-      <div class="label">總投入 TWD</div>
-      <div class="value">${twdFunded > 0 ? fmtTWD(twdFunded) : '--'}</div>
-      <div class="sub">${avgRate > 0 ? '平均匯率 ' + avgRate.toFixed(3) : ''}</div>
+      <div class="label">台幣成本</div>
+      <div class="value">${wAvgRate > 0 ? fmtTWD(twdCost) : '--'}</div>
+    </div>
+    <div class="card">
+      <div class="label">台幣現值</div>
+      <div class="value orange">${fmtTWD(netWorthTWD)}</div>
+      <div class="sub">匯率 ${usdTwdRate.toFixed(3)}</div>
     </div>
     <div class="card">
       <div class="label">台幣損益</div>
-      <div class="value ${plClass(plTWD)}">${twdFunded > 0 ? (plTWD >= 0 ? '+' : '') + fmtTWD(plTWD) : '--'}</div>
+      <div class="value ${plClass(plTWD)}">${wAvgRate > 0 ? (plTWD >= 0 ? '+' : '') + fmtTWD(plTWD) : '--'}</div>
     </div>
     <div class="card">
       <div class="label">台幣投報率</div>
-      <div class="value ${plClass(retTWD)}">${twdFunded > 0 ? fmtPct(retTWD) : '--'}</div>
+      <div class="value ${plClass(retTWD)}">${wAvgRate > 0 ? fmtPct(retTWD) : '--'}</div>
     </div>
 
     <div style="grid-column:1/-1;border-top:1px solid rgba(255,255,255,0.08);margin-top:12px;padding-top:12px">
@@ -3394,10 +3521,12 @@ function renderUSTab() {
             const funds = getAccountData(acc.id, 'us', 'funds');
             const trades = getAccountData(acc.id, 'us', 'trades');
             const income = getAccountData(acc.id, 'us', 'income');
-            let deposited = 0, withdrawn = 0;
+            let deposited = 0, withdrawn = 0, xferIn = 0, xferOut = 0;
             for (const f of funds) {
               deposited += f.type === 'deposit' ? f.amount : 0;
               withdrawn += f.type === 'withdraw' ? f.amount : 0;
+              xferIn += f.type === 'transfer_in' ? f.amount : 0;
+              xferOut += f.type === 'transfer_out' ? f.amount : 0;
             }
             let spent = 0, earned = 0;
             for (const t of trades) {
@@ -3406,13 +3535,15 @@ function renderUSTab() {
               else earned += ci;
             }
             const incomeTotal = income.reduce((s, i) => s + i.amount, 0);
-            const accountCash = (deposited - withdrawn) - spent + earned + incomeTotal;
+            const accountCash = (deposited - withdrawn + xferIn - xferOut) - spent + earned + incomeTotal;
             cashBreakdown += `
               <div style="background:rgba(255,255,255,0.02);border-left:3px solid #67e8f9;padding:8px 12px;border-radius:6px;font-size:0.8em">
                 <div style="font-weight:600;margin-bottom:4px">${acc.name}</div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:0.75em;color:#999">
                   <div>入金: <span style="color:#34d399">${fmt(deposited)}</span></div>
                   <div>出金: <span style="color:#f87171">${fmt(withdrawn)}</span></div>
+                  ${xferIn > 0 ? `<div>轉入: <span style="color:#34d399">${fmt(xferIn)}</span></div>` : ''}
+                  ${xferOut > 0 ? `<div>轉出: <span style="color:#f87171">${fmt(xferOut)}</span></div>` : ''}
                   <div>買股: <span style="color:#f87171">${fmt(spent)}</span></div>
                   <div>賣股: <span style="color:#34d399">${fmt(earned)}</span></div>
                   <div>配息: <span style="color:#34d399">${fmt(incomeTotal)}</span></div>
@@ -3451,15 +3582,17 @@ function renderUSTab() {
     }).join('');
   }
 
-  // Funds - split into deposits and withdrawals
+  // Funds - split into deposits, withdrawals, and transfers
   document.getElementById('usFundsCount').textContent = funds.length > 0 ? `(${funds.length}筆)` : '';
   const usDeposits = funds.filter(f => f.type === 'deposit');
-  const usWithdrawals = funds.filter(f => f.type !== 'deposit');
+  const usWithdrawals = funds.filter(f => f.type === 'withdraw');
+  const usTransfers = funds.filter(f => f.type === 'transfer_out' || f.type === 'transfer_in');
   const usFundRowFn = (f) => {
-    const isDep = f.type === 'deposit';
+    const typeLabels = { deposit: '+', withdraw: '-', transfer_out: '轉出 -', transfer_in: '轉入 +' };
+    const prefix = typeLabels[f.type] || '';
     return `<tr>
       <td>${f.date}</td>
-      <td>${isDep ? '+' : '-'}${fmt(f.amount)}</td>
+      <td>${prefix}${fmt(f.amount)}</td>
       <td>${f.twdAmount ? fmtTWD(f.twdAmount) : '-'}</td>
       <td>${f.rate ? f.rate.toFixed(3) : '-'}</td>
       <td class="muted">${f.note || '-'}</td>
@@ -3474,6 +3607,10 @@ function renderUSTab() {
       <h3 style="font-size:0.85em;color:#f87171;padding:10px 14px 4px;margin:0">🔴 提領 (${usWithdrawals.length}筆) — 合計 ${fmt(usWithdrawals.reduce((s,f)=>s+f.amount,0))}</h3>
       <table><thead><tr><th>日期</th><th>金額 USD</th><th>支付 TWD</th><th>匯率</th><th>備註</th><th></th></tr></thead>
       <tbody>${usWithdrawals.length > 0 ? usWithdrawals.map(usFundRowFn).join('') : '<tr><td colspan="6" style="text-align:center;color:#666;padding:14px">尚無提領紀錄</td></tr>'}</tbody></table>
+      ${usTransfers.length > 0 ? `
+      <h3 style="font-size:0.85em;color:#a78bfa;padding:10px 14px 4px;margin:0">💱 轉帳 (${usTransfers.length}筆)</h3>
+      <table><thead><tr><th>日期</th><th>金額 USD</th><th>支付 TWD</th><th>匯率</th><th>備註</th><th></th></tr></thead>
+      <tbody>${usTransfers.map(usFundRowFn).join('')}</tbody></table>` : ''}
     </div>`;
 
   // Income - split into 4 sub-sections
@@ -3501,6 +3638,97 @@ function deleteUSIncome(id) {
   income = income.filter(i => i.id !== id);
   saveAccountData(currentUSAccount, 'us', 'income', income);
   renderUSTab();
+}
+
+// ===== Transfer Functions =====
+function populateTransferDropdowns() {
+  const usAccounts = accounts.filter(a => !a.market || a.market === 'us');
+  const srcSel = document.getElementById('xferSourceAcc');
+  const tgtSel = document.getElementById('xferTargetAcc');
+  if (!srcSel || !tgtSel) return;
+  const opts = usAccounts.map(a => `<option value="${a.id}">${accountLabel(a)}</option>`).join('');
+  srcSel.innerHTML = opts;
+  tgtSel.innerHTML = opts;
+  // Default source to current account
+  if (currentUSAccount) srcSel.value = currentUSAccount;
+  srcSel.onchange = updateXferRate;
+  // Set rate from source weighted avg
+  updateXferRate();
+  // Set default date
+  const dateEl = document.getElementById('xferDate');
+  if (dateEl && !dateEl.value) dateEl.value = todayStr().replace(/-/g, '.');
+}
+
+function updateXferRate() {
+  const srcId = document.getElementById('xferSourceAcc')?.value;
+  if (!srcId) return;
+  const rate = getAccountWeightedAvgRate(srcId);
+  const rateEl = document.getElementById('xferRate');
+  if (rateEl && rate > 0) rateEl.value = rate.toFixed(3);
+}
+
+function updateXferActual() {
+  const amount = parseFloat(document.getElementById('xferAmount')?.value) || 0;
+  const fee = parseFloat(document.getElementById('xferFee')?.value) || 0;
+  const actualEl = document.getElementById('xferActual');
+  if (actualEl) actualEl.value = (amount - fee).toFixed(2);
+}
+
+function submitTransfer() {
+  const srcId = document.getElementById('xferSourceAcc').value;
+  const tgtId = document.getElementById('xferTargetAcc').value;
+  const amount = parseFloat(document.getElementById('xferAmount').value);
+  const fee = parseFloat(document.getElementById('xferFee').value) || 0;
+  const rate = parseFloat(document.getElementById('xferRate').value) || 0;
+  const dateStr = document.getElementById('xferDate').value;
+
+  if (!srcId || !tgtId) return alert('請選擇來源和目標帳戶');
+  if (srcId === tgtId) return alert('來源和目標帳戶不能相同');
+  if (!amount || amount <= 0) return alert('請輸入轉出金額');
+  if (fee < 0) return alert('手續費不能為負');
+  if (fee >= amount) return alert('手續費不能大於或等於轉出金額');
+
+  const date = parseFlexDate(dateStr);
+  const actual = amount - fee;
+  const twdAmount = amount * rate;
+  const twdActual = actual * rate;
+
+  // Create transfer_out in source account
+  const srcFunds = getAccountData(srcId, 'us', 'funds');
+  const srcAcc = accounts.find(a => a.id === srcId);
+  const tgtAcc = accounts.find(a => a.id === tgtId);
+  srcFunds.push({
+    id: Date.now(),
+    date: date,
+    type: 'transfer_out',
+    amount: amount,
+    twdAmount: twdAmount,
+    rate: rate,
+    note: `轉出至 ${tgtAcc ? tgtAcc.name : tgtId}` + (fee > 0 ? ` (手續費 $${fee})` : '')
+  });
+  saveAccountData(srcId, 'us', 'funds', srcFunds);
+
+  // Create transfer_in in target account
+  const tgtFunds = getAccountData(tgtId, 'us', 'funds');
+  tgtFunds.push({
+    id: Date.now() + 1,
+    date: date,
+    type: 'transfer_in',
+    amount: actual,
+    twdAmount: twdActual,
+    rate: rate,
+    note: `從 ${srcAcc ? srcAcc.name : srcId} 轉入` + (fee > 0 ? ` (原 $${amount}, 手續費 $${fee})` : '')
+  });
+  saveAccountData(tgtId, 'us', 'funds', tgtFunds);
+
+  // Clear form
+  document.getElementById('xferAmount').value = '';
+  document.getElementById('xferFee').value = '0';
+  document.getElementById('xferActual').value = '';
+
+  alert(`轉帳成功！${srcAcc?.name || srcId} → ${tgtAcc?.name || tgtId}\n轉出: $${amount.toFixed(2)}\n手續費: $${fee.toFixed(2)}\n實際到帳: $${actual.toFixed(2)}`);
+  renderUSTab();
+  renderOverviewTab();
 }
 
 // ===== Render: TW Stocks =====
@@ -3534,7 +3762,7 @@ function renderTWTab() {
   for (const s of analysis) if (!s.isClosed) sumMV += s.marketValue;
 
   let cash = 0;
-  for (const f of funds) cash += f.type === 'deposit' ? f.amount : -f.amount;
+  for (const f of funds) cash += fundCashImpact(f);
   for (const t of trades) cash += calcTradeCashImpact(t, 'tw');
   cash += incomeTotal; // 配息/利息也是現金收入
 
@@ -3646,7 +3874,7 @@ function renderTWTab() {
   // Funds - split into deposits and withdrawals
   document.getElementById('twFundsCount').textContent = funds.length > 0 ? `(${funds.length}筆)` : '';
   const twDeposits = funds.filter(f => f.type === 'deposit');
-  const twWithdrawals = funds.filter(f => f.type !== 'deposit');
+  const twWithdrawals = funds.filter(f => f.type === 'withdraw');
   const twFundRowFn = (f) => {
     const isDep = f.type === 'deposit';
     return `<tr>
@@ -5932,7 +6160,7 @@ function renderUSCharts() {
   const analysis = analyzeStocks(trades, 'us', income);
   const active = analysis.filter(s => !s.isClosed && s.marketValue > 0);
   let cash = 0;
-  for (const f of funds) cash += f.type === 'deposit' ? f.amount : -f.amount;
+  for (const f of funds) cash += fundCashImpact(f);
   for (const t of trades) cash += calcTradeCashImpact(t, 'us');
   cash += income.reduce((s, i) => s + i.amount, 0);
 
@@ -5985,7 +6213,7 @@ function renderTWCharts() {
   const analysis = analyzeStocks(trades, 'tw', income);
   const active = analysis.filter(s => !s.isClosed && s.marketValue > 0);
   let cash = 0;
-  for (const f of funds) cash += f.type === 'deposit' ? f.amount : -f.amount;
+  for (const f of funds) cash += fundCashImpact(f);
   for (const t of trades) cash += calcTradeCashImpact(t, 'tw');
   cash += income.reduce((s, i) => s + i.amount, 0);
 
