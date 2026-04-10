@@ -3329,7 +3329,7 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
     let totalTwdCost = 0, totalUsdInvested = 0;
     let allTwdCost = 0;
     for (const s of accountSummaries) {
-      allTwdCost += getAccountTwdNetCost(s.acc.id);
+      allTwdCost += getAccountTwdNetCost(s.acc.id) * s.ownPct;
       totalUsdInvested += s.fundIn;
     }
     const ovwAvgRate = totalFundIn > 0 ? allTwdCost / totalFundIn : 0;
