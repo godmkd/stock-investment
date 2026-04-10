@@ -3640,8 +3640,28 @@ function renderUSTab() {
 }
 
 function deleteUSFund(id) {
-  if (!confirm('確定刪除？')) return;
   let funds = getAccountData(currentUSAccount, 'us', 'funds');
+  const record = funds.find(f => f.id === id);
+
+  // If deleting a transfer, also delete the paired record in the other account
+  if (record && (record.type === 'transfer_out' || record.type === 'transfer_in')) {
+    if (!confirm('刪除轉帳紀錄？對方帳戶的紀錄也會一起刪除。')) return;
+    // Find paired record: transfer_out ↔ transfer_in, same date, similar amount
+    const pairedType = record.type === 'transfer_out' ? 'transfer_in' : 'transfer_out';
+    for (const acc of accounts) {
+      if (acc.id === currentUSAccount) continue;
+      let otherFunds = getAccountData(acc.id, 'us', 'funds');
+      const paired = otherFunds.find(f => f.type === pairedType && f.date === record.date && Math.abs(f.id - id) <= 2);
+      if (paired) {
+        otherFunds = otherFunds.filter(f => f.id !== paired.id);
+        saveAccountData(acc.id, 'us', 'funds', otherFunds);
+        break;
+      }
+    }
+  } else {
+    if (!confirm('確定刪除？')) return;
+  }
+
   funds = funds.filter(f => f.id !== id);
   saveAccountData(currentUSAccount, 'us', 'funds', funds);
   renderUSTab();
