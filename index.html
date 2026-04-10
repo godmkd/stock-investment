@@ -398,9 +398,20 @@
 <div id="appContainer" style="display:none">
 <div class="header">
   <h1>💼 投資追蹤系統</h1>
-  <div class="user-bar" id="userBar" onclick="doLogout()" style="display:none" title="點擊登出">
-    <span id="userDisplayName"></span>
-    <span style="font-size:0.8em;color:#666">登出</span>
+  <div class="user-bar" id="userBar" style="display:none;position:relative">
+    <span id="userDisplayName" onclick="document.getElementById('userMenu').style.display=document.getElementById('userMenu').style.display==='block'?'none':'block'" style="cursor:pointer"></span>
+    <div id="userMenu" style="display:none;position:absolute;top:100%;right:0;background:#1e1e2e;border:1px solid rgba(255,255,255,0.15);border-radius:8px;padding:12px;min-width:260px;z-index:200;box-shadow:0 8px 24px rgba(0,0,0,0.4);margin-top:4px">
+      <div style="font-size:.85rem;color:#888;margin-bottom:8px" id="userMenuInfo"></div>
+      <div style="margin-bottom:10px">
+        <label style="font-size:.82rem;color:#a0aec0;display:block;margin-bottom:3px">設定信箱</label>
+        <div style="display:flex;gap:6px"><input id="accEmail" type="email" placeholder="email" style="flex:1;padding:5px 8px;border:1px solid rgba(255,255,255,0.15);border-radius:4px;background:rgba(255,255,255,0.08);color:#fff;font-size:.85rem"><button class="btn btn-primary" style="padding:4px 10px;font-size:.78rem" onclick="updateAccEmail()">儲存</button></div>
+      </div>
+      <div style="margin-bottom:10px">
+        <label style="font-size:.82rem;color:#a0aec0;display:block;margin-bottom:3px">設定密碼</label>
+        <div style="display:flex;gap:6px"><input id="accPassword" type="password" placeholder="新密碼" style="flex:1;padding:5px 8px;border:1px solid rgba(255,255,255,0.15);border-radius:4px;background:rgba(255,255,255,0.08);color:#fff;font-size:.85rem"><button class="btn btn-primary" style="padding:4px 10px;font-size:.78rem" onclick="updateAccPassword()">儲存</button></div>
+      </div>
+      <button class="btn btn-danger" style="width:100%;padding:6px;font-size:.85rem" onclick="doLogout()">登出</button>
+    </div>
   </div>
 </div>
 
@@ -1020,8 +1031,33 @@ function showApp() {
   if (bar && currentUser) {
     bar.style.display = 'flex';
     const meta = currentUser.user_metadata || {};
-    nameEl.textContent = meta.full_name || meta.name || currentUser.email || '使用者';
+    const displayName = meta.full_name || meta.name || currentUser.email || '使用者';
+    nameEl.textContent = '👤 ' + displayName + ' ▼';
+    const provider = currentUser.app_metadata?.provider || 'email';
+    const loginMethod = provider.includes('line') ? 'LINE' : 'Email';
+    document.getElementById('userMenuInfo').textContent = `${loginMethod} 登入｜${currentUser.email || '未設信箱'}`;
+    if (currentUser.email) document.getElementById('accEmail').value = currentUser.email;
   }
+  // Close menu on outside click
+  document.addEventListener('click', e => {
+    if (!e.target.closest('#userBar')) document.getElementById('userMenu').style.display = 'none';
+  });
+}
+
+async function updateAccEmail() {
+  const email = document.getElementById('accEmail').value.trim();
+  if (!email) return alert('請輸入信箱');
+  const { error } = await sb.auth.updateUser({ email });
+  if (error) alert('更新失敗: ' + error.message);
+  else alert('已發送驗證信到 ' + email + '，請到信箱確認');
+}
+
+async function updateAccPassword() {
+  const pw = document.getElementById('accPassword').value;
+  if (!pw || pw.length < 6) return alert('密碼至少 6 個字');
+  const { error } = await sb.auth.updateUser({ password: pw });
+  if (error) alert('更新失敗: ' + error.message);
+  else { alert('密碼已更新'); document.getElementById('accPassword').value = ''; }
 }
 
 async function doLineLogin() {
