@@ -1404,24 +1404,34 @@ async function authInit() {
   });
 
   // Auto refresh on tab focus
+  let _lastVisible = Date.now();
   document.addEventListener('visibilitychange', async () => {
     if (document.visibilityState === 'visible' && currentUser) {
+      const elapsed = Date.now() - _lastVisible;
+      console.log(`App resumed after ${Math.round(elapsed/1000)}s`);
       try {
         const { data, error } = await sb.auth.refreshSession();
         if (error || !data?.session) {
-          console.warn('Session expired, re-authenticating...');
           const { data: user } = await sb.auth.getUser();
           if (!user?.user) {
-            currentUser = null;
-            showLogin();
+            location.reload();
             return;
           }
         }
-        console.log('App resumed, session OK');
+        if (elapsed > 30000) {
+          const { error: pingErr } = await sb.from('inv_accounts').select('id').limit(1);
+          if (pingErr) {
+            console.warn('Connection lost, reloading...');
+            location.reload();
+            return;
+          }
+        }
       } catch(e) {
-        console.warn('Session refresh failed:', e);
+        console.warn('Resume failed, reloading...', e);
+        location.reload();
       }
     }
+    _lastVisible = Date.now();
   });
 }
 
