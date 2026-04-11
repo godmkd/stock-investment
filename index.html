@@ -1704,29 +1704,25 @@ function renderBankTabs(market) {
 
 function setUSBank(bankId) {
   currentUSBank = bankId;
-  renderBankTabs('us');
   if (bankId) {
     currentUSAccount = bankId;
-    document.getElementById('usMarketOverview').style.display = 'none';
-    document.getElementById('usAccountDetail').style.display = 'block';
   } else {
-    const owner = document.getElementById('usAccountSelect').value.replace('_owner_', '');
-    currentUSAccount = '_owner_' + owner;
+    const sv = document.getElementById('usAccountSelect').value;
+    currentUSAccount = sv;
   }
+  renderBankTabs('us');
   renderUSTab();
 }
 
 function setTWBank(bankId) {
   currentTWBank = bankId;
-  renderBankTabs('tw');
   if (bankId) {
     currentTWAccount = bankId;
-    document.getElementById('twMarketOverview').style.display = 'none';
-    document.getElementById('twAccountDetail').style.display = 'block';
   } else {
-    const owner = document.getElementById('twAccountSelect').value.replace('_owner_', '');
-    currentTWAccount = '_owner_' + owner;
+    const sv = document.getElementById('twAccountSelect').value;
+    currentTWAccount = sv;
   }
+  renderBankTabs('tw');
   renderTWTab();
 }
 
@@ -3354,28 +3350,9 @@ function renderAccountCards(accs, morts) {
 function onUSAccountChange() {
   const val = document.getElementById('usAccountSelect').value;
   currentUSAccount = val;
-  currentUSBank = null; // reset bank tab
+  currentUSBank = null;
   renderBankTabs('us');
-
-  if (val === '_all_') {
-    // All owners combined
-    document.getElementById('usAccountDetail').style.display = 'none';
-    document.getElementById('usMarketOverview').style.display = 'block';
-    renderMarketOverviewForAccounts(document.getElementById('usMarketOverview'), accounts, '🇺🇸', 'us');
-  } else if (val.startsWith('_owner_')) {
-    // Owner's all accounts (default sub-tab = 全部)
-    const owner = val.replace('_owner_', '');
-    document.getElementById('usAccountDetail').style.display = 'none';
-    document.getElementById('usMarketOverview').style.display = 'block';
-    const ownerAccs = accounts.filter(a => (!a.market || a.market === 'us') && (a.owner||a.name) === owner);
-    renderMarketOverviewForAccounts(document.getElementById('usMarketOverview'), ownerAccs, '🇺🇸', 'us');
-  } else {
-    currentUSBank = val;
-    renderBankTabs('us');
-    document.getElementById('usAccountDetail').style.display = 'block';
-    document.getElementById('usMarketOverview').style.display = 'none';
-    renderUSTab();
-  }
+  renderUSTab();
 }
 
 function onTWAccountChange() {
@@ -3383,24 +3360,7 @@ function onTWAccountChange() {
   currentTWAccount = val;
   currentTWBank = null;
   renderBankTabs('tw');
-
-  if (val === '_all_') {
-    document.getElementById('twAccountDetail').style.display = 'none';
-    document.getElementById('twMarketOverview').style.display = 'block';
-    renderMarketOverviewForAccounts(document.getElementById('twMarketOverview'), accounts, '🇹🇼', 'tw');
-  } else if (val.startsWith('_owner_')) {
-    const owner = val.replace('_owner_', '');
-    document.getElementById('twAccountDetail').style.display = 'none';
-    document.getElementById('twMarketOverview').style.display = 'block';
-    const ownerAccs = accounts.filter(a => (!a.market || a.market === 'tw') && (a.owner||a.name) === owner);
-    renderMarketOverviewForAccounts(document.getElementById('twMarketOverview'), ownerAccs, '🇹🇼', 'tw');
-  } else {
-    currentTWBank = val;
-    renderBankTabs('tw');
-    document.getElementById('twAccountDetail').style.display = 'block';
-    document.getElementById('twMarketOverview').style.display = 'none';
-    renderTWTab();
-  }
+  renderTWTab();
 }
 
 function renderMarketOverviewForAccounts(container, marketAccounts, flag, market) {
@@ -3536,7 +3496,14 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
 
     <div style="margin-bottom:20px">
       <h3 style="font-size:0.9em;color:#aaa;margin-bottom:8px">${flag} 資產趨勢</h3>
-      <canvas id="${trendCanvasId}" style="width:100%;max-height:300px"></canvas>
+      <div style="display:flex;gap:4px;margin-bottom:8px;flex-wrap:wrap">
+        ${['30d','6m','1y'].map(r => {
+          const labels = {'30d':'30天','6m':'6個月','1y':'1年'};
+          const isActive = r === (market==='us'?usCurrentRange:twCurrentRange);
+          return '<button onclick="mktOvwRangeSelect(\''+r+'\',\''+market+'\')" style="padding:4px 12px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;background:'+(isActive?'rgba(167,139,250,0.3)':'rgba(255,255,255,0.06)')+';color:'+(isActive?'#a78bfa':'#aaa')+';cursor:pointer;font-size:0.8em">'+labels[r]+'</button>';
+        }).join('')}
+      </div>
+      <canvas id="${trendCanvasId}" style="width:100%;min-height:180px;max-height:300px"></canvas>
     </div>
 
     <div class="table-container" style="margin-top:16px;overflow-x:auto">
@@ -3573,7 +3540,8 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
   }
 
   // Render trend chart
-  const { start, end } = getDateRange('1y');
+  const mktRange = market === 'us' ? usCurrentRange : twCurrentRange;
+  const { start, end } = getDateRange(mktRange);
   const histData = buildHistoricalData(accountIds, market, start, end);
   if (histData.dates.length > 0) {
     const trendColor = market === 'tw' ? '#f97316' : '#3b82f6';
@@ -3633,18 +3601,16 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
 function renderUSTab() {
   if (!currentUSAccount) return;
 
-  const selectVal = document.getElementById('usAccountSelect')?.value || currentUSAccount;
-  currentUSAccount = selectVal;
-
   // If owner or all selected, show market overview
-  if (selectVal === '_all_' || selectVal?.startsWith('_owner_')) {
+  if (currentUSAccount === '_all_' || currentUSAccount?.startsWith('_owner_')) {
     document.getElementById('usAccountDetail').style.display = 'none';
     document.getElementById('usMarketOverview').style.display = 'block';
     let mktAccs;
-    if (selectVal === '_all_') {
-      mktAccs = accounts;
+    if (currentUSAccount === '_all_') {
+      // 全部帳戶：所有帳戶比例都視為100%
+      mktAccs = accounts.map(a => ({ ...a, ownership_pct: 100 }));
     } else {
-      const owner = selectVal.replace('_owner_', '');
+      const owner = currentUSAccount.replace('_owner_', '');
       mktAccs = accounts.filter(a => (!a.market || a.market === 'us') && (a.owner||a.name) === owner);
     }
     renderMarketOverviewForAccounts(document.getElementById('usMarketOverview'), mktAccs, '🇺🇸', 'us');
@@ -4005,18 +3971,15 @@ function renderTWTab() {
     return;
   }
 
-  const selectVal = document.getElementById('twAccountSelect')?.value || currentTWAccount;
-  currentTWAccount = selectVal;
-
   // If owner or all selected, show market overview
-  if (selectVal === '_all_' || selectVal?.startsWith('_owner_')) {
+  if (currentTWAccount === '_all_' || currentTWAccount?.startsWith('_owner_')) {
     document.getElementById('twAccountDetail').style.display = 'none';
     document.getElementById('twMarketOverview').style.display = 'block';
     let mktAccs;
-    if (selectVal === '_all_') {
-      mktAccs = accounts;
+    if (currentTWAccount === '_all_') {
+      mktAccs = accounts.map(a => ({ ...a, ownership_pct: 100 }));
     } else {
-      const owner = selectVal.replace('_owner_', '');
+      const owner = currentTWAccount.replace('_owner_', '');
       mktAccs = accounts.filter(a => (!a.market || a.market === 'tw') && (a.owner||a.name) === owner);
     }
     renderMarketOverviewForAccounts(document.getElementById('twMarketOverview'), mktAccs, '🇹🇼', 'tw');
@@ -6957,6 +6920,12 @@ function renderOverviewCharts(ownerGroups) {
   }
 
   if (hasTrades) renderOverviewTrendChart(ovCurrentRange);
+}
+
+// Market overview range select (for US/TW all-accounts trend charts)
+function mktOvwRangeSelect(range, market) {
+  if (market === 'us') { usCurrentRange = range; renderUSTab(); }
+  else { twCurrentRange = range; renderTWTab(); }
 }
 
 // ===== Report Tab =====
