@@ -3096,7 +3096,7 @@ function calcOwnerSummary(ownerAccounts, ownerMortgages, applyPct = true) {
   }
   const usWeightedAvgRate = totalDepUSD > 0 ? totalDepTWD / totalDepUSD : 0;
 
-  return { usStocksValue, usNetCash, usNetWorth, usNetFunded, twStocksValue, twNetCash, twNetWorth, twNetFunded, propertyValue, totalDebt, totalAssets, netAssets, ownerAccounts, usWeightedAvgRate };
+  return { usStocksValue, usNetCash, usNetWorth, usNetFunded, twStocksValue, twNetCash, twNetWorth, twNetFunded, propertyValue, totalDebt, totalAssets, netAssets, ownerAccounts, usWeightedAvgRate, applyPct };
 }
 
 function renderOwnerBlock(title, summary, ownerMortgages) {
@@ -3106,10 +3106,12 @@ function renderOwnerBlock(title, summary, ownerMortgages) {
   const usRet = usNetFunded > 0 ? (usPL / usNetFunded * 100) : 0;
   const twRet = twNetFunded > 0 ? (twPL / twNetFunded * 100) : 0;
 
-  // TWD P&L for US stocks
-  const usTwdCost = usNetFunded * usWeightedAvgRate;
+  // TWD P&L for US stocks — use actual TWD records (same as US tab)
+  const applyPct = summary.applyPct !== false;
+  const usTwdAccs = applyPct ? summary.ownerAccounts : summary.ownerAccounts.map(a => ({...a, ownership_pct: 100}));
+  const usTwdCost = getGlobalTwdNetCost(usTwdAccs);
   const usTwdValue = usNetWorth * usdTwdRate;
-  const usTwdPL = usWeightedAvgRate > 0 ? usTwdValue - usTwdCost : 0;
+  const usTwdPL = usTwdCost > 0 ? usTwdValue - usTwdCost : 0;
   const usTwdRet = usTwdCost > 0 ? (usTwdPL / usTwdCost * 100) : 0;
 
   const cardStyle = 'flex:1 1 0;min-width:130px';
