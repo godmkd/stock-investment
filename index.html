@@ -6157,6 +6157,15 @@ function onRangeSelect(range, prefix) {
 // Current range states
 let usCurrentRange = '1y', twCurrentRange = '1y', ovCurrentRange = '1y';
 
+function getAccountIdsForSelection(selectVal, market) {
+  if (selectVal === '_all_') return accounts.map(a => a.id);
+  if (selectVal?.startsWith('_owner_')) {
+    const owner = selectVal.replace('_owner_', '');
+    return accounts.filter(a => (a.owner || a.name) === owner && (!a.market || a.market === market)).map(a => a.id);
+  }
+  return [selectVal];
+}
+
 function renderUSTrendChart(range) {
   usCurrentRange = range || usCurrentRange;
   destroyChart('usTrend');
@@ -6167,7 +6176,8 @@ function renderUSTrendChart(range) {
   } else {
     ({ start, end } = getDateRange(usCurrentRange));
   }
-  const data = buildHistoricalData([currentUSAccount], 'us', start, end);
+  const accIds = getAccountIdsForSelection(currentUSAccount, 'us');
+  const data = buildHistoricalData(accIds, 'us', start, end);
   if (data.dates.length === 0) return;
   chartInstances['usTrend'] = createTrendChart('usTrendCanvas', [{
     label: '美股持倉市值 (USD)',
@@ -6190,7 +6200,8 @@ function renderTWTrendChart(range) {
   } else {
     ({ start, end } = getDateRange(twCurrentRange));
   }
-  const data = buildHistoricalData([currentTWAccount], 'tw', start, end);
+  const accIds = getAccountIdsForSelection(currentTWAccount, 'tw');
+  const data = buildHistoricalData(accIds, 'tw', start, end);
   if (data.dates.length === 0) return;
   chartInstances['twTrend'] = createTrendChart('twTrendCanvas', [{
     label: '台股持倉市值 (TWD)',
