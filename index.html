@@ -1555,8 +1555,6 @@ function initApp() {
   currentTWAccount = accounts[0].id;
 
   renderAccountSelectors();
-  addUSFundRow(); addUSTradeRow(); addUSIncomeRow();
-  addTWFundRow(); addTWTradeRow(); addTWIncomeRow();
   addDCAEntry();
 
   document.getElementById('usApiKey').value = localStorage.getItem('us_finnhub_key') || localStorage.getItem('finnhub_key') || '';
@@ -1647,8 +1645,10 @@ function renderAccountSelectors() {
   });
   usSelect.innerHTML = usOptions || '<option>無帳戶</option>';
 
-  // Set default: first owner
-  if (!currentUSAccount && allOwners.length > 0) currentUSAccount = '_owner_' + allOwners[0];
+  // Set default: 全部帳戶
+  if (!currentUSAccount || (!currentUSAccount.startsWith('_') && !accounts.find(a => a.id === currentUSAccount))) {
+    currentUSAccount = allOwners.length > 1 ? '_all_' : (allOwners.length === 1 ? '_owner_' + allOwners[0] : null);
+  }
   if (currentUSAccount) usSelect.value = currentUSAccount;
   renderBankTabs('us');
 
@@ -1660,7 +1660,9 @@ function renderAccountSelectors() {
   });
   twSelect.innerHTML = twOptions || '<option>無帳戶</option>';
 
-  if (!currentTWAccount && allOwners.length > 0) currentTWAccount = '_owner_' + allOwners[0];
+  if (!currentTWAccount || (!currentTWAccount.startsWith('_') && !accounts.find(a => a.id === currentTWAccount))) {
+    currentTWAccount = allOwners.length > 1 ? '_all_' : (allOwners.length === 1 ? '_owner_' + allOwners[0] : null);
+  }
   if (currentTWAccount) twSelect.value = currentTWAccount;
   renderBankTabs('tw');
 
@@ -3630,9 +3632,27 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
 
 function renderUSTab() {
   if (!currentUSAccount) return;
-  
-  currentUSAccount = document.getElementById('usAccountSelect').value;
-  
+
+  const selectVal = document.getElementById('usAccountSelect')?.value || currentUSAccount;
+  currentUSAccount = selectVal;
+
+  // If owner or all selected, show market overview
+  if (selectVal === '_all_' || selectVal?.startsWith('_owner_')) {
+    document.getElementById('usAccountDetail').style.display = 'none';
+    document.getElementById('usMarketOverview').style.display = 'block';
+    let mktAccs;
+    if (selectVal === '_all_') {
+      mktAccs = accounts;
+    } else {
+      const owner = selectVal.replace('_owner_', '');
+      mktAccs = accounts.filter(a => (!a.market || a.market === 'us') && (a.owner||a.name) === owner);
+    }
+    renderMarketOverviewForAccounts(document.getElementById('usMarketOverview'), mktAccs, '🇺🇸', 'us');
+    return;
+  }
+
+  document.getElementById('usAccountDetail').style.display = 'block';
+  document.getElementById('usMarketOverview').style.display = 'none';
   populateTransferDropdowns();
 
   const trades = getAccountData(currentUSAccount, 'us', 'trades');
@@ -3985,8 +4005,26 @@ function renderTWTab() {
     return;
   }
 
-  currentTWAccount = document.getElementById('twAccountSelect').value;
-  
+  const selectVal = document.getElementById('twAccountSelect')?.value || currentTWAccount;
+  currentTWAccount = selectVal;
+
+  // If owner or all selected, show market overview
+  if (selectVal === '_all_' || selectVal?.startsWith('_owner_')) {
+    document.getElementById('twAccountDetail').style.display = 'none';
+    document.getElementById('twMarketOverview').style.display = 'block';
+    let mktAccs;
+    if (selectVal === '_all_') {
+      mktAccs = accounts;
+    } else {
+      const owner = selectVal.replace('_owner_', '');
+      mktAccs = accounts.filter(a => (!a.market || a.market === 'tw') && (a.owner||a.name) === owner);
+    }
+    renderMarketOverviewForAccounts(document.getElementById('twMarketOverview'), mktAccs, '🇹🇼', 'tw');
+    return;
+  }
+
+  document.getElementById('twAccountDetail').style.display = 'block';
+  document.getElementById('twMarketOverview').style.display = 'none';
   // TW tab init
   const trades = getAccountData(currentTWAccount, 'tw', 'trades');
   const funds = getAccountData(currentTWAccount, 'tw', 'funds');
@@ -5931,12 +5969,11 @@ function renderAccountsTab() {
       return s + getAccountData(acc.id,'us','trades').length + getAccountData(acc.id,'tw','trades').length + getAccountData(acc.id,'us','funds').length + getAccountData(acc.id,'tw','funds').length;
     }, 0);
     // Owner header row — clickable to collapse
-    html += `<tr style="background:rgba(99,179,237,0.08);cursor:pointer" onclick="const b=document.getElementById('ownerRows_${oi}');b.style.display=b.style.display==='none'?'':'none';this.querySelector('.oc-arrow').textContent=b.style.display==='none'?'▶':'▼'">
+    html += `<tr style="background:rgba(99,179,237,0.08);cursor:pointer" onclick="document.querySelectorAll('.ownerRow_${oi}').forEach(r=>r.style.display=r.style.display==='none'?'':'none');this.querySelector('.oc-arrow').textContent=document.querySelector('.ownerRow_${oi}')?.style.display==='none'?'▶':'▼'">
       <td colspan="6" style="padding:8px 12px;font-weight:700;color:#67e8f9">
         <span class="oc-arrow" style="font-size:.7em;margin-right:6px">▼</span>👤 ${owner} <span style="font-size:.75em;color:#888;font-weight:400">(${bankAccs.length} 帳戶、${totalAll} 筆)</span>
         <button class="btn-danger" style="float:right;padding:2px 8px;font-size:0.75em;border-radius:4px;border:none;cursor:pointer" onclick="event.stopPropagation();deleteOwner('${owner}')">刪除持有人</button>
       </td></tr>`;
-    html += `<tbody id="ownerRows_${oi}">`;
     // Bank account rows
     bankAccs.forEach(acc => {
       const usTrades = getAccountData(acc.id, 'us', 'trades');
@@ -5944,7 +5981,7 @@ function renderAccountsTab() {
       const usFunds = getAccountData(acc.id, 'us', 'funds');
       const twFunds = getAccountData(acc.id, 'tw', 'funds');
       const totalRecords = usTrades.length + twTrades.length + usFunds.length + twFunds.length;
-      html += `<tr>
+      html += `<tr class="ownerRow_${oi}">
         <td></td>
         <td><input value="${acc.bank}" style="width:90px;${inputStyle}" onclick="event.stopPropagation()" onchange="const a=accounts.find(x=>x.id==='${acc.id}');a.bank=this.value;saveAccounts()"></td>
         <td style="font-size:0.82em">${marketLabel(acc.market)}</td>
@@ -5954,9 +5991,8 @@ function renderAccountsTab() {
       </tr>`;
     });
     if (!bankAccs.length) {
-      html += `<tr><td></td><td colspan="5" style="color:#666;font-size:0.82em;padding:6px">尚無銀行帳戶，請到美股/台股頁面新增</td></tr>`;
+      html += `<tr class="ownerRow_${oi}"><td></td><td colspan="5" style="color:#666;font-size:0.82em;padding:6px">尚無銀行帳戶，請到美股/台股頁面新增</td></tr>`;
     }
-    html += '</tbody>';
   });
   document.getElementById('accountsBody').innerHTML = html || '<tr><td colspan="6" style="text-align:center;color:#666;padding:20px">尚無帳戶，請先新增持有人</td></tr>';
 }
