@@ -3423,7 +3423,9 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
       ...s,
       shares: s.shares * ownPct,
       marketValue: s.marketValue * ownPct,
-      netCost: s.netCost * ownPct
+      netCost: s.netCost * ownPct,
+      // 均價用不含配息的成本（totalBought + fees - totalSold proceeds）
+      rawCostBasis: ((s.totalBought + s.totalFee) - s.totalSold) * ownPct
     }));
     allAnalysis = allAnalysis.concat(weightedAnalysis);
 
@@ -3438,10 +3440,11 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
   // Merge holdings by ticker
   const merged = {};
   allAnalysis.forEach(s => {
-    if (!merged[s.ticker]) merged[s.ticker] = { ticker: s.ticker, shares: 0, marketValue: 0, netCost: 0, currentPrice: s.currentPrice || 0 };
+    if (!merged[s.ticker]) merged[s.ticker] = { ticker: s.ticker, shares: 0, marketValue: 0, netCost: 0, rawCostBasis: 0, currentPrice: s.currentPrice || 0 };
     merged[s.ticker].shares += s.shares;
     merged[s.ticker].marketValue += s.marketValue;
     merged[s.ticker].netCost += s.netCost;
+    merged[s.ticker].rawCostBasis += s.rawCostBasis || 0;
     if (s.currentPrice) merged[s.ticker].currentPrice = s.currentPrice;
   });
   const mergedList = Object.values(merged).sort((a, b) => b.marketValue - a.marketValue);
@@ -3532,7 +3535,8 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
       <tbody>${mergedList.map(s => {
         const pct = totalMV > 0 ? (s.marketValue / totalMV * 100).toFixed(1) : '0.0';
         const priceStr = s.currentPrice ? (market==='tw'?fmtTWD2(s.currentPrice):fmt(s.currentPrice)) : '-';
-        const avgStr = (s.shares > 0 && s.netCost > 0) ? (market==='tw'?fmtTWD2(s.netCost/s.shares):fmt(s.netCost/s.shares)) : '-';
+        const costForAvg = s.rawCostBasis > 0 ? s.rawCostBasis : s.netCost;
+        const avgStr = (s.shares > 0 && costForAvg > 0) ? (market==='tw'?fmtTWD2(costForAvg/s.shares):fmt(costForAvg/s.shares)) : '-';
         return `<tr><td><strong>${s.ticker}</strong></td><td>${priceStr}</td><td>${avgStr}</td><td>${s.shares.toFixed(2)}</td><td>${fmtMkt(s.marketValue)}</td><td>${pct}%</td></tr>`;
       }).join('')}</tbody></table>
     </div>` : ''}
@@ -6539,9 +6543,10 @@ function renderOwnerTrendCharts(idx, g) {
   const twVals = interpolateTrendData(twData.dates, twData.values, dates);
   const combinedTWD = dates.map((_, i) => (usVals[i] || 0) * usdTwdRate + (twVals[i] || 0));
 
-  // 市值趨勢
+  // 市值趨勢 — 全部換算為 TWD 統一軸
+  const usValsTWD = usVals.map(v => (v || 0) * usdTwdRate);
   chartInstances[`ovOwnerTrend_${idx}`] = createTrendChart(`ovOwnerTrend_${idx}`, [
-    { label: '美股 (USD)', data: usVals, borderColor: '#3b82f6', fill: false, tension: 0.3, pointRadius: 0, borderWidth: 1.5 },
+    { label: '美股 (TWD)', data: usValsTWD, borderColor: '#3b82f6', fill: false, tension: 0.3, pointRadius: 0, borderWidth: 1.5 },
     { label: '台股 (TWD)', data: twVals, borderColor: '#f97316', fill: false, tension: 0.3, pointRadius: 0, borderWidth: 1.5 },
     { label: '合計 (TWD)', data: combinedTWD, borderColor: '#fbbf24', fill: true, backgroundColor: 'rgba(251,191,36,0.06)', tension: 0.3, pointRadius: 0, borderWidth: 2, borderDash: [6, 3] }
   ], dates);
@@ -6761,14 +6766,14 @@ function renderOverviewCharts(ownerGroups) {
       // 下排：時間範圍按鈕 + 趨勢圖（一左一右）
       if (hasTrades) {
         chartHtml += `<div style="margin-top:10px">${buildRangeButtons('ovo' + idx, 'onOwnerRangeSelect')}</div>`;
-        chartHtml += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:100%">
-          <div style="background:rgba(255,255,255,0.04);border-radius:10px;padding:12px;max-height:250px">
-            <h3 style="color:#888;font-size:0.8em;margin-bottom:6px">📈 市值走勢</h3>
-            <canvas id="ovOwnerTrend_${idx}" style="max-height:200px"></canvas>
+        chartHtml += `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;max-width:100%">
+          <div style="background:rgba(255,255,255,0.04);border-radius:10px;padding:12px">
+            <h3 style="color:#888;font-size:0.8em;margin-bottom:6px">📈 市值走勢 (TWD)</h3>
+            <canvas id="ovOwnerTrend_${idx}" style="min-height:180px;max-height:300px"></canvas>
           </div>
-          <div style="background:rgba(255,255,255,0.04);border-radius:10px;padding:12px;max-height:250px">
+          <div style="background:rgba(255,255,255,0.04);border-radius:10px;padding:12px">
             <h3 style="color:#888;font-size:0.8em;margin-bottom:6px">📈 淨資產 vs 負債</h3>
-            <canvas id="ovOwnerAsset_${idx}" style="max-height:200px"></canvas>
+            <canvas id="ovOwnerAsset_${idx}" style="min-height:180px;max-height:300px"></canvas>
           </div>
         </div>`;
       }
@@ -6837,7 +6842,7 @@ function renderOverviewCharts(ownerGroups) {
     html += `<div style="background:rgba(255,255,255,0.04);border-radius:10px;padding:12px;margin:0 0 12px 0;max-height:300px">
       <h3 style="color:#888;font-size:0.82em;margin-bottom:8px">📈 投資組合市值走勢</h3>
       ${buildRangeButtons('ov', 'onRangeSelect')}
-      <canvas id="ovTrendCanvas" style="max-height:220px"></canvas>
+      <canvas id="ovTrendCanvas" style="min-height:200px;max-height:320px"></canvas>
     </div>
     <div style="background:rgba(255,255,255,0.04);border-radius:10px;padding:12px;margin:0 0 12px 0;max-height:300px">
       <h3 style="color:#888;font-size:0.82em;margin-bottom:8px">📈 淨資產 vs 總負債</h3>
