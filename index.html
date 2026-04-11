@@ -1678,9 +1678,9 @@ let currentUSBank = null, currentTWBank = null;
 function renderBankTabs(market) {
   const container = document.getElementById(market === 'us' ? 'usBankTabs' : 'twBankTabs');
   if (!container) return;
-  const selectVal = market === 'us' ? currentUSAccount : currentTWAccount;
+  const selectVal = document.getElementById(market === 'us' ? 'usAccountSelect' : 'twAccountSelect')?.value;
 
-  if (selectVal === '_all_') {
+  if (!selectVal || selectVal === '_all_') {
     container.innerHTML = '';
     return;
   }
@@ -1689,6 +1689,8 @@ function renderBankTabs(market) {
   if (!owner) { container.innerHTML = ''; return; }
 
   const ownerAccs = accounts.filter(a => (a.owner || a.name) === owner && a.bank && (!a.market || a.market === market));
+  if (ownerAccs.length === 0) { container.innerHTML = ''; return; }
+
   const currentBank = market === 'us' ? currentUSBank : currentTWBank;
   const tabStyle = 'padding:8px 16px;border:none;background:transparent;color:#888;cursor:pointer;font-size:0.88em;font-weight:500;border-bottom:3px solid transparent;white-space:nowrap';
   const activeStyle = 'padding:8px 16px;border:none;background:transparent;cursor:pointer;font-size:0.88em;font-weight:500;border-bottom:3px solid;white-space:nowrap';
@@ -1707,11 +1709,11 @@ function setUSBank(bankId) {
   if (bankId) {
     currentUSAccount = bankId;
   } else {
-    const sv = document.getElementById('usAccountSelect').value;
-    currentUSAccount = sv;
+    currentUSAccount = document.getElementById('usAccountSelect').value;
   }
   renderBankTabs('us');
   renderUSTab();
+  renderBankTabs('us'); // re-render after USTab in case it was overwritten
 }
 
 function setTWBank(bankId) {
@@ -1719,11 +1721,11 @@ function setTWBank(bankId) {
   if (bankId) {
     currentTWAccount = bankId;
   } else {
-    const sv = document.getElementById('twAccountSelect').value;
-    currentTWAccount = sv;
+    currentTWAccount = document.getElementById('twAccountSelect').value;
   }
   renderBankTabs('tw');
   renderTWTab();
+  renderBankTabs('tw');
 }
 
 // ===== API Key =====
@@ -3353,6 +3355,7 @@ function onUSAccountChange() {
   currentUSBank = null;
   renderBankTabs('us');
   renderUSTab();
+  renderBankTabs('us');
 }
 
 function onTWAccountChange() {
@@ -3361,6 +3364,7 @@ function onTWAccountChange() {
   currentTWBank = null;
   renderBankTabs('tw');
   renderTWTab();
+  renderBankTabs('tw');
 }
 
 function renderMarketOverviewForAccounts(container, marketAccounts, flag, market) {
@@ -3608,7 +3612,7 @@ function renderUSTab() {
     let mktAccs;
     if (currentUSAccount === '_all_') {
       // 全部帳戶：所有帳戶比例都視為100%
-      mktAccs = accounts.map(a => ({ ...a, ownership_pct: 100 }));
+      mktAccs = accounts.filter(a => !a.market || a.market === 'us').map(a => ({ ...a, ownership_pct: 100 }));
     } else {
       const owner = currentUSAccount.replace('_owner_', '');
       mktAccs = accounts.filter(a => (!a.market || a.market === 'us') && (a.owner||a.name) === owner);
@@ -3977,7 +3981,7 @@ function renderTWTab() {
     document.getElementById('twMarketOverview').style.display = 'block';
     let mktAccs;
     if (currentTWAccount === '_all_') {
-      mktAccs = accounts.map(a => ({ ...a, ownership_pct: 100 }));
+      mktAccs = accounts.filter(a => !a.market || a.market === 'tw').map(a => ({ ...a, ownership_pct: 100 }));
     } else {
       const owner = currentTWAccount.replace('_owner_', '');
       mktAccs = accounts.filter(a => (!a.market || a.market === 'tw') && (a.owner||a.name) === owner);
@@ -6022,9 +6026,6 @@ function buildHistoricalData(accountIds, market, startDate, endDate) {
 
   allTrades.sort((a, b) => a.date.localeCompare(b.date));
 
-  // Ensure start covers earliest trade
-  const earliestTrade = allTrades[0].date;
-  if (earliestTrade < startDate) startDate = earliestTrade;
   const start = new Date(startDate);
   const end = new Date(endDate);
   const totalDays = Math.ceil((end - start) / 86400000);
