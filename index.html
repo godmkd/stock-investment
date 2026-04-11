@@ -3535,8 +3535,7 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
       <tbody>${mergedList.map(s => {
         const pct = totalMV > 0 ? (s.marketValue / totalMV * 100).toFixed(1) : '0.0';
         const priceStr = s.currentPrice ? (market==='tw'?fmtTWD2(s.currentPrice):fmt(s.currentPrice)) : '-';
-        const costForAvg = s.rawCostBasis > 0 ? s.rawCostBasis : s.netCost;
-        const avgStr = (s.shares > 0 && costForAvg > 0) ? (market==='tw'?fmtTWD2(costForAvg/s.shares):fmt(costForAvg/s.shares)) : '-';
+        const avgStr = (s.shares > 0 && s.netCost > 0) ? (market==='tw'?fmtTWD2(s.netCost/s.shares):fmt(s.netCost/s.shares)) : '-';
         return `<tr><td><strong>${s.ticker}</strong></td><td>${priceStr}</td><td>${avgStr}</td><td>${s.shares.toFixed(2)}</td><td>${fmtMkt(s.marketValue)}</td><td>${pct}%</td></tr>`;
       }).join('')}</tbody></table>
     </div>` : ''}
@@ -6240,7 +6239,10 @@ function renderOverviewTrendChart(range) {
       if (usData.dates.length > 0) {
         datasets.push({ _dates: usData.dates, _values: usData.values,
           label: `${owner} 美股 (USD)`, borderColor: colors.us, backgroundColor: colors.usBg,
-          fill: true, tension: 0.3, pointRadius: 0, yAxisID: 'yUS', borderWidth: 2 });
+          fill: false, tension: 0.3, pointRadius: 0, yAxisID: 'yUS', borderWidth: 2 });
+        datasets.push({ _dates: usData.dates, _values: usData.values.map(v => v * usdTwdRate),
+          label: `${owner} 美股 (TWD)`, borderColor: colors.us, backgroundColor: 'transparent',
+          fill: false, tension: 0.3, pointRadius: 0, yAxisID: 'yTW', borderWidth: 1.5, borderDash: [3, 2] });
       }
       if (twData.dates.length > 0) {
         datasets.push({ _dates: twData.dates, _values: twData.values,
@@ -6258,7 +6260,10 @@ function renderOverviewTrendChart(range) {
       if (usData.dates.length > 0) {
         datasets.push({ _dates: usData.dates, _values: usData.values,
           label: '未指定 美股 (USD)', borderColor: colors.us, backgroundColor: colors.usBg,
-          fill: true, tension: 0.3, pointRadius: 0, yAxisID: 'yUS', borderWidth: 2 });
+          fill: false, tension: 0.3, pointRadius: 0, yAxisID: 'yUS', borderWidth: 2 });
+        datasets.push({ _dates: usData.dates, _values: usData.values.map(v => v * usdTwdRate),
+          label: '未指定 美股 (TWD)', borderColor: colors.us, backgroundColor: 'transparent',
+          fill: false, tension: 0.3, pointRadius: 0, yAxisID: 'yTW', borderWidth: 1.5, borderDash: [3, 2] });
       }
       if (twData.dates.length > 0) {
         datasets.push({ _dates: twData.dates, _values: twData.values,
@@ -6278,7 +6283,10 @@ function renderOverviewTrendChart(range) {
     if (usData.dates.length > 0) {
       datasets.push({ _dates: usData.dates, _values: usData.values,
         label: '美股 (USD)', borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.08)',
-        fill: true, tension: 0.3, pointRadius: 0, yAxisID: 'yUS' });
+        fill: false, tension: 0.3, pointRadius: 0, yAxisID: 'yUS' });
+      datasets.push({ _dates: usData.dates, _values: usData.values.map(v => v * usdTwdRate),
+        label: '美股 (TWD)', borderColor: '#60a5fa', backgroundColor: 'transparent',
+        fill: false, tension: 0.3, pointRadius: 0, yAxisID: 'yTW', borderWidth: 1.5, borderDash: [3, 2] });
     }
     if (twData.dates.length > 0) {
       datasets.push({ _dates: twData.dates, _values: twData.values,
