@@ -3424,7 +3424,7 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
       shares: s.shares * ownPct,
       marketValue: s.marketValue * ownPct,
       netCost: s.netCost * ownPct,
-      grossCost: (s.totalBought - s.totalSold) * ownPct
+      grossCost: (s.totalBought - s.totalSold - s.tickerIncome) * ownPct
     }));
     allAnalysis = allAnalysis.concat(weightedAnalysis);
 
