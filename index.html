@@ -843,6 +843,10 @@
 <!-- ========== REPORT TAB ========== -->
 <div id="report" class="content-area">
   <h2 style="margin-bottom:16px">📈 報表分析</h2>
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+    <label style="color:#888;font-size:0.9em">持有人：</label>
+    <select id="reportOwnerFilter" onchange="reportOwner=this.value;renderReportTab()" style="padding:6px 12px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;background:rgba(255,255,255,0.08);color:#fff;font-size:0.9em"></select>
+  </div>
   <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
     <button class="btn btn-primary" id="rptAnnualBtn" onclick="switchReportView('annual')" style="padding:6px 14px;font-size:0.88em">📊 年度報表</button>
     <button class="btn" id="rptCalendarBtn" onclick="switchReportView('calendar')" style="padding:6px 14px;font-size:0.88em;background:rgba(255,255,255,0.1);color:#aaa">📅 配息日曆</button>
@@ -6902,6 +6906,13 @@ function renderOverviewCharts(ownerGroups) {
 
 // ===== Report Tab =====
 let currentReportView = 'annual';
+let reportOwner = '';
+
+function getReportAccounts() {
+  if (!reportOwner) return accounts;
+  return accounts.filter(a => a.owner === reportOwner);
+}
+
 function switchReportView(view) {
   currentReportView = view;
   ['annual','calendar','rate','cost','sector','metrics'].forEach(v => {
@@ -6916,6 +6927,13 @@ function switchReportView(view) {
 }
 
 function renderReportTab() {
+  // Update owner filter dropdown
+  const allOwners = [...new Set(accounts.map(a => a.owner).filter(Boolean))].sort();
+  const filterEl = document.getElementById('reportOwnerFilter');
+  if (filterEl) {
+    filterEl.innerHTML = '<option value="">全部</option>' + allOwners.map(o => `<option value="${o}" ${o === reportOwner ? 'selected' : ''}>${o}</option>`).join('');
+    filterEl.value = reportOwner;
+  }
   const el = document.getElementById('reportContent');
   if (!el) return;
   switch(currentReportView) {
@@ -6932,7 +6950,7 @@ function renderReportTab() {
 function renderAnnualReport(el) {
   // Collect all data across accounts
   const years = {};
-  for (const acc of accounts) {
+  for (const acc of getReportAccounts()) {
     for (const market of ['us', 'tw']) {
       const trades = getAccountData(acc.id, market, 'trades');
       const funds = getAccountData(acc.id, market, 'funds');
@@ -7024,7 +7042,7 @@ function renderAnnualReport(el) {
 // Feature 5: 配息日曆
 function renderDividendCalendar(el) {
   const allIncome = [];
-  for (const acc of accounts) {
+  for (const acc of getReportAccounts()) {
     for (const market of ['us', 'tw']) {
       const income = getAccountData(acc.id, market, 'income');
       const isTW = market === 'tw';
@@ -7113,7 +7131,7 @@ function renderDividendCalendar(el) {
 function renderRateHistory(el) {
   // Collect all USD fund records with rate info
   const rateRecords = [];
-  for (const acc of accounts) {
+  for (const acc of getReportAccounts()) {
     const funds = getAccountData(acc.id, 'us', 'funds');
     for (const f of funds) {
       if (f.rate && f.rate > 0) {
@@ -7207,7 +7225,7 @@ function renderRateHistory(el) {
 function renderCostTrend(el) {
   // Build cost trend per stock across all accounts
   const stockTrends = {};
-  for (const acc of accounts) {
+  for (const acc of getReportAccounts()) {
     for (const market of ['us', 'tw']) {
       const trades = getAccountData(acc.id, market, 'trades');
       for (const t of trades) {
@@ -7322,7 +7340,7 @@ const sectorMap = {
 
 function renderSectorChart(el) {
   const sectorData = {};
-  for (const acc of accounts) {
+  for (const acc of getReportAccounts()) {
     for (const market of ['us', 'tw']) {
       const trades = getAccountData(acc.id, market, 'trades');
       const income = getAccountData(acc.id, market, 'income');
@@ -7411,7 +7429,7 @@ async function renderFinancialMetrics(el) {
 
   // Get all active holdings
   const holdings = [];
-  for (const acc of accounts) {
+  for (const acc of getReportAccounts()) {
     for (const market of ['us', 'tw']) {
       const trades = getAccountData(acc.id, market, 'trades');
       const income = getAccountData(acc.id, market, 'income');
@@ -7504,8 +7522,17 @@ async function generatePDFReport() {
   pdf.setFontSize(11);
   pdf.setTextColor(220);
 
+  const rptAccounts = getReportAccounts();
+  const rptMortgages = reportOwner ? mortgages.filter(m => m.owner === reportOwner) : mortgages;
+  const ownerLabel = reportOwner || '全部';
+
+  // Sub-title: owner
+  pdf.setFontSize(12);
+  pdf.setTextColor(40, 40, 40);
+  pdf.text(`Owner: ${ownerLabel}`, pageW / 2, 27, { align: 'center' });
+
   // Summary data
-  const summary = calcOwnerSummary(accounts, mortgages, false);
+  const summary = calcOwnerSummary(rptAccounts, rptMortgages, !!reportOwner);
   const lines = [
     ['Total Assets (TWD)', fmtTWD(summary.totalAssets)],
     ['Net Assets (TWD)', fmtTWD(summary.netAssets)],
@@ -7518,9 +7545,9 @@ async function generatePDFReport() {
   ];
 
   for (const [label, value] of lines) {
-    pdf.setTextColor(150);
+    pdf.setTextColor(80, 80, 80);
     pdf.text(label, 15, y);
-    pdf.setTextColor(220);
+    pdf.setTextColor(30, 30, 30);
     pdf.text(value, 120, y);
     y += 7;
   }
@@ -7528,12 +7555,12 @@ async function generatePDFReport() {
   // Holdings
   y += 5;
   pdf.setFontSize(13);
-  pdf.setTextColor(103, 232, 249);
+  pdf.setTextColor(0, 100, 150);
   pdf.text('Holdings', 15, y);
   y += 7;
   pdf.setFontSize(9);
 
-  for (const acc of accounts) {
+  for (const acc of rptAccounts) {
     for (const market of ['us', 'tw']) {
       const trades = getAccountData(acc.id, market, 'trades');
       const income = getAccountData(acc.id, market, 'income');
@@ -7541,14 +7568,17 @@ async function generatePDFReport() {
       const active = analysis.filter(s => !s.isClosed);
       if (active.length === 0) continue;
 
-      pdf.setTextColor(180);
+      if (y > 270) { pdf.addPage(); y = 15; }
+      pdf.setTextColor(60, 60, 60);
+      pdf.setFontSize(10);
       pdf.text(`${acc.name} (${market.toUpperCase()})`, 15, y);
       y += 5;
+      pdf.setFontSize(9);
 
       for (const s of active) {
         if (y > 275) { pdf.addPage(); y = 15; }
         const fmtP = market === 'tw' ? fmtTWD : fmt;
-        pdf.setTextColor(200);
+        pdf.setTextColor(30, 30, 30);
         pdf.text(`${s.ticker}  ${s.shares.toFixed(2)}sh  avg:${fmtP(s.avgPrice)}  mv:${fmtP(s.marketValue)}  P/L:${fmtP(s.totalPL)}`, 20, y);
         y += 4.5;
       }
@@ -7556,7 +7586,7 @@ async function generatePDFReport() {
     }
   }
 
-  pdf.save('investment-report.pdf');
+  pdf.save(`investment-report${reportOwner ? '-' + reportOwner : ''}.pdf`);
   alert('PDF 已下載');
 }
 
