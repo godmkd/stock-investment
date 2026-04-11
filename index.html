@@ -3418,14 +3418,14 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
     totalFundIn += wfundIn;
     totalIncome += wIncome;
 
-    // Weight individual stock analysis for merged holdings
-    analysis.filter(s => !s.isClosed).forEach(s => console.log(`[個股分析] ${acc.bank||acc.name} ${s.ticker}: shares=${s.shares} totalBought=${s.totalBought.toFixed(2)} totalSold=${s.totalSold.toFixed(2)} tickerIncome=${s.tickerIncome.toFixed(2)} avgPrice=${s.avgPrice.toFixed(3)} netCost=${s.netCost.toFixed(2)} ownPct=${ownPct}`));
-    const weightedAnalysis = analysis.filter(s => !s.isClosed).map(s => ({
+    // Weight ALL stock analysis for merged holdings (including closed positions for avgPrice calc)
+    const weightedAnalysis = analysis.map(s => ({
       ...s,
-      shares: s.shares * ownPct,
-      marketValue: s.marketValue * ownPct,
+      shares: Math.max(0, s.shares) * ownPct,
+      marketValue: (s.isClosed ? 0 : s.marketValue) * ownPct,
       netCost: s.netCost * ownPct,
-      grossCost: (s.totalBought - s.totalSold - s.tickerIncome) * ownPct
+      grossCost: (s.totalBought - s.totalSold - s.tickerIncome) * ownPct,
+      _ownPct: ownPct
     }));
     allAnalysis = allAnalysis.concat(weightedAnalysis);
 
@@ -3447,9 +3447,8 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
     merged[s.ticker].grossCost += s.grossCost || 0;
     if (s.currentPrice) merged[s.ticker].currentPrice = s.currentPrice;
   });
-  const mergedList = Object.values(merged).sort((a, b) => b.marketValue - a.marketValue);
-  // Debug: show avgPrice calculation
-  mergedList.forEach(s => console.log(`[合併持股] ${s.ticker}: shares=${s.shares.toFixed(4)} grossCost=${s.grossCost.toFixed(2)} netCost=${s.netCost.toFixed(2)} avgPrice(gross)=${s.shares>0?(s.grossCost/s.shares).toFixed(3):'N/A'} avgPrice(net)=${s.shares>0?(s.netCost/s.shares).toFixed(3):'N/A'}`));
+  // Only show stocks with active holdings (shares > 0)
+  const mergedList = Object.values(merged).filter(s => s.shares > 0.0001).sort((a, b) => b.marketValue - a.marketValue);
 
   // Prepare pie chart data (stocks + cash)
   const pieLabels = mergedList.map(s => s.ticker);
@@ -3541,7 +3540,7 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
         // Find source data - allAnalysis already has weighted values (shares/netCost ×ownPct), but totalBought etc are raw
         const srcEntries = [];
         accountSummaries.forEach(as => {
-          const accAnalysis = as.analysis.filter(a => !a.isClosed && normalizeTickerKey(a.ticker, market) === s.ticker);
+          const accAnalysis = as.analysis.filter(a => normalizeTickerKey(a.ticker, market) === s.ticker);
           accAnalysis.forEach(a => {
             const pctVal = as.ownPct;
             const rawNetCost = (a.totalBought + a.totalFee) - a.totalSold + (a.totalFee > 0 ? 0 : 0) - a.tickerIncome;
