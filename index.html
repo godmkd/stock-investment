@@ -2928,6 +2928,19 @@ function getAccountTwdNetCost(accountId, asOfDate) {
   return cost;
 }
 
+// 全部帳戶用：只算存入/提領的台幣（不含轉帳）
+function getGlobalTwdNetCost(accountIds) {
+  let cost = 0;
+  for (const accId of accountIds) {
+    const funds = getAccountData(accId, 'us', 'funds');
+    for (const f of funds) {
+      if (f.type === 'deposit' && f.twdAmount) cost += f.twdAmount;
+      if (f.type === 'withdraw' && f.twdAmount) cost -= f.twdAmount;
+    }
+  }
+  return cost;
+}
+
 function getAccountTotalIncome(accountId, market) {
   const income = getAccountData(accountId, market, 'income');
   return income.reduce((sum, item) => sum + item.amount, 0);
@@ -3363,9 +3376,10 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
   let usTwdSection = '';
   if (market === 'us') {
     let totalTwdCost = 0, totalUsdInvested = 0;
-    let allTwdCost = 0;
+    // 全部帳戶台幣成本：只算存入/提領（不含轉帳）
+    const allAccIds = accountSummaries.map(s => s.acc.id);
+    let allTwdCost = getGlobalTwdNetCost(allAccIds);
     for (const s of accountSummaries) {
-      allTwdCost += getAccountTwdNetCost(s.acc.id) * s.ownPct;
       totalUsdInvested += s.fundIn;
     }
     const ovwAvgRate = totalFundIn > 0 ? allTwdCost / totalFundIn : 0;
@@ -3790,7 +3804,7 @@ async function submitTransfer() {
     date: date,
     type: 'transfer_in',
     amount: actual,
-    twdAmount: twdAmount, // 台幣成本包含手續費（全額 × 匯率）
+    twdAmount: twdActual, // 個別帳戶台幣成本不含手續費
     rate: rate,
     note: `從 ${srcAcc ? accountLabel(srcAcc) : srcId} 轉入` + (fee > 0 ? ` (原 $${amount}, 手續費 $${fee})` : '')
   });
