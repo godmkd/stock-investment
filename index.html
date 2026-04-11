@@ -1405,23 +1405,15 @@ async function authInit() {
 
   // Auto refresh on tab focus
   let _lastVisible = Date.now();
-  document.addEventListener('visibilitychange', async () => {
+  document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && currentUser) {
       const elapsed = Date.now() - _lastVisible;
-      console.log(`App resumed after ${Math.round(elapsed/1000)}s`);
       if (elapsed > 3000) {
-        try {
-          const { error } = await sb.auth.refreshSession();
-          if (error) { location.reload(); return; }
-          const { error: pingErr } = await sb.from('inv_accounts').select('id').limit(1);
-          if (pingErr) { location.reload(); return; }
-        } catch(e) {
-          location.reload();
-          return;
-        }
+        location.reload();
+        return;
       }
     }
-    _lastVisible = Date.now();
+    if (document.visibilityState === 'hidden') _lastVisible = Date.now();
   });
 }
 
