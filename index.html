@@ -458,16 +458,17 @@
 
 <!-- ========== US STOCKS TAB ========== -->
 <div id="us" class="content-area">
-  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 12px;">
     <h2>🇺🇸 美股投資組合</h2>
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-      <label style="color:#888;font-size:0.9em">帳戶：</label>
+      <label style="color:#888;font-size:0.9em">持有人：</label>
       <select id="usAccountSelect" onchange="onUSAccountChange()" style="padding:6px 12px;border-radius:6px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.08);color:#fff;font-size:0.9em;cursor:pointer;"></select>
-      <button class="btn btn-secondary" onclick="addBankAccount('us')" style="padding:4px 10px;font-size:0.82em">＋ 新增</button> <span class="help-tip">!<span class="help-text">為此持有人新增銀行/券商帳戶。</span></span>
+      <button class="btn btn-secondary" onclick="addBankAccount('us')" style="padding:4px 10px;font-size:0.82em">＋ 新增帳戶</button>
       <button class="btn btn-secondary" onclick="editBankAccount('us')" style="padding:4px 10px;font-size:0.82em">✏️ 編輯</button>
       <button class="btn-danger" onclick="deleteBankAccount('us')" style="padding:4px 10px;font-size:0.82em;border-radius:6px;border:none;cursor:pointer">🗑️ 刪除</button>
     </div>
   </div>
+  <div id="usBankTabs" style="display:flex;gap:0;margin-bottom:16px;border-bottom:1px solid rgba(255,255,255,0.08);overflow-x:auto"></div>
 
   <div class="tutorial-banner" id="tutorial-us">
     <button class="tutorial-close" onclick="this.parentElement.style.display='none';localStorage.setItem('hide_tutorial_us','1')">✕</button>
@@ -574,27 +575,6 @@
           <button class="btn btn-add" onclick="submitUSQIIncome()">✅ 快速送出</button>
         </div>
       </div>
-      <h3 style="color:#67e8f9;font-size:0.9em;margin:12px 0 6px">💰 資金管理</h3>
-      <div id="usFundRows"></div>
-      <div style="display:flex;gap:8px;margin-top:10px">
-        <button class="btn btn-secondary" onclick="addUSFundRow()">＋ 新增一行</button>
-        <button class="btn btn-add" onclick="submitUSFunds()">✅ 送出</button>
-      </div>
-
-      <h3 style="color:#67e8f9;font-size:0.9em;margin:16px 0 6px">➕ 新增交易</h3>
-      <div id="usTradeRows"></div>
-      <div style="display:flex;gap:8px;margin-top:10px">
-        <button class="btn btn-secondary" onclick="addUSTradeRow()">＋ 新增一行</button>
-        <button class="btn btn-add" onclick="submitUSTrades()">✅ 送出</button>
-      </div>
-
-      <h3 style="color:#67e8f9;font-size:0.9em;margin:16px 0 6px">💵 股利 &amp; 利息</h3>
-      <div id="usIncomeRows"></div>
-      <div style="display:flex;gap:8px;margin-top:10px">
-        <button class="btn btn-secondary" onclick="addUSIncomeRow()">＋ 新增一行</button>
-        <button class="btn btn-add" onclick="submitUSIncome()">✅ 送出</button>
-      </div>
-
       <div style="margin-top:16px;padding:12px;background:rgba(167,139,250,0.06);border:1px solid rgba(167,139,250,0.15);border-radius:10px">
         <h3 style="color:#a78bfa;font-size:0.95em;margin:0 0 10px">💱 帳戶轉帳</h3>
         <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">
@@ -676,16 +656,17 @@
 
 <!-- ========== TW STOCKS TAB ========== -->
 <div id="tw" class="content-area">
-  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 12px;">
     <h2>🇹🇼 台股投資組合</h2>
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-      <label style="color:#888;font-size:0.9em">帳戶：</label>
+      <label style="color:#888;font-size:0.9em">持有人：</label>
       <select id="twAccountSelect" onchange="onTWAccountChange()" style="padding:6px 12px;border-radius:6px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.08);color:#fff;font-size:0.9em;cursor:pointer;"></select>
-      <button class="btn btn-secondary" onclick="addBankAccount('tw')" style="padding:4px 10px;font-size:0.82em">＋ 新增</button> <span class="help-tip">!<span class="help-text">為此持有人新增銀行/券商帳戶。</span></span>
+      <button class="btn btn-secondary" onclick="addBankAccount('tw')" style="padding:4px 10px;font-size:0.82em">＋ 新增帳戶</button>
       <button class="btn btn-secondary" onclick="editBankAccount('tw')" style="padding:4px 10px;font-size:0.82em">✏️ 編輯</button>
       <button class="btn-danger" onclick="deleteBankAccount('tw')" style="padding:4px 10px;font-size:0.82em;border-radius:6px;border:none;cursor:pointer">🗑️ 刪除</button>
     </div>
   </div>
+  <div id="twBankTabs" style="display:flex;gap:0;margin-bottom:16px;border-bottom:1px solid rgba(255,255,255,0.08);overflow-x:auto"></div>
 
   <div class="tutorial-banner" id="tutorial-tw">
     <button class="tutorial-close" onclick="this.parentElement.style.display='none';localStorage.setItem('hide_tutorial_tw','1')">✕</button>
@@ -780,26 +761,6 @@
           <div style="color:#666;font-size:0.75em;margin:4px 0 8px">格式：<code>日期 金額</code> 或 <code>日期 來源 金額</code>・行內有來源會覆蓋上方預設 <span class="help-tip">!<span class="help-text">日期 (來源) 金額，來源可省略。</span></span></div>
           <button class="btn btn-add" onclick="submitTWQIIncome()">✅ 快速送出</button>
         </div>
-      </div>
-      <h3 style="color:#fb923c;font-size:0.9em;margin:12px 0 6px">💰 資金管理</h3>
-      <div id="twFundRows"></div>
-      <div style="display:flex;gap:8px;margin-top:10px">
-        <button class="btn btn-secondary" onclick="addTWFundRow()">＋ 新增一行</button>
-        <button class="btn btn-add" onclick="submitTWFunds()">✅ 送出</button>
-      </div>
-
-      <h3 style="color:#fb923c;font-size:0.9em;margin:16px 0 6px">➕ 新增交易</h3>
-      <div id="twTradeRows"></div>
-      <div style="display:flex;gap:8px;margin-top:10px">
-        <button class="btn btn-secondary" onclick="addTWTradeRow()">＋ 新增一行</button>
-        <button class="btn btn-add" onclick="submitTWTrades()">✅ 送出</button>
-      </div>
-
-      <h3 style="color:#fb923c;font-size:0.9em;margin:16px 0 6px">💵 股利 &amp; 利息</h3>
-      <div id="twIncomeRows"></div>
-      <div style="display:flex;gap:8px;margin-top:10px">
-        <button class="btn btn-secondary" onclick="addTWIncomeRow()">＋ 新增一行</button>
-        <button class="btn btn-add" onclick="submitTWIncome()">✅ 送出</button>
       </div>
     </div>
   </div>
@@ -1676,57 +1637,95 @@ function accountLabel(a) {
 }
 
 function renderAccountSelectors() {
-  const usAccounts = accounts.filter(a => !a.market || a.market === 'us');
-  const twAccounts = accounts.filter(a => !a.market || a.market === 'tw');
+  const allOwners = [...new Set(accounts.map(a => a.owner || a.name))].sort();
 
+  // US owner selector
   const usSelect = document.getElementById('usAccountSelect');
-  // Group by owner for selector
-  const usOwners = [...new Set(usAccounts.map(a => a.owner || a.name))];
-  let usOptions = '';
-  usOwners.forEach(owner => {
-    const ownerAccs = usAccounts.filter(a => (a.owner||a.name) === owner && a.bank);
-    if (ownerAccs.length > 1) {
-      usOptions += `<option value="_owner_${owner}">📊 ${owner}（全部帳戶）</option>`;
-    }
-    ownerAccs.forEach(a => {
-      usOptions += `<option value="${a.id}">${a.owner||a.name} - ${a.bank}</option>`;
-    });
+  let usOptions = allOwners.length > 1 ? '<option value="_all_">📊 全部帳戶</option>' : '';
+  allOwners.forEach(owner => {
+    usOptions += `<option value="_owner_${owner}">${owner}</option>`;
   });
   usSelect.innerHTML = usOptions || '<option>無帳戶</option>';
-  if (usAccounts.length > 0 && (!currentUSAccount || !usAccounts.find(a => a.id === currentUSAccount))) {
-    currentUSAccount = usAccounts[0].id;
-  }
-  if (currentUSAccount) usSelect.value = currentUSAccount;
 
+  // Set default: first owner
+  if (!currentUSAccount && allOwners.length > 0) currentUSAccount = '_owner_' + allOwners[0];
+  if (currentUSAccount) usSelect.value = currentUSAccount;
+  renderBankTabs('us');
+
+  // TW owner selector
   const twSelect = document.getElementById('twAccountSelect');
-  const twOwners = [...new Set(twAccounts.map(a => a.owner || a.name))];
-  let twOptions = '';
-  twOwners.forEach(owner => {
-    const ownerAccs = twAccounts.filter(a => (a.owner||a.name) === owner && a.bank);
-    if (ownerAccs.length > 1) {
-      twOptions += `<option value="_owner_${owner}">📊 ${owner}（全部帳戶）</option>`;
-    }
-    ownerAccs.forEach(a => {
-      twOptions += `<option value="${a.id}">${a.owner||a.name} - ${a.bank}</option>`;
-    });
+  let twOptions = allOwners.length > 1 ? '<option value="_all_">📊 全部帳戶</option>' : '';
+  allOwners.forEach(owner => {
+    twOptions += `<option value="_owner_${owner}">${owner}</option>`;
   });
   twSelect.innerHTML = twOptions || '<option>無帳戶</option>';
-  if (twAccounts.length > 0 && (!currentTWAccount || !twAccounts.find(a => a.id === currentTWAccount))) {
-    currentTWAccount = twAccounts[0].id;
-  }
-  if (currentTWAccount) {
-    twSelect.value = currentTWAccount;
-    // 初始化台股表單行
-    if (document.getElementById('twFundRows')?.children.length === 0) addTWFundRow();
-    if (document.getElementById('twTradeRows')?.children.length === 0) addTWTradeRow();
-    if (document.getElementById('twIncomeRows')?.children.length === 0) addTWIncomeRow();
-  }
 
-  // 帳戶變更時重新渲染 DCA entries
+  if (!currentTWAccount && allOwners.length > 0) currentTWAccount = '_owner_' + allOwners[0];
+  if (currentTWAccount) twSelect.value = currentTWAccount;
+  renderBankTabs('tw');
+
+  // DCA entries
   if (document.getElementById('dcaEntries')) {
     document.getElementById('dcaEntries').innerHTML = '';
     addDCAEntry();
   }
+}
+
+let currentUSBank = null, currentTWBank = null;
+
+function renderBankTabs(market) {
+  const container = document.getElementById(market === 'us' ? 'usBankTabs' : 'twBankTabs');
+  if (!container) return;
+  const selectVal = market === 'us' ? currentUSAccount : currentTWAccount;
+
+  if (selectVal === '_all_') {
+    container.innerHTML = '';
+    return;
+  }
+
+  const owner = selectVal?.startsWith('_owner_') ? selectVal.replace('_owner_', '') : null;
+  if (!owner) { container.innerHTML = ''; return; }
+
+  const ownerAccs = accounts.filter(a => (a.owner || a.name) === owner && a.bank && (!a.market || a.market === market));
+  const currentBank = market === 'us' ? currentUSBank : currentTWBank;
+  const tabStyle = 'padding:8px 16px;border:none;background:transparent;color:#888;cursor:pointer;font-size:0.88em;font-weight:500;border-bottom:3px solid transparent;white-space:nowrap';
+  const activeStyle = 'padding:8px 16px;border:none;background:transparent;cursor:pointer;font-size:0.88em;font-weight:500;border-bottom:3px solid;white-space:nowrap';
+  const accentColor = market === 'us' ? '#67e8f9' : '#fb923c';
+
+  let html = `<button style="${!currentBank ? activeStyle + 'color:' + accentColor + ';border-bottom-color:' + accentColor : tabStyle}" onclick="set${market.toUpperCase()}Bank(null)">📊 全部</button>`;
+  ownerAccs.forEach(acc => {
+    const isActive = currentBank === acc.id;
+    html += `<button style="${isActive ? activeStyle + 'color:' + accentColor + ';border-bottom-color:' + accentColor : tabStyle}" onclick="set${market.toUpperCase()}Bank('${acc.id}')">${acc.bank}</button>`;
+  });
+  container.innerHTML = html;
+}
+
+function setUSBank(bankId) {
+  currentUSBank = bankId;
+  renderBankTabs('us');
+  if (bankId) {
+    currentUSAccount = bankId;
+    document.getElementById('usMarketOverview').style.display = 'none';
+    document.getElementById('usAccountDetail').style.display = 'block';
+  } else {
+    const owner = document.getElementById('usAccountSelect').value.replace('_owner_', '');
+    currentUSAccount = '_owner_' + owner;
+  }
+  renderUSTab();
+}
+
+function setTWBank(bankId) {
+  currentTWBank = bankId;
+  renderBankTabs('tw');
+  if (bankId) {
+    currentTWAccount = bankId;
+    document.getElementById('twMarketOverview').style.display = 'none';
+    document.getElementById('twAccountDetail').style.display = 'block';
+  } else {
+    const owner = document.getElementById('twAccountSelect').value.replace('_owner_', '');
+    currentTWAccount = '_owner_' + owner;
+  }
+  renderTWTab();
 }
 
 // ===== API Key =====
@@ -3352,14 +3351,25 @@ function renderAccountCards(accs, morts) {
 // ===== Render: US Stocks =====
 function onUSAccountChange() {
   const val = document.getElementById('usAccountSelect').value;
-  if (val.startsWith('_owner_')) {
+  currentUSAccount = val;
+  currentUSBank = null; // reset bank tab
+  renderBankTabs('us');
+
+  if (val === '_all_') {
+    // All owners combined
+    document.getElementById('usAccountDetail').style.display = 'none';
+    document.getElementById('usMarketOverview').style.display = 'block';
+    renderMarketOverviewForAccounts(document.getElementById('usMarketOverview'), accounts, '🇺🇸', 'us');
+  } else if (val.startsWith('_owner_')) {
+    // Owner's all accounts (default sub-tab = 全部)
     const owner = val.replace('_owner_', '');
     document.getElementById('usAccountDetail').style.display = 'none';
     document.getElementById('usMarketOverview').style.display = 'block';
     const ownerAccs = accounts.filter(a => (!a.market || a.market === 'us') && (a.owner||a.name) === owner);
     renderMarketOverviewForAccounts(document.getElementById('usMarketOverview'), ownerAccs, '🇺🇸', 'us');
   } else {
-    currentUSAccount = val;
+    currentUSBank = val;
+    renderBankTabs('us');
     document.getElementById('usAccountDetail').style.display = 'block';
     document.getElementById('usMarketOverview').style.display = 'none';
     renderUSTab();
@@ -3368,14 +3378,23 @@ function onUSAccountChange() {
 
 function onTWAccountChange() {
   const val = document.getElementById('twAccountSelect').value;
-  if (val.startsWith('_owner_')) {
+  currentTWAccount = val;
+  currentTWBank = null;
+  renderBankTabs('tw');
+
+  if (val === '_all_') {
+    document.getElementById('twAccountDetail').style.display = 'none';
+    document.getElementById('twMarketOverview').style.display = 'block';
+    renderMarketOverviewForAccounts(document.getElementById('twMarketOverview'), accounts, '🇹🇼', 'tw');
+  } else if (val.startsWith('_owner_')) {
     const owner = val.replace('_owner_', '');
     document.getElementById('twAccountDetail').style.display = 'none';
     document.getElementById('twMarketOverview').style.display = 'block';
     const ownerAccs = accounts.filter(a => (!a.market || a.market === 'tw') && (a.owner||a.name) === owner);
     renderMarketOverviewForAccounts(document.getElementById('twMarketOverview'), ownerAccs, '🇹🇼', 'tw');
   } else {
-    currentTWAccount = val;
+    currentTWBank = val;
+    renderBankTabs('tw');
     document.getElementById('twAccountDetail').style.display = 'block';
     document.getElementById('twMarketOverview').style.display = 'none';
     renderTWTab();
@@ -3614,16 +3633,6 @@ function renderUSTab() {
   
   currentUSAccount = document.getElementById('usAccountSelect').value;
   
-  // 確保表單行已初始化
-  if (!document.getElementById('usFundRows') || document.getElementById('usFundRows').children.length === 0) {
-    addUSFundRow();
-  }
-  if (!document.getElementById('usTradeRows') || document.getElementById('usTradeRows').children.length === 0) {
-    addUSTradeRow();
-  }
-  if (!document.getElementById('usIncomeRows') || document.getElementById('usIncomeRows').children.length === 0) {
-    addUSIncomeRow();
-  }
   populateTransferDropdowns();
 
   const trades = getAccountData(currentUSAccount, 'us', 'trades');
@@ -3978,16 +3987,7 @@ function renderTWTab() {
 
   currentTWAccount = document.getElementById('twAccountSelect').value;
   
-  // 確保表單行已初始化
-  if (!document.getElementById('twFundRows') || document.getElementById('twFundRows').children.length === 0) {
-    addTWFundRow();
-  }
-  if (!document.getElementById('twTradeRows') || document.getElementById('twTradeRows').children.length === 0) {
-    addTWTradeRow();
-  }
-  if (!document.getElementById('twIncomeRows') || document.getElementById('twIncomeRows').children.length === 0) {
-    addTWIncomeRow();
-  }
+  // TW tab init
   const trades = getAccountData(currentTWAccount, 'tw', 'trades');
   const funds = getAccountData(currentTWAccount, 'tw', 'funds');
   const income = getAccountData(currentTWAccount, 'tw', 'income');
@@ -5924,13 +5924,21 @@ function renderAccountsTab() {
   // Group by owner
   const owners = [...new Set(accounts.map(a => a.owner || a.name))];
   let html = '';
-  owners.forEach(owner => {
+  owners.forEach((owner, oi) => {
     const ownerAccs = accounts.filter(a => (a.owner || a.name) === owner);
-    // Owner header row
-    html += `<tr style="background:rgba(99,179,237,0.08)"><td colspan="6" style="padding:8px 12px;font-weight:700;color:#67e8f9">👤 ${owner}
-      <button class="btn-danger" style="float:right;padding:2px 8px;font-size:0.75em;border-radius:4px;border:none;cursor:pointer" onclick="deleteOwner('${owner}')">刪除持有人</button></td></tr>`;
+    const bankAccs = ownerAccs.filter(a => a.bank);
+    const totalAll = bankAccs.reduce((s, acc) => {
+      return s + getAccountData(acc.id,'us','trades').length + getAccountData(acc.id,'tw','trades').length + getAccountData(acc.id,'us','funds').length + getAccountData(acc.id,'tw','funds').length;
+    }, 0);
+    // Owner header row — clickable to collapse
+    html += `<tr style="background:rgba(99,179,237,0.08);cursor:pointer" onclick="const b=document.getElementById('ownerRows_${oi}');b.style.display=b.style.display==='none'?'':'none';this.querySelector('.oc-arrow').textContent=b.style.display==='none'?'▶':'▼'">
+      <td colspan="6" style="padding:8px 12px;font-weight:700;color:#67e8f9">
+        <span class="oc-arrow" style="font-size:.7em;margin-right:6px">▼</span>👤 ${owner} <span style="font-size:.75em;color:#888;font-weight:400">(${bankAccs.length} 帳戶、${totalAll} 筆)</span>
+        <button class="btn-danger" style="float:right;padding:2px 8px;font-size:0.75em;border-radius:4px;border:none;cursor:pointer" onclick="event.stopPropagation();deleteOwner('${owner}')">刪除持有人</button>
+      </td></tr>`;
+    html += `<tbody id="ownerRows_${oi}">`;
     // Bank account rows
-    ownerAccs.filter(a => a.bank).forEach(acc => {
+    bankAccs.forEach(acc => {
       const usTrades = getAccountData(acc.id, 'us', 'trades');
       const twTrades = getAccountData(acc.id, 'tw', 'trades');
       const usFunds = getAccountData(acc.id, 'us', 'funds');
@@ -5938,17 +5946,17 @@ function renderAccountsTab() {
       const totalRecords = usTrades.length + twTrades.length + usFunds.length + twFunds.length;
       html += `<tr>
         <td></td>
-        <td><input value="${acc.bank}" style="width:90px;${inputStyle}" onchange="const a=accounts.find(x=>x.id==='${acc.id}');a.bank=this.value;saveAccounts()"></td>
+        <td><input value="${acc.bank}" style="width:90px;${inputStyle}" onclick="event.stopPropagation()" onchange="const a=accounts.find(x=>x.id==='${acc.id}');a.bank=this.value;saveAccounts()"></td>
         <td style="font-size:0.82em">${marketLabel(acc.market)}</td>
-        <td><input type="number" value="${acc.ownership_pct ?? 100}" style="width:55px;${inputStyle};text-align:center" min="0" max="100" step="1" onchange="const a=accounts.find(x=>x.id==='${acc.id}');a.ownership_pct=parseFloat(this.value)||100;saveAccounts()">%</td>
+        <td><input type="number" value="${acc.ownership_pct ?? 100}" style="width:55px;${inputStyle};text-align:center" min="0" max="100" step="1" onclick="event.stopPropagation()" onchange="const a=accounts.find(x=>x.id==='${acc.id}');a.ownership_pct=parseFloat(this.value)||100;saveAccounts()">%</td>
         <td style="font-size:0.8em;color:#888">${totalRecords} 筆</td>
-        <td><button class="btn-danger" onclick="deleteAccount('${acc.id}')" style="padding:2px 8px;font-size:0.75em;border-radius:4px;border:none;cursor:pointer">刪除</button></td>
+        <td><button class="btn-danger" onclick="event.stopPropagation();deleteAccount('${acc.id}')" style="padding:2px 8px;font-size:0.75em;border-radius:4px;border:none;cursor:pointer">刪除</button></td>
       </tr>`;
     });
-    // If owner has no bank accounts, show placeholder
-    if (!ownerAccs.some(a => a.bank)) {
+    if (!bankAccs.length) {
       html += `<tr><td></td><td colspan="5" style="color:#666;font-size:0.82em;padding:6px">尚無銀行帳戶，請到美股/台股頁面新增</td></tr>`;
     }
+    html += '</tbody>';
   });
   document.getElementById('accountsBody').innerHTML = html || '<tr><td colspan="6" style="text-align:center;color:#666;padding:20px">尚無帳戶，請先新增持有人</td></tr>';
 }
