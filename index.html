@@ -3529,12 +3529,13 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
     ${mergedList.length > 0 ? `
     <div class="table-container" style="margin-top:16px;overflow-x:auto">
       <div class="table-header"><h3>${flag} 合併持股 <span class="help-tip">!<span class="help-text">各帳戶持股按比例加權後合併顯示。</span></span></h3></div>
-      <table style="min-width:max-content"><thead><tr><th>股票</th><th>股價</th><th>均價</th><th>總股數</th><th>市值</th><th>佔比</th></tr></thead>
+      <table style="min-width:max-content"><thead><tr><th>股票</th><th>股價</th><th>均價</th><th>總股數</th><th>市值</th>${market==='us'?'<th>台幣市值</th>':''}<th>佔比</th></tr></thead>
       <tbody>${mergedList.map(s => {
         const pct = totalMV > 0 ? (s.marketValue / totalMV * 100).toFixed(1) : '0.0';
         const priceStr = s.currentPrice ? (market==='tw'?fmtTWD2(s.currentPrice):fmt(s.currentPrice)) : '-';
         const avgStr = (s.shares > 0 && s.netCost > 0) ? (market==='tw'?fmtTWD2(s.netCost/s.shares):fmt(s.netCost/s.shares)) : '-';
-        return `<tr><td><strong>${s.ticker}</strong></td><td>${priceStr}</td><td>${avgStr}</td><td>${s.shares.toFixed(2)}</td><td>${fmtMkt(s.marketValue)}</td><td>${pct}%</td></tr>`;
+        const twdCol = market==='us' ? `<td>${fmtTWD(s.marketValue * usdTwdRate)}</td>` : '';
+        return `<tr><td><strong>${s.ticker}</strong></td><td>${priceStr}</td><td>${avgStr}</td><td>${s.shares.toFixed(2)}</td><td>${fmtMkt(s.marketValue)}</td>${twdCol}<td>${pct}%</td></tr>`;
       }).join('')}</tbody></table>
     </div>` : ''}
   `;
