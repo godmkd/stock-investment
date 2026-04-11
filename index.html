@@ -982,7 +982,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 let currentUser = null;
 
-async function withTimeout(promise, ms = 20000) {
+async function withTimeout(promise, ms = 8000) {
   const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("請求逾時")), ms));
   return Promise.race([promise, timeout]);
 }
@@ -1409,26 +1409,16 @@ async function authInit() {
     if (document.visibilityState === 'visible' && currentUser) {
       const elapsed = Date.now() - _lastVisible;
       console.log(`App resumed after ${Math.round(elapsed/1000)}s`);
-      try {
-        const { data, error } = await sb.auth.refreshSession();
-        if (error || !data?.session) {
-          const { data: user } = await sb.auth.getUser();
-          if (!user?.user) {
-            location.reload();
-            return;
-          }
-        }
-        if (elapsed > 30000) {
+      if (elapsed > 3000) {
+        try {
+          const { error } = await sb.auth.refreshSession();
+          if (error) { location.reload(); return; }
           const { error: pingErr } = await sb.from('inv_accounts').select('id').limit(1);
-          if (pingErr) {
-            console.warn('Connection lost, reloading...');
-            location.reload();
-            return;
-          }
+          if (pingErr) { location.reload(); return; }
+        } catch(e) {
+          location.reload();
+          return;
         }
-      } catch(e) {
-        console.warn('Resume failed, reloading...', e);
-        location.reload();
       }
     }
     _lastVisible = Date.now();
