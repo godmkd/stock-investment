@@ -1635,35 +1635,35 @@ function accountLabel(a) {
 }
 
 function renderAccountSelectors() {
-  const allOwners = [...new Set(accounts.map(a => a.owner || a.name))].sort();
+  // Filter owners by market — only show owners who have bank accounts in that market
+  const usOwners = [...new Set(accounts.filter(a => a.bank && (!a.market || a.market === 'us')).map(a => a.owner || a.name))].sort();
+  const twOwners = [...new Set(accounts.filter(a => a.bank && (!a.market || a.market === 'tw')).map(a => a.owner || a.name))].sort();
 
   // US owner selector
   const usSelect = document.getElementById('usAccountSelect');
-  let usOptions = allOwners.length > 1 ? '<option value="_all_">📊 全部帳戶</option>' : '';
-  allOwners.forEach(owner => {
+  let usOptions = usOwners.length > 1 ? '<option value="_all_">📊 全部帳戶</option>' : '';
+  usOwners.forEach(owner => {
     usOptions += `<option value="_owner_${owner}">${owner}</option>`;
   });
   usSelect.innerHTML = usOptions || '<option>無帳戶</option>';
 
-  // Set default: 全部帳戶
-  if (!currentUSAccount || (!currentUSAccount.startsWith('_') && !accounts.find(a => a.id === currentUSAccount))) {
-    currentUSAccount = allOwners.length > 1 ? '_all_' : (allOwners.length === 1 ? '_owner_' + allOwners[0] : null);
-  }
+  // Always default to _all_ on first load
+  currentUSAccount = usOwners.length > 1 ? '_all_' : (usOwners.length === 1 ? '_owner_' + usOwners[0] : null);
   if (currentUSAccount) usSelect.value = currentUSAccount;
+  currentUSBank = null;
   renderBankTabs('us');
 
   // TW owner selector
   const twSelect = document.getElementById('twAccountSelect');
-  let twOptions = allOwners.length > 1 ? '<option value="_all_">📊 全部帳戶</option>' : '';
-  allOwners.forEach(owner => {
+  let twOptions = twOwners.length > 1 ? '<option value="_all_">📊 全部帳戶</option>' : '';
+  twOwners.forEach(owner => {
     twOptions += `<option value="_owner_${owner}">${owner}</option>`;
   });
   twSelect.innerHTML = twOptions || '<option>無帳戶</option>';
 
-  if (!currentTWAccount || (!currentTWAccount.startsWith('_') && !accounts.find(a => a.id === currentTWAccount))) {
-    currentTWAccount = allOwners.length > 1 ? '_all_' : (allOwners.length === 1 ? '_owner_' + allOwners[0] : null);
-  }
+  currentTWAccount = twOwners.length > 1 ? '_all_' : (twOwners.length === 1 ? '_owner_' + twOwners[0] : null);
   if (currentTWAccount) twSelect.value = currentTWAccount;
+  currentTWBank = null;
   renderBankTabs('tw');
 
   // DCA entries
