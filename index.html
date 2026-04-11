@@ -3419,6 +3419,7 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
     totalIncome += wIncome;
 
     // Weight individual stock analysis for merged holdings
+    analysis.filter(s => !s.isClosed).forEach(s => console.log(`[個股分析] ${acc.bank||acc.name} ${s.ticker}: shares=${s.shares} totalBought=${s.totalBought.toFixed(2)} totalSold=${s.totalSold.toFixed(2)} tickerIncome=${s.tickerIncome.toFixed(2)} avgPrice=${s.avgPrice.toFixed(3)} netCost=${s.netCost.toFixed(2)} ownPct=${ownPct}`));
     const weightedAnalysis = analysis.filter(s => !s.isClosed).map(s => ({
       ...s,
       shares: s.shares * ownPct,
@@ -3447,6 +3448,8 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
     if (s.currentPrice) merged[s.ticker].currentPrice = s.currentPrice;
   });
   const mergedList = Object.values(merged).sort((a, b) => b.marketValue - a.marketValue);
+  // Debug: show avgPrice calculation
+  mergedList.forEach(s => console.log(`[合併持股] ${s.ticker}: shares=${s.shares.toFixed(4)} grossCost=${s.grossCost.toFixed(2)} netCost=${s.netCost.toFixed(2)} avgPrice(gross)=${s.shares>0?(s.grossCost/s.shares).toFixed(3):'N/A'} avgPrice(net)=${s.shares>0?(s.netCost/s.shares).toFixed(3):'N/A'}`));
 
   // Prepare pie chart data (stocks + cash)
   const pieLabels = mergedList.map(s => s.ticker);
