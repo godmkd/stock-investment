@@ -3538,7 +3538,18 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
         const pct = totalMV > 0 ? (s.marketValue / totalMV * 100).toFixed(1) : '0.0';
         const priceStr = s.currentPrice ? (market==='tw'?fmtTWD2(s.currentPrice):fmt(s.currentPrice)) : '-';
         const avgStr = (s.shares > 0 && s.netCost > 0) ? (market==='tw'?fmtTWD2(s.netCost/s.shares):fmt(s.netCost/s.shares)) : '-';
-        return `<tr><td><strong>${s.ticker}</strong></td><td>${priceStr}</td><td>${avgStr}</td><td>${s.shares.toFixed(2)}</td><td>${fmtMkt(s.marketValue)}</td><td>${pct}%</td></tr>`;
+        // Find source data for this ticker
+        const srcStocks = allAnalysis.filter(a => a.ticker === s.ticker);
+        const detailParts = srcStocks.map(a => {
+          const accObj = marketAccounts.find(ac => {
+            const t = getAccountData(ac.id, market, 'trades');
+            return t.some(tt => normalizeTickerKey(tt.ticker, market) === a.ticker);
+          });
+          const pctLabel = a.shares !== srcStocks.reduce((sum,x)=>sum+x.shares,0) ? ` ×${((accountSummaries.find(ss=>ss.acc===accObj)||{}).ownPct*100||100).toFixed(0)}%` : '';
+          return `買${fmtMkt(a.totalBought)}-賣${fmtMkt(a.totalSold)}-息${fmtMkt(a.tickerIncome)}${pctLabel}`;
+        });
+        const detail = `netCost=${fmtMkt(s.netCost)} / ${s.shares.toFixed(2)}股 = ${avgStr}` + (srcStocks.length > 0 ? `<br>${detailParts.join(' + ')}` : '');
+        return `<tr><td><strong>${s.ticker}</strong></td><td>${priceStr}</td><td title="${s.netCost.toFixed(2)} / ${s.shares.toFixed(4)}">${avgStr}<br><span style="font-size:.65em;color:#888">${detail}</span></td><td>${s.shares.toFixed(2)}</td><td>${fmtMkt(s.marketValue)}</td><td>${pct}%</td></tr>`;
       }).join('')}</tbody></table>
     </div>` : ''}
   `;
