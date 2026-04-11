@@ -2929,13 +2929,14 @@ function getAccountTwdNetCost(accountId, asOfDate) {
 }
 
 // 全部帳戶用：只算存入/提領的台幣（不含轉帳）
-function getGlobalTwdNetCost(accountIds) {
+function getGlobalTwdNetCost(accs) {
   let cost = 0;
-  for (const accId of accountIds) {
-    const funds = getAccountData(accId, 'us', 'funds');
+  for (const acc of accs) {
+    const pct = (acc.ownership_pct ?? 100) / 100;
+    const funds = getAccountData(acc.id, 'us', 'funds');
     for (const f of funds) {
-      if (f.type === 'deposit' && f.twdAmount) cost += f.twdAmount;
-      if (f.type === 'withdraw' && f.twdAmount) cost -= f.twdAmount;
+      if (f.type === 'deposit' && f.twdAmount) cost += f.twdAmount * pct;
+      if (f.type === 'withdraw' && f.twdAmount) cost -= f.twdAmount * pct;
     }
   }
   return cost;
@@ -3376,9 +3377,8 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
   let usTwdSection = '';
   if (market === 'us') {
     let totalTwdCost = 0, totalUsdInvested = 0;
-    // 全部帳戶台幣成本：只算存入/提領（不含轉帳）
-    const allAccIds = accountSummaries.map(s => s.acc.id);
-    let allTwdCost = getGlobalTwdNetCost(allAccIds);
+    // 全部帳戶台幣成本：只算存入/提領（不含轉帳），乘比例
+    let allTwdCost = getGlobalTwdNetCost(marketAccounts);
     for (const s of accountSummaries) {
       totalUsdInvested += s.fundIn;
     }
