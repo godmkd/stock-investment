@@ -3538,18 +3538,33 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
         const pct = totalMV > 0 ? (s.marketValue / totalMV * 100).toFixed(1) : '0.0';
         const priceStr = s.currentPrice ? (market==='tw'?fmtTWD2(s.currentPrice):fmt(s.currentPrice)) : '-';
         const avgStr = (s.shares > 0 && s.netCost > 0) ? (market==='tw'?fmtTWD2(s.netCost/s.shares):fmt(s.netCost/s.shares)) : '-';
-        // Find source data for this ticker
-        const srcStocks = allAnalysis.filter(a => a.ticker === s.ticker);
-        const detailParts = srcStocks.map(a => {
-          const accObj = marketAccounts.find(ac => {
-            const t = getAccountData(ac.id, market, 'trades');
-            return t.some(tt => normalizeTickerKey(tt.ticker, market) === a.ticker);
+        // Find source data - allAnalysis already has weighted values (shares/netCost ×ownPct), but totalBought etc are raw
+        const srcEntries = [];
+        accountSummaries.forEach(as => {
+          const accAnalysis = as.analysis.filter(a => !a.isClosed && normalizeTickerKey(a.ticker, market) === s.ticker);
+          accAnalysis.forEach(a => {
+            const pctVal = as.ownPct;
+            const rawNetCost = (a.totalBought + a.totalFee) - a.totalSold + (a.totalFee > 0 ? 0 : 0) - a.tickerIncome;
+            srcEntries.push({
+              acc: as.acc.bank || as.acc.name,
+              pct: pctVal,
+              bought: a.totalBought,
+              sold: a.totalSold,
+              fee: a.totalFee,
+              income: a.tickerIncome,
+              shares: a.shares,
+              netCost: a.netCost,
+              avgPrice: a.avgPrice
+            });
           });
-          const pctLabel = a.shares !== srcStocks.reduce((sum,x)=>sum+x.shares,0) ? ` ×${((accountSummaries.find(ss=>ss.acc===accObj)||{}).ownPct*100||100).toFixed(0)}%` : '';
-          return `買${fmtMkt(a.totalBought)}-賣${fmtMkt(a.totalSold)}-息${fmtMkt(a.tickerIncome)}${pctLabel}`;
         });
-        const detail = `netCost=${fmtMkt(s.netCost)} / ${s.shares.toFixed(2)}股 = ${avgStr}` + (srcStocks.length > 0 ? `<br>${detailParts.join(' + ')}` : '');
-        return `<tr><td><strong>${s.ticker}</strong></td><td>${priceStr}</td><td title="${s.netCost.toFixed(2)} / ${s.shares.toFixed(4)}">${avgStr}<br><span style="font-size:.65em;color:#888">${detail}</span></td><td>${s.shares.toFixed(2)}</td><td>${fmtMkt(s.marketValue)}</td><td>${pct}%</td></tr>`;
+        const detailLines = srcEntries.map(e => {
+          const pctStr = e.pct < 1 ? ` ×${(e.pct*100).toFixed(0)}%` : '';
+          const weighted = e.pct < 1 ? ` → 加權: netCost=${fmtMkt(e.netCost*e.pct)} / ${(e.shares*e.pct).toFixed(2)}股` : '';
+          return `${e.acc}${pctStr}: 買${fmtMkt(e.bought)} 賣${fmtMkt(e.sold)} 費${fmtMkt(e.fee)} 息${fmtMkt(e.income)} → 均價${market==='tw'?fmtTWD2(e.avgPrice):fmt(e.avgPrice)}${weighted}`;
+        });
+        const detail = `合併: netCost=${fmtMkt(s.netCost)} / ${s.shares.toFixed(2)}股 = ${avgStr}` + (detailLines.length > 0 ? '<br>' + detailLines.join('<br>') : '');
+        return `<tr><td><strong>${s.ticker}</strong></td><td>${priceStr}</td><td title="${s.netCost.toFixed(2)} / ${s.shares.toFixed(4)}">${avgStr}<br><span style="font-size:.65em;color:#888;white-space:pre-line">${detail}</span></td><td>${s.shares.toFixed(2)}</td><td>${fmtMkt(s.marketValue)}</td><td>${pct}%</td></tr>`;
       }).join('')}</tbody></table>
     </div>` : ''}
   `;
