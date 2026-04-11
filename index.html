@@ -420,6 +420,7 @@
   <button class="tab-btn" onclick="switchTab('us')">🇺🇸 美股投資</button>
   <button class="tab-btn" onclick="switchTab('tw')">🇹🇼 台股投資</button>
   <button class="tab-btn" onclick="switchTab('dca')">📅 定期定額</button>
+  <button class="tab-btn" onclick="switchTab('report')">📈 報表分析</button>
   <button class="tab-btn" onclick="switchTab('mortgage')">🏠 房產/房貸</button>
   <button class="tab-btn" onclick="switchTab('accounts')">⚙️ 帳戶管理</button>
 </div>
@@ -642,7 +643,7 @@
     <div style="overflow-x:auto">
       <table>
         <thead>
-          <tr><th>股票</th><th>現價 USD</th><th>現有股數</th><th>現均價 USD</th><th>持倉市值 USD</th><th>投資回報率</th><th>總損益 USD</th></tr>
+          <tr><th>股票</th><th>現價 USD</th><th>現有股數</th><th>現均價 USD</th><th>持倉市值 USD</th><th>投資回報率</th><th>已實現</th><th>未實現</th><th>總損益 USD</th></tr>
         </thead>
         <tbody id="usPositionsBody"></tbody>
       </table>
@@ -808,7 +809,7 @@
     <div style="overflow-x:auto">
       <table>
         <thead>
-          <tr><th>股票</th><th>現價 TWD</th><th>現有股數</th><th>現均價 TWD</th><th>持倉市值 TWD</th><th>投資回報率</th><th>總損益 TWD</th></tr>
+          <tr><th>股票</th><th>現價 TWD</th><th>現有股數</th><th>現均價 TWD</th><th>持倉市值 TWD</th><th>投資回報率</th><th>已實現</th><th>未實現</th><th>總損益 TWD</th></tr>
         </thead>
         <tbody id="twPositionsBody"></tbody>
       </table>
@@ -837,6 +838,21 @@
 
   <div id="twStockSections"></div>
   </div><!-- /twAccountDetail -->
+</div>
+
+<!-- ========== REPORT TAB ========== -->
+<div id="report" class="content-area">
+  <h2 style="margin-bottom:16px">📈 報表分析</h2>
+  <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+    <button class="btn btn-primary" id="rptAnnualBtn" onclick="switchReportView('annual')" style="padding:6px 14px;font-size:0.88em">📊 年度報表</button>
+    <button class="btn" id="rptCalendarBtn" onclick="switchReportView('calendar')" style="padding:6px 14px;font-size:0.88em;background:rgba(255,255,255,0.1);color:#aaa">📅 配息日曆</button>
+    <button class="btn" id="rptRateBtn" onclick="switchReportView('rate')" style="padding:6px 14px;font-size:0.88em;background:rgba(255,255,255,0.1);color:#aaa">💱 匯率歷史</button>
+    <button class="btn" id="rptCostBtn" onclick="switchReportView('cost')" style="padding:6px 14px;font-size:0.88em;background:rgba(255,255,255,0.1);color:#aaa">📉 成本走勢</button>
+    <button class="btn" id="rptSectorBtn" onclick="switchReportView('sector')" style="padding:6px 14px;font-size:0.88em;background:rgba(255,255,255,0.1);color:#aaa">🏭 產業分布</button>
+    <button class="btn" id="rptMetricsBtn" onclick="switchReportView('metrics')" style="padding:6px 14px;font-size:0.88em;background:rgba(255,255,255,0.1);color:#aaa">📋 財務指標</button>
+    <button class="btn" id="rptPdfBtn" onclick="generatePDFReport()" style="padding:6px 14px;font-size:0.88em;background:rgba(255,255,255,0.1);color:#aaa">📄 匯出 PDF</button>
+  </div>
+  <div id="reportContent"></div>
 </div>
 
 <!-- ========== DCA TAB ========== -->
@@ -1608,6 +1624,7 @@ function switchTab(tabName) {
   else if (tabName === 'us') renderUSTab();
   else if (tabName === 'tw') renderTWTab();
   else if (tabName === 'dca') renderDCATab();
+  else if (tabName === 'report') renderReportTab();
   else if (tabName === 'mortgage') renderMortgageTab();
   else if (tabName === 'accounts') renderAccountsTab();
 }
@@ -2252,6 +2269,9 @@ function addUSTradeRow() {
     <button class="btn-remove-row" onclick="this.parentElement.remove()">✕</button>
   `;
   container.appendChild(div);
+  // Auto-fill price on ticker blur
+  const tickerInput = div.querySelector('.usTradeTicket');
+  if (tickerInput) attachTickerLookup(tickerInput, '.usTradePrice', 'us');
 }
 
 window.calcUSTradePreview = function(id) {
@@ -2460,6 +2480,9 @@ function addTWTradeRow() {
     <button class="btn-remove-row" onclick="this.parentElement.remove()">✕</button>
   `;
   container.appendChild(div);
+  // Auto-fill price on ticker blur
+  const tickerInput = div.querySelector('.twTradeTicket');
+  if (tickerInput) attachTickerLookup(tickerInput, '.twTradePrice', 'tw');
 }
 
 function submitTWTrades() {
@@ -2802,6 +2825,48 @@ function submitTWQIIncome() {
 }
 
 // ===== Analysis Functions =====
+// Stock search: auto-fill price when ticker is entered
+async function stockLookup(ticker, market) {
+  ticker = ticker.trim().toUpperCase();
+  if (!ticker) return null;
+  if (market === 'us') {
+    // Try cached price first
+    if (prices[ticker]) return { ticker, price: prices[ticker].price, name: ticker };
+    // Try Finnhub
+    const apiKey = localStorage.getItem('finnhub_key') || '';
+    if (apiKey) {
+      try {
+        const r = await fetch(`https://finnhub.io/api/v1/quote?symbol=${ticker}&token=${apiKey}`);
+        const d = await r.json();
+        if (d && d.c > 0) return { ticker, price: d.c, name: ticker };
+      } catch(e) {}
+    }
+  } else {
+    // TW: try cached TW prices
+    const resolved = resolveTWTicker(ticker);
+    const p = getTWPrice(resolved);
+    if (p) return { ticker: resolved, price: p, name: twCodeToName[resolved] || twPrices[resolved]?.name || resolved };
+  }
+  return null;
+}
+
+// Attach ticker blur handler to auto-fill price
+function attachTickerLookup(inputEl, priceInputSelector, market) {
+  inputEl.addEventListener('blur', async function() {
+    const ticker = this.value.trim();
+    if (!ticker) return;
+    const row = this.closest('.multi-row') || this.closest('.form-group')?.parentElement;
+    if (!row) return;
+    const priceInput = row.querySelector(priceInputSelector);
+    if (!priceInput || priceInput.value) return; // don't overwrite existing
+    const info = await stockLookup(ticker, market);
+    if (info && info.price) {
+      priceInput.value = typeof info.price === 'object' ? info.price : info.price;
+      priceInput.dispatchEvent(new Event('input'));
+    }
+  });
+}
+
 function normalizeTickerKey(ticker, market) {
   if (market === 'tw') return resolveTWTicker(ticker);
   return ticker.toUpperCase().trim();
@@ -2820,6 +2885,9 @@ function analyzeStocks(trades, market, income) {
 
     let shares = 0, totalBuyFee = 0, totalSellFee = 0;
     let totalBought = 0, totalSold = 0, totalFee = 0;
+    // Realized P&L tracking (FIFO)
+    let realizedPL = 0;
+    const buyLots = []; // { shares, price, fee_per_share }
 
     for (const t of tickerTrades) {
       const amt = (market === 'tw') ? Math.floor(t.shares * t.price) : (t.shares * t.price);
@@ -2829,10 +2897,25 @@ function analyzeStocks(trades, market, income) {
         totalBought += amt;
         totalBuyFee += fee;
         shares += t.shares;
+        buyLots.push({ shares: t.shares, price: t.price, feePerShare: t.shares > 0 ? fee / t.shares : 0 });
       } else {
         totalSold += t.shares * t.price;
         totalSellFee += fee;
         shares -= t.shares;
+        // FIFO realized P&L
+        let remaining = t.shares;
+        const sellPrice = t.price;
+        const sellFeePerShare = t.shares > 0 ? fee / t.shares : 0;
+        while (remaining > 0 && buyLots.length > 0) {
+          const lot = buyLots[0];
+          const used = Math.min(remaining, lot.shares);
+          const costBasis = used * (lot.price + lot.feePerShare);
+          const sellProceeds = used * (sellPrice - sellFeePerShare);
+          realizedPL += sellProceeds - costBasis;
+          lot.shares -= used;
+          remaining -= used;
+          if (lot.shares < 0.0001) buyLots.shift();
+        }
       }
     }
 
@@ -2856,11 +2939,16 @@ function analyzeStocks(trades, market, income) {
     const holdingReturn = (shares > 0 && currentPrice !== null && avgPrice > 0)
       ? ((currentPrice - avgPrice) / avgPrice * 100) : null;
 
+    // Unrealized P&L = current market value - remaining cost basis
+    const remainingCostBasis = buyLots.reduce((s, lot) => s + lot.shares * (lot.price + lot.feePerShare), 0);
+    const unrealizedPL = shares > 0 ? (marketValue - remainingCostBasis) : 0;
+
     results.push({
       ticker, shares, avgPrice, netCost, totalBought, totalSold,
       tickerIncome, currentPrice, marketValue, totalFee, totalPL, totalReturn,
       holdingReturn, dayChange: p ? p.change : null,
-      isClosed: shares < 0.0001
+      isClosed: shares < 0.0001,
+      realizedPL, unrealizedPL
     });
   }
 
@@ -3440,11 +3528,12 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
     ${mergedList.length > 0 ? `
     <div class="table-container" style="margin-top:16px;overflow-x:auto">
       <div class="table-header"><h3>${flag} 合併持股 <span class="help-tip">!<span class="help-text">各帳戶持股按比例加權後合併顯示。</span></span></h3></div>
-      <table style="min-width:max-content"><thead><tr><th>股票</th><th>股價</th><th>總股數</th><th>市值</th><th>佔比</th></tr></thead>
+      <table style="min-width:max-content"><thead><tr><th>股票</th><th>股價</th><th>均價</th><th>總股數</th><th>市值</th><th>佔比</th></tr></thead>
       <tbody>${mergedList.map(s => {
         const pct = totalMV > 0 ? (s.marketValue / totalMV * 100).toFixed(1) : '0.0';
         const priceStr = s.currentPrice ? (market==='tw'?fmtTWD2(s.currentPrice):fmt(s.currentPrice)) : '-';
-        return `<tr><td><strong>${s.ticker}</strong></td><td>${priceStr}</td><td>${s.shares.toFixed(2)}</td><td>${fmtMkt(s.marketValue)}</td><td>${pct}%</td></tr>`;
+        const avgStr = (s.shares > 0 && s.netCost > 0) ? (market==='tw'?fmtTWD2(s.netCost/s.shares):fmt(s.netCost/s.shares)) : '-';
+        return `<tr><td><strong>${s.ticker}</strong></td><td>${priceStr}</td><td>${avgStr}</td><td>${s.shares.toFixed(2)}</td><td>${fmtMkt(s.marketValue)}</td><td>${pct}%</td></tr>`;
       }).join('')}</tbody></table>
     </div>` : ''}
   `;
@@ -3460,16 +3549,55 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
   if (histData.dates.length > 0) {
     const trendColor = market === 'tw' ? '#f97316' : '#3b82f6';
     const trendBg = market === 'tw' ? 'rgba(249,115,22,0.1)' : 'rgba(59,130,246,0.1)';
-    const trendLabel = market === 'tw' ? '台股持倉市值 (TWD)' : '美股持倉市值 (USD)';
-    chartInstances[`mktOvwTrend_${market}`] = createTrendChart(trendCanvasId, [{
-      label: trendLabel,
-      data: histData.values,
-      borderColor: trendColor,
-      backgroundColor: trendBg,
-      fill: true,
-      tension: 0.3,
-      pointRadius: 0
-    }], histData.dates);
+    const trendDatasets = [];
+    if (market === 'us') {
+      // Show both USD and TWD lines for US market
+      trendDatasets.push({
+        label: '美股持倉 (TWD)',
+        data: histData.values.map(v => v * usdTwdRate),
+        borderColor: '#fbbf24',
+        backgroundColor: 'rgba(251,191,36,0.08)',
+        fill: true, tension: 0.3, pointRadius: 0
+      });
+      trendDatasets.push({
+        label: '美股持倉 (USD)',
+        data: histData.values,
+        borderColor: trendColor,
+        backgroundColor: trendBg,
+        fill: false, tension: 0.3, pointRadius: 0,
+        yAxisID: 'yRight'
+      });
+    } else {
+      trendDatasets.push({
+        label: '台股持倉市值 (TWD)',
+        data: histData.values,
+        borderColor: trendColor,
+        backgroundColor: trendBg,
+        fill: true, tension: 0.3, pointRadius: 0
+      });
+    }
+
+    if (market === 'us' && histData.dates.length > 0) {
+      const ctx = document.getElementById(trendCanvasId);
+      if (ctx) {
+        chartInstances[`mktOvwTrend_${market}`] = new Chart(ctx, {
+          type: 'line',
+          data: { labels: histData.dates, datasets: trendDatasets },
+          options: {
+            responsive: true,
+            interaction: { mode: 'index', intersect: false },
+            scales: {
+              x: { ticks: { color: '#888', maxTicksLimit: 8 }, grid: { color: 'rgba(255,255,255,0.05)' } },
+              y: { position: 'left', ticks: { color: '#fbbf24' }, grid: { color: 'rgba(255,255,255,0.05)' }, title: { display: true, text: 'TWD', color: '#fbbf24' } },
+              yRight: { position: 'right', ticks: { color: '#3b82f6' }, grid: { drawOnChartArea: false }, title: { display: true, text: 'USD', color: '#3b82f6' } }
+            },
+            plugins: { legend: { labels: { color: '#aaa' } } }
+          }
+        });
+      }
+    } else {
+      chartInstances[`mktOvwTrend_${market}`] = createTrendChart(trendCanvasId, trendDatasets, histData.dates);
+    }
   }
 }
 
@@ -3530,6 +3658,14 @@ function renderUSTab() {
     <div class="card">
       <div class="label">累計配息</div>
       <div class="value pos">+${fmt(incomeTotal)}</div>
+    </div>
+    <div class="card">
+      <div class="label">已實現損益</div>
+      <div class="value ${plClass(analysis.reduce((s,x)=>s+x.realizedPL,0))}">${(analysis.reduce((s,x)=>s+x.realizedPL,0)>=0?'+':'') + fmt(analysis.reduce((s,x)=>s+x.realizedPL,0))}</div>
+    </div>
+    <div class="card">
+      <div class="label">未實現損益</div>
+      <div class="value ${plClass(analysis.filter(x=>!x.isClosed).reduce((s,x)=>s+x.unrealizedPL,0))}">${(analysis.filter(x=>!x.isClosed).reduce((s,x)=>s+x.unrealizedPL,0)>=0?'+':'') + fmt(analysis.filter(x=>!x.isClosed).reduce((s,x)=>s+x.unrealizedPL,0))}</div>
     </div>
     <div class="card">
       <div class="label">總損益</div>
@@ -3627,7 +3763,7 @@ function renderUSTab() {
   document.getElementById('usPositionsCount').textContent = analysis.length > 0 ? `(${analysis.length}檔)` : '';
   const tbody = document.getElementById('usPositionsBody');
   if (analysis.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#666;padding:20px">尚無交易紀錄</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#666;padding:20px">尚無交易紀錄</td></tr>';
   } else {
     tbody.innerHTML = analysis.map(s => {
       const mv = s.marketValue;
@@ -3642,6 +3778,8 @@ function renderUSTab() {
         <td>${s.isClosed ? '-' : fmt(s.avgPrice)}</td>
         <td>${s.isClosed ? '-' : fmt(mv)}</td>
         <td>${s.totalReturn !== null ? fmtPct(s.totalReturn) : '-'}</td>
+        <td><span class="${plClass(s.realizedPL)}" style="font-size:0.85em">${(s.realizedPL>=0?'+':'') + fmt(s.realizedPL)}</span></td>
+        <td><span class="${plClass(s.unrealizedPL)}" style="font-size:0.85em">${s.isClosed ? '-' : (s.unrealizedPL>=0?'+':'') + fmt(s.unrealizedPL)}</span></td>
         <td><span class="${plClass(s.totalPL)}">${(s.totalPL>=0?'+':'') + fmt(s.totalPL)}</span></td>
       </tr>`;
     }).join('');
@@ -3884,6 +4022,14 @@ function renderTWTab() {
       <div class="value pos">+${fmtTWD(incomeTotal)}</div>
     </div>
     <div class="card">
+      <div class="label">已實現損益</div>
+      <div class="value ${plClass(analysis.reduce((s,x)=>s+x.realizedPL,0))}">${(analysis.reduce((s,x)=>s+x.realizedPL,0)>=0?'+':'') + fmtTWD(analysis.reduce((s,x)=>s+x.realizedPL,0))}</div>
+    </div>
+    <div class="card">
+      <div class="label">未實現損益</div>
+      <div class="value ${plClass(analysis.filter(x=>!x.isClosed).reduce((s,x)=>s+x.unrealizedPL,0))}">${(analysis.filter(x=>!x.isClosed).reduce((s,x)=>s+x.unrealizedPL,0)>=0?'+':'') + fmtTWD(analysis.filter(x=>!x.isClosed).reduce((s,x)=>s+x.unrealizedPL,0))}</div>
+    </div>
+    <div class="card">
       <div class="label">總損益</div>
       <div class="value ${plClass(pl)}">${(pl >= 0 ? '+' : '') + fmtTWD(pl)}</div>
     </div>
@@ -3943,7 +4089,7 @@ function renderTWTab() {
   document.getElementById('twPositionsCount').textContent = analysis.length > 0 ? `(${analysis.length}檔)` : '';
   const tbody = document.getElementById('twPositionsBody');
   if (analysis.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#666;padding:20px">尚無交易紀錄</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#666;padding:20px">尚無交易紀錄</td></tr>';
   } else {
     tbody.innerHTML = analysis.map(s => {
       const mv = s.marketValue;
@@ -3958,6 +4104,8 @@ function renderTWTab() {
         <td>${s.isClosed ? '-' : fmtTWD2(s.avgPrice)}</td>
         <td>${s.isClosed ? '-' : fmtTWD(mv)}</td>
         <td>${s.totalReturn !== null ? fmtPct(s.totalReturn) : '-'}</td>
+        <td><span class="${plClass(s.realizedPL)}" style="font-size:0.85em">${(s.realizedPL>=0?'+':'') + fmtTWD(s.realizedPL)}</span></td>
+        <td><span class="${plClass(s.unrealizedPL)}" style="font-size:0.85em">${s.isClosed ? '-' : (s.unrealizedPL>=0?'+':'') + fmtTWD(s.unrealizedPL)}</span></td>
         <td><span class="${plClass(s.totalPL)}">${(s.totalPL>=0?'+':'') + fmtTWD(s.totalPL)}</span></td>
       </tr>`;
     }).join('');
@@ -5859,6 +6007,9 @@ function buildHistoricalData(accountIds, market, startDate, endDate) {
 
   allTrades.sort((a, b) => a.date.localeCompare(b.date));
 
+  // Ensure start covers earliest trade
+  const earliestTrade = allTrades[0].date;
+  if (earliestTrade < startDate) startDate = earliestTrade;
   const start = new Date(startDate);
   const end = new Date(endDate);
   const totalDays = Math.ceil((end - start) / 86400000);
@@ -6715,6 +6866,666 @@ function renderOverviewCharts(ownerGroups) {
   }
 
   if (hasTrades) renderOverviewTrendChart(ovCurrentRange);
+}
+
+// ===== Report Tab =====
+let currentReportView = 'annual';
+function switchReportView(view) {
+  currentReportView = view;
+  ['annual','calendar','rate','cost','sector','metrics'].forEach(v => {
+    const btn = document.getElementById('rpt' + v.charAt(0).toUpperCase() + v.slice(1) + 'Btn');
+    if (btn) {
+      btn.style.background = v === view ? '' : 'rgba(255,255,255,0.1)';
+      btn.style.color = v === view ? '' : '#aaa';
+      btn.className = v === view ? 'btn btn-primary' : 'btn';
+    }
+  });
+  renderReportTab();
+}
+
+function renderReportTab() {
+  const el = document.getElementById('reportContent');
+  if (!el) return;
+  switch(currentReportView) {
+    case 'annual': renderAnnualReport(el); break;
+    case 'calendar': renderDividendCalendar(el); break;
+    case 'rate': renderRateHistory(el); break;
+    case 'cost': renderCostTrend(el); break;
+    case 'sector': renderSectorChart(el); break;
+    case 'metrics': renderFinancialMetrics(el); break;
+  }
+}
+
+// Feature 4: 年度報表
+function renderAnnualReport(el) {
+  // Collect all data across accounts
+  const years = {};
+  for (const acc of accounts) {
+    for (const market of ['us', 'tw']) {
+      const trades = getAccountData(acc.id, market, 'trades');
+      const funds = getAccountData(acc.id, market, 'funds');
+      const income = getAccountData(acc.id, market, 'income');
+      const isTW = market === 'tw';
+      const toTWD = isTW ? 1 : usdTwdRate;
+
+      for (const t of trades) {
+        const y = t.date.slice(0, 4);
+        if (!years[y]) years[y] = { bought: 0, sold: 0, fees: 0, deposited: 0, withdrawn: 0, dividends: 0, interest: 0, tax: 0 };
+        const amt = t.shares * t.price * toTWD;
+        if (t.type === 'buy') years[y].bought += amt;
+        else years[y].sold += amt;
+        years[y].fees += (t.fee || 0) * toTWD;
+      }
+      for (const f of funds) {
+        const y = f.date.slice(0, 4);
+        if (!years[y]) years[y] = { bought: 0, sold: 0, fees: 0, deposited: 0, withdrawn: 0, dividends: 0, interest: 0, tax: 0 };
+        if (f.type === 'deposit') years[y].deposited += (isTW ? f.amount : (f.twdAmount || f.amount * usdTwdRate));
+        else if (f.type === 'withdraw') years[y].withdrawn += (isTW ? f.amount : (f.twdAmount || f.amount * usdTwdRate));
+      }
+      for (const i of income) {
+        const y = i.date.slice(0, 4);
+        if (!years[y]) years[y] = { bought: 0, sold: 0, fees: 0, deposited: 0, withdrawn: 0, dividends: 0, interest: 0, tax: 0 };
+        if (i.type === 'dividend') years[y].dividends += i.amount * toTWD;
+        else if (i.type === 'interest') years[y].interest += i.amount * toTWD;
+        else if (i.type === 'tax') years[y].tax += Math.abs(i.amount) * toTWD;
+      }
+    }
+  }
+
+  const sorted = Object.entries(years).sort((a, b) => b[0].localeCompare(a[0]));
+  if (sorted.length === 0) {
+    el.innerHTML = '<div style="text-align:center;color:#666;padding:40px">尚無資料</div>';
+    return;
+  }
+
+  el.innerHTML = `
+    <div class="table-container">
+      <div class="table-header"><h3>📊 年度投資摘要 (TWD)</h3></div>
+      <div style="overflow-x:auto">
+      <table><thead><tr>
+        <th>年度</th><th>買入</th><th>賣出</th><th>手續費</th><th>存入</th><th>提領</th><th>配息</th><th>利息</th><th>稅額</th><th>淨流入</th>
+      </tr></thead>
+      <tbody>${sorted.map(([y, d]) => {
+        const netFlow = d.deposited - d.withdrawn;
+        return `<tr>
+          <td><strong>${y}</strong></td>
+          <td>${fmtTWD(d.bought)}</td>
+          <td>${fmtTWD(d.sold)}</td>
+          <td class="neg">${fmtTWD(d.fees)}</td>
+          <td class="pos">${fmtTWD(d.deposited)}</td>
+          <td class="neg">${fmtTWD(d.withdrawn)}</td>
+          <td class="pos">${fmtTWD(d.dividends)}</td>
+          <td class="pos">${fmtTWD(d.interest)}</td>
+          <td class="neg">${fmtTWD(d.tax)}</td>
+          <td class="${plClass(netFlow)}">${fmtTWD(netFlow)}</td>
+        </tr>`;
+      }).join('')}</tbody></table>
+      </div>
+    </div>
+    <div style="margin-top:16px"><canvas id="annualChartCanvas" style="max-height:350px"></canvas></div>
+  `;
+
+  destroyChart('annualChart');
+  const labels = sorted.map(s => s[0]).reverse();
+  const divData = sorted.map(s => s[1].dividends + s[1].interest).reverse();
+  const feeData = sorted.map(s => s[1].fees).reverse();
+  chartInstances['annualChart'] = new Chart(document.getElementById('annualChartCanvas'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: '配息+利息', data: divData, backgroundColor: 'rgba(52,211,153,0.6)' },
+        { label: '手續費+稅', data: feeData, backgroundColor: 'rgba(248,113,113,0.6)' }
+      ]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { labels: { color: '#aaa' } } },
+      scales: {
+        x: { ticks: { color: '#888' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+        y: { ticks: { color: '#888' }, grid: { color: 'rgba(255,255,255,0.05)' } }
+      }
+    }
+  });
+}
+
+// Feature 5: 配息日曆
+function renderDividendCalendar(el) {
+  const allIncome = [];
+  for (const acc of accounts) {
+    for (const market of ['us', 'tw']) {
+      const income = getAccountData(acc.id, market, 'income');
+      const isTW = market === 'tw';
+      for (const i of income) {
+        if (i.type === 'dividend' || i.type === 'interest') {
+          allIncome.push({
+            date: i.date,
+            source: i.source || i.ticker || '未知',
+            type: i.type,
+            amount: i.amount,
+            market,
+            amountTWD: isTW ? i.amount : i.amount * usdTwdRate,
+            accName: accounts.find(a => a.id === acc.id)?.name || ''
+          });
+        }
+      }
+    }
+  }
+  allIncome.sort((a, b) => b.date.localeCompare(a.date));
+
+  if (allIncome.length === 0) {
+    el.innerHTML = '<div style="text-align:center;color:#666;padding:40px">尚無配息紀錄</div>';
+    return;
+  }
+
+  // Group by month
+  const months = {};
+  for (const i of allIncome) {
+    const m = i.date.slice(0, 7);
+    if (!months[m]) months[m] = [];
+    months[m].push(i);
+  }
+
+  const sortedMonths = Object.entries(months).sort((a, b) => b[0].localeCompare(a[0]));
+
+  el.innerHTML = `
+    <div style="margin-bottom:16px"><canvas id="divCalendarCanvas" style="max-height:300px"></canvas></div>
+    ${sortedMonths.map(([month, items]) => {
+      const total = items.reduce((s, i) => s + i.amountTWD, 0);
+      return `
+      <div class="table-container" style="margin-bottom:12px">
+        <div class="table-header" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'" style="cursor:pointer">
+          <h3>📅 ${month} <span style="color:#34d399;font-size:0.85em">+${fmtTWD(total)}</span> <span style="color:#888;font-size:0.8em">(${items.length}筆)</span></h3>
+        </div>
+        <div style="overflow-x:auto">
+          <table><thead><tr><th>日期</th><th>來源</th><th>類型</th><th>金額</th><th>帳戶</th></tr></thead>
+          <tbody>${items.map(i => `<tr>
+            <td>${i.date}</td>
+            <td>${i.market === 'tw' ? '🇹🇼' : '🇺🇸'} ${i.source}</td>
+            <td>${i.type === 'dividend' ? '股利' : '利息'}</td>
+            <td class="pos">${i.market === 'tw' ? fmtTWD(i.amount) : fmt(i.amount)}</td>
+            <td style="color:#888;font-size:0.85em">${i.accName}</td>
+          </tr>`).join('')}</tbody></table>
+        </div>
+      </div>`;
+    }).join('')}
+  `;
+
+  // Monthly dividend chart
+  destroyChart('divCalendar');
+  const last12 = sortedMonths.slice(0, 12).reverse();
+  chartInstances['divCalendar'] = new Chart(document.getElementById('divCalendarCanvas'), {
+    type: 'bar',
+    data: {
+      labels: last12.map(m => m[0]),
+      datasets: [{
+        label: '配息+利息 (TWD)',
+        data: last12.map(m => m[1].reduce((s, i) => s + i.amountTWD, 0)),
+        backgroundColor: 'rgba(52,211,153,0.6)',
+        borderColor: '#34d399',
+        borderWidth: 1
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { labels: { color: '#aaa' } } },
+      scales: {
+        x: { ticks: { color: '#888' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+        y: { ticks: { color: '#888' }, grid: { color: 'rgba(255,255,255,0.05)' } }
+      }
+    }
+  });
+}
+
+// Feature 3: 匯率歷史紀錄
+function renderRateHistory(el) {
+  // Collect all USD fund records with rate info
+  const rateRecords = [];
+  for (const acc of accounts) {
+    const funds = getAccountData(acc.id, 'us', 'funds');
+    for (const f of funds) {
+      if (f.rate && f.rate > 0) {
+        rateRecords.push({
+          date: f.date,
+          rate: f.rate,
+          type: f.type,
+          amount: f.amount,
+          twdAmount: f.twdAmount || 0,
+          accName: accounts.find(a => a.id === acc.id)?.name || ''
+        });
+      }
+    }
+  }
+  rateRecords.sort((a, b) => a.date.localeCompare(b.date));
+
+  if (rateRecords.length === 0) {
+    el.innerHTML = '<div style="text-align:center;color:#666;padding:40px">尚無匯率紀錄（需在美股資金操作中填入匯率）</div>';
+    return;
+  }
+
+  const avgRate = rateRecords.reduce((s, r) => s + r.rate, 0) / rateRecords.length;
+  const minRate = Math.min(...rateRecords.map(r => r.rate));
+  const maxRate = Math.max(...rateRecords.map(r => r.rate));
+  const latestRate = rateRecords[rateRecords.length - 1].rate;
+
+  el.innerHTML = `
+    <div class="summary" style="margin-bottom:16px">
+      <div class="card"><div class="label">現在匯率</div><div class="value blue">${usdTwdRate.toFixed(3)}</div></div>
+      <div class="card"><div class="label">最新紀錄</div><div class="value">${latestRate.toFixed(3)}</div><div class="sub">${rateRecords[rateRecords.length-1].date}</div></div>
+      <div class="card"><div class="label">平均匯率</div><div class="value yellow">${avgRate.toFixed(3)}</div></div>
+      <div class="card"><div class="label">最低</div><div class="value pos">${minRate.toFixed(3)}</div></div>
+      <div class="card"><div class="label">最高</div><div class="value neg">${maxRate.toFixed(3)}</div></div>
+      <div class="card"><div class="label">紀錄筆數</div><div class="value">${rateRecords.length}</div></div>
+    </div>
+    <div style="margin-bottom:20px"><canvas id="rateChartCanvas" style="max-height:350px"></canvas></div>
+    <div class="table-container">
+      <div class="table-header"><h3>💱 匯率紀錄明細</h3></div>
+      <div style="overflow-x:auto">
+      <table><thead><tr><th>日期</th><th>匯率</th><th>類型</th><th>USD</th><th>TWD</th><th>帳戶</th></tr></thead>
+      <tbody>${[...rateRecords].reverse().map(r => {
+        const typeLabels = { deposit: '存入', withdraw: '提領', transfer_in: '轉入', transfer_out: '轉出' };
+        return `<tr>
+          <td>${r.date}</td>
+          <td><strong>${r.rate.toFixed(3)}</strong></td>
+          <td>${typeLabels[r.type] || r.type}</td>
+          <td>${fmt(r.amount)}</td>
+          <td>${fmtTWD(r.twdAmount)}</td>
+          <td style="color:#888;font-size:0.85em">${r.accName}</td>
+        </tr>`;
+      }).join('')}</tbody></table>
+      </div>
+    </div>
+  `;
+
+  destroyChart('rateHistory');
+  chartInstances['rateHistory'] = new Chart(document.getElementById('rateChartCanvas'), {
+    type: 'line',
+    data: {
+      labels: rateRecords.map(r => r.date),
+      datasets: [{
+        label: 'USD/TWD 匯率',
+        data: rateRecords.map(r => r.rate),
+        borderColor: '#fbbf24',
+        backgroundColor: 'rgba(251,191,36,0.1)',
+        fill: true,
+        tension: 0.3,
+        pointRadius: 4,
+        pointBackgroundColor: '#fbbf24'
+      }, {
+        label: '現在匯率',
+        data: rateRecords.map(() => usdTwdRate),
+        borderColor: 'rgba(103,232,249,0.5)',
+        borderDash: [5, 5],
+        pointRadius: 0,
+        fill: false
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { labels: { color: '#aaa' } } },
+      scales: {
+        x: { ticks: { color: '#888', maxTicksLimit: 12 }, grid: { color: 'rgba(255,255,255,0.05)' } },
+        y: { ticks: { color: '#888' }, grid: { color: 'rgba(255,255,255,0.05)' } }
+      }
+    }
+  });
+}
+
+// Feature 6: 成本均價走勢圖
+function renderCostTrend(el) {
+  // Build cost trend per stock across all accounts
+  const stockTrends = {};
+  for (const acc of accounts) {
+    for (const market of ['us', 'tw']) {
+      const trades = getAccountData(acc.id, market, 'trades');
+      for (const t of trades) {
+        const key = normalizeTickerKey(t.ticker, market) + (market === 'tw' ? ' 🇹🇼' : ' 🇺🇸');
+        if (!stockTrends[key]) stockTrends[key] = { trades: [], market };
+        stockTrends[key].trades.push(t);
+      }
+    }
+  }
+
+  const stockOptions = Object.keys(stockTrends).sort();
+  if (stockOptions.length === 0) {
+    el.innerHTML = '<div style="text-align:center;color:#666;padding:40px">尚無交易紀錄</div>';
+    return;
+  }
+
+  const selectedStock = el.dataset.selectedStock || stockOptions[0];
+
+  el.innerHTML = `
+    <div style="margin-bottom:16px;display:flex;align-items:center;gap:10px">
+      <label style="color:#888;font-size:0.9em">選擇股票：</label>
+      <select id="costTrendSelect" onchange="document.getElementById('reportContent').dataset.selectedStock=this.value;renderCostTrend(document.getElementById('reportContent'))" style="padding:6px 12px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;background:rgba(255,255,255,0.08);color:#fff;font-size:0.9em">
+        ${stockOptions.map(s => `<option value="${s}" ${s === selectedStock ? 'selected' : ''}>${s}</option>`).join('')}
+      </select>
+    </div>
+    <div><canvas id="costTrendCanvas" style="max-height:400px"></canvas></div>
+  `;
+
+  const info = stockTrends[selectedStock];
+  if (!info) return;
+
+  const sortedTrades = [...info.trades].sort((a, b) => a.date.localeCompare(b.date));
+  let shares = 0, totalCost = 0;
+  const dates = [], avgPrices = [], currentPrices = [];
+
+  for (const t of sortedTrades) {
+    const amt = (info.market === 'tw') ? Math.floor(t.shares * t.price) : (t.shares * t.price);
+    const fee = t.fee || 0;
+    if (t.type === 'buy') {
+      totalCost += amt + fee;
+      shares += t.shares;
+    } else {
+      if (shares > 0) {
+        const avgBefore = totalCost / shares;
+        totalCost -= avgBefore * t.shares;
+      }
+      shares -= t.shares;
+    }
+    dates.push(t.date);
+    avgPrices.push(shares > 0 ? totalCost / shares : 0);
+    currentPrices.push(t.price);
+  }
+
+  destroyChart('costTrend');
+  chartInstances['costTrend'] = new Chart(document.getElementById('costTrendCanvas'), {
+    type: 'line',
+    data: {
+      labels: dates,
+      datasets: [{
+        label: '成本均價',
+        data: avgPrices,
+        borderColor: '#a78bfa',
+        backgroundColor: 'rgba(167,139,250,0.1)',
+        fill: true,
+        tension: 0.3,
+        pointRadius: 3
+      }, {
+        label: '交易價格',
+        data: currentPrices,
+        borderColor: '#67e8f9',
+        borderDash: [3, 3],
+        pointRadius: 3,
+        fill: false
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { labels: { color: '#aaa' } } },
+      scales: {
+        x: { ticks: { color: '#888', maxTicksLimit: 12 }, grid: { color: 'rgba(255,255,255,0.05)' } },
+        y: { ticks: { color: '#888' }, grid: { color: 'rgba(255,255,255,0.05)' } }
+      }
+    }
+  });
+}
+
+// Feature 7: 產業分布圖
+const sectorMap = {
+  // US common sectors
+  AAPL: '科技', MSFT: '科技', GOOGL: '科技', GOOG: '科技', META: '科技', AMZN: '消費/電商',
+  NVDA: '半導體', AMD: '半導體', INTC: '半導體', TSM: '半導體', AVGO: '半導體', QCOM: '半導體',
+  TSLA: '電動車', RIVN: '電動車', NIO: '電動車',
+  JPM: '金融', BAC: '金融', GS: '金融', MS: '金融', V: '金融', MA: '金融',
+  JNJ: '醫療', PFE: '醫療', UNH: '醫療', ABBV: '醫療', MRK: '醫療',
+  XOM: '能源', CVX: '能源', COP: '能源',
+  KO: '消費', PEP: '消費', PG: '消費', WMT: '消費/電商',
+  DIS: '娛樂', NFLX: '娛樂',
+  BA: '工業', CAT: '工業', DE: '工業',
+  CRM: '軟體', ORCL: '軟體', ADBE: '軟體', NOW: '軟體',
+  PLTR: 'AI/數據', AI: 'AI/數據', UPST: 'AI/數據',
+  COIN: '加密貨幣', MSTR: '加密貨幣',
+  // TW common sectors
+  '2330': '半導體', '2317': '電子', '2454': '半導體', '2412': '電信',
+  '2308': '半導體', '2303': '半導體', '3711': '半導體',
+  '2881': '金融', '2882': '金融', '2884': '金融', '2886': '金融', '2891': '金融', '2892': '金融',
+  '2002': '鋼鐵', '1301': '塑化', '1303': '塑化', '1326': '塑化',
+  '2603': '航運', '2609': '航運', '2615': '航運',
+  '2382': '電子', '3034': '電子', '2357': '電子',
+  '0050': 'ETF', '0056': 'ETF', '00878': 'ETF', '00713': 'ETF', '00919': 'ETF', '00929': 'ETF',
+  '00940': 'ETF', '006208': 'ETF', '00850': 'ETF',
+};
+
+function renderSectorChart(el) {
+  const sectorData = {};
+  for (const acc of accounts) {
+    for (const market of ['us', 'tw']) {
+      const trades = getAccountData(acc.id, market, 'trades');
+      const income = getAccountData(acc.id, market, 'income');
+      const analysis = analyzeStocks(trades, market, income);
+      const toTWD = market === 'tw' ? 1 : usdTwdRate;
+      for (const s of analysis) {
+        if (s.isClosed || s.marketValue <= 0) continue;
+        const sector = sectorMap[s.ticker] || '其他';
+        sectorData[sector] = (sectorData[sector] || 0) + s.marketValue * toTWD;
+      }
+    }
+  }
+
+  const entries = Object.entries(sectorData).sort((a, b) => b[1] - a[1]);
+  if (entries.length === 0) {
+    el.innerHTML = '<div style="text-align:center;color:#666;padding:40px">尚無持倉資料</div>';
+    return;
+  }
+
+  el.innerHTML = `
+    <div style="max-width:500px;margin:0 auto"><canvas id="sectorChartCanvas"></canvas></div>
+    <div class="table-container" style="margin-top:16px">
+      <div class="table-header"><h3>🏭 產業分布明細 (TWD)</h3></div>
+      <div style="overflow-x:auto">
+      <table><thead><tr><th>產業</th><th>市值 TWD</th><th>佔比</th></tr></thead>
+      <tbody>${(() => {
+        const total = entries.reduce((s, e) => s + e[1], 0);
+        return entries.map(([sector, value]) => `<tr>
+          <td><strong>${sector}</strong></td>
+          <td>${fmtTWD(value)}</td>
+          <td>${(value / total * 100).toFixed(1)}%</td>
+        </tr>`).join('');
+      })()}</tbody></table>
+      </div>
+    </div>
+  `;
+
+  destroyChart('sectorChart');
+  chartInstances['sectorChart'] = createDoughnutChart(
+    'sectorChartCanvas',
+    entries.map(e => e[0]),
+    entries.map(e => e[1]),
+    entries.map((_, i) => chartColors[i % chartColors.length])
+  );
+}
+
+// Feature 8: 財務指標 (基本資訊)
+async function fetchStockMetrics(ticker, market) {
+  if (market === 'tw') {
+    // TW: basic info from cached data
+    const name = twCodeToName[ticker] || twPrices[ticker]?.name || ticker;
+    const p = getTWPrice(ticker);
+    return { ticker, name, price: p || 0, pe: null, eps: null, divYield: null, marketCap: null, sector: sectorMap[ticker] || '其他' };
+  }
+  // US: try Finnhub
+  const apiKey = localStorage.getItem('finnhub_key') || '';
+  if (!apiKey) return { ticker, name: ticker, price: prices[ticker]?.price || 0, pe: null, eps: null, divYield: null, marketCap: null, sector: sectorMap[ticker] || '其他' };
+  try {
+    const [profileRes, metricsRes] = await Promise.all([
+      fetch(`https://finnhub.io/api/v1/stock/profile2?symbol=${ticker}&token=${apiKey}`),
+      fetch(`https://finnhub.io/api/v1/stock/metric?symbol=${ticker}&metric=all&token=${apiKey}`)
+    ]);
+    const profile = await profileRes.json();
+    const metrics = await metricsRes.json();
+    const m = metrics.metric || {};
+    return {
+      ticker,
+      name: profile.name || ticker,
+      price: prices[ticker]?.price || 0,
+      pe: m.peNormalizedAnnual || m.peTTM || null,
+      eps: m.epsNormalizedAnnual || m.epsTTM || null,
+      divYield: m.dividendYieldIndicatedAnnual || null,
+      marketCap: profile.marketCapitalization || null,
+      sector: profile.finnhubIndustry || sectorMap[ticker] || '其他',
+      week52High: m['52WeekHigh'] || null,
+      week52Low: m['52WeekLow'] || null,
+      beta: m.beta || null
+    };
+  } catch(e) {
+    return { ticker, name: ticker, price: prices[ticker]?.price || 0, pe: null, eps: null, divYield: null, marketCap: null, sector: sectorMap[ticker] || '其他' };
+  }
+}
+
+async function renderFinancialMetrics(el) {
+  el.innerHTML = '<div style="text-align:center;padding:40px;color:#888">載入中...</div>';
+
+  // Get all active holdings
+  const holdings = [];
+  for (const acc of accounts) {
+    for (const market of ['us', 'tw']) {
+      const trades = getAccountData(acc.id, market, 'trades');
+      const income = getAccountData(acc.id, market, 'income');
+      const analysis = analyzeStocks(trades, market, income);
+      for (const s of analysis) {
+        if (s.isClosed) continue;
+        if (!holdings.find(h => h.ticker === s.ticker && h.market === market)) {
+          holdings.push({ ticker: s.ticker, market, shares: s.shares, marketValue: s.marketValue, avgPrice: s.avgPrice });
+        } else {
+          const h = holdings.find(h => h.ticker === s.ticker && h.market === market);
+          h.shares += s.shares;
+          h.marketValue += s.marketValue;
+        }
+      }
+    }
+  }
+
+  if (holdings.length === 0) {
+    el.innerHTML = '<div style="text-align:center;color:#666;padding:40px">尚無持倉</div>';
+    return;
+  }
+
+  // Fetch metrics (batch US with delay to avoid rate limit)
+  const results = [];
+  for (const h of holdings) {
+    const m = await fetchStockMetrics(h.ticker, h.market);
+    results.push({ ...h, ...m });
+    if (h.market === 'us') await new Promise(r => setTimeout(r, 200)); // rate limit
+  }
+
+  el.innerHTML = `
+    <div class="table-container">
+      <div class="table-header"><h3>📋 持股財務指標</h3></div>
+      <div style="overflow-x:auto">
+      <table><thead><tr>
+        <th>股票</th><th>名稱</th><th>現價</th><th>P/E</th><th>EPS</th><th>殖利率</th><th>市值</th><th>產業</th><th>52W高</th><th>52W低</th><th>Beta</th>
+      </tr></thead>
+      <tbody>${results.map(r => {
+        const isTW = r.market === 'tw';
+        const flag = isTW ? '🇹🇼' : '🇺🇸';
+        const fmtP = isTW ? fmtTWD2 : fmt;
+        return `<tr>
+          <td>${flag} <strong>${r.ticker}</strong></td>
+          <td style="font-size:0.85em;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.name}</td>
+          <td>${r.price ? fmtP(r.price) : '--'}</td>
+          <td>${r.pe ? r.pe.toFixed(1) : '--'}</td>
+          <td>${r.eps ? (isTW ? fmtTWD2(r.eps) : fmt(r.eps)) : '--'}</td>
+          <td>${r.divYield ? r.divYield.toFixed(2) + '%' : '--'}</td>
+          <td style="font-size:0.85em">${r.marketCap ? (r.marketCap > 1000 ? (r.marketCap/1000).toFixed(0) + 'B' : r.marketCap.toFixed(0) + 'M') : '--'}</td>
+          <td style="font-size:0.82em">${r.sector || '--'}</td>
+          <td>${r.week52High ? fmtP(r.week52High) : '--'}</td>
+          <td>${r.week52Low ? fmtP(r.week52Low) : '--'}</td>
+          <td>${r.beta ? r.beta.toFixed(2) : '--'}</td>
+        </tr>`;
+      }).join('')}</tbody></table>
+      </div>
+    </div>
+  `;
+}
+
+// Feature 9: PDF Report
+async function generatePDFReport() {
+  // Load jsPDF dynamically
+  if (!window.jspdf) {
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+    document.head.appendChild(script);
+    await new Promise(r => script.onload = r);
+  }
+  if (!window.html2canvas) {
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+    document.head.appendChild(script);
+    await new Promise(r => script.onload = r);
+  }
+
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF('p', 'mm', 'a4');
+  const pageW = pdf.internal.pageSize.getWidth();
+
+  // Title
+  pdf.setFontSize(18);
+  pdf.setTextColor(52, 211, 153);
+  pdf.text('Investment Report', pageW / 2, 15, { align: 'center' });
+  pdf.setFontSize(10);
+  pdf.setTextColor(150);
+  pdf.text(new Date().toLocaleDateString('zh-TW'), pageW / 2, 22, { align: 'center' });
+
+  let y = 30;
+  pdf.setFontSize(11);
+  pdf.setTextColor(220);
+
+  // Summary data
+  const summary = calcOwnerSummary(accounts, mortgages, false);
+  const lines = [
+    ['Total Assets (TWD)', fmtTWD(summary.totalAssets)],
+    ['Net Assets (TWD)', fmtTWD(summary.netAssets)],
+    ['US Net Worth (USD)', fmt(summary.usNetWorth)],
+    ['TW Net Worth (TWD)', fmtTWD(summary.twNetWorth)],
+    ['US Funded (USD)', fmt(summary.usNetFunded)],
+    ['TW Funded (TWD)', fmtTWD(summary.twNetFunded)],
+    ['Property Value (TWD)', fmtTWD(summary.propertyValue)],
+    ['Total Debt (TWD)', fmtTWD(summary.totalDebt)],
+  ];
+
+  for (const [label, value] of lines) {
+    pdf.setTextColor(150);
+    pdf.text(label, 15, y);
+    pdf.setTextColor(220);
+    pdf.text(value, 120, y);
+    y += 7;
+  }
+
+  // Holdings
+  y += 5;
+  pdf.setFontSize(13);
+  pdf.setTextColor(103, 232, 249);
+  pdf.text('Holdings', 15, y);
+  y += 7;
+  pdf.setFontSize(9);
+
+  for (const acc of accounts) {
+    for (const market of ['us', 'tw']) {
+      const trades = getAccountData(acc.id, market, 'trades');
+      const income = getAccountData(acc.id, market, 'income');
+      const analysis = analyzeStocks(trades, market, income);
+      const active = analysis.filter(s => !s.isClosed);
+      if (active.length === 0) continue;
+
+      pdf.setTextColor(180);
+      pdf.text(`${acc.name} (${market.toUpperCase()})`, 15, y);
+      y += 5;
+
+      for (const s of active) {
+        if (y > 275) { pdf.addPage(); y = 15; }
+        const fmtP = market === 'tw' ? fmtTWD : fmt;
+        pdf.setTextColor(200);
+        pdf.text(`${s.ticker}  ${s.shares.toFixed(2)}sh  avg:${fmtP(s.avgPrice)}  mv:${fmtP(s.marketValue)}  P/L:${fmtP(s.totalPL)}`, 20, y);
+        y += 4.5;
+      }
+      y += 3;
+    }
+  }
+
+  pdf.save('investment-report.pdf');
+  alert('PDF 已下載');
 }
 
 // Init
