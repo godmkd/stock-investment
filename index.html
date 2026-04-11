@@ -3424,8 +3424,7 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
       shares: s.shares * ownPct,
       marketValue: s.marketValue * ownPct,
       netCost: s.netCost * ownPct,
-      // 均價用不含配息的成本（totalBought + fees - totalSold proceeds）
-      rawCostBasis: ((s.totalBought + s.totalFee) - s.totalSold) * ownPct
+      grossCost: (s.totalBought - s.totalSold) * ownPct
     }));
     allAnalysis = allAnalysis.concat(weightedAnalysis);
 
@@ -3440,11 +3439,11 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
   // Merge holdings by ticker
   const merged = {};
   allAnalysis.forEach(s => {
-    if (!merged[s.ticker]) merged[s.ticker] = { ticker: s.ticker, shares: 0, marketValue: 0, netCost: 0, rawCostBasis: 0, currentPrice: s.currentPrice || 0 };
+    if (!merged[s.ticker]) merged[s.ticker] = { ticker: s.ticker, shares: 0, marketValue: 0, netCost: 0, grossCost: 0, currentPrice: s.currentPrice || 0 };
     merged[s.ticker].shares += s.shares;
     merged[s.ticker].marketValue += s.marketValue;
     merged[s.ticker].netCost += s.netCost;
-    merged[s.ticker].rawCostBasis += s.rawCostBasis || 0;
+    merged[s.ticker].grossCost += s.grossCost || 0;
     if (s.currentPrice) merged[s.ticker].currentPrice = s.currentPrice;
   });
   const mergedList = Object.values(merged).sort((a, b) => b.marketValue - a.marketValue);
@@ -3535,7 +3534,8 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
       <tbody>${mergedList.map(s => {
         const pct = totalMV > 0 ? (s.marketValue / totalMV * 100).toFixed(1) : '0.0';
         const priceStr = s.currentPrice ? (market==='tw'?fmtTWD2(s.currentPrice):fmt(s.currentPrice)) : '-';
-        const avgStr = (s.shares > 0 && s.netCost > 0) ? (market==='tw'?fmtTWD2(s.netCost/s.shares):fmt(s.netCost/s.shares)) : '-';
+        const avgCost = s.grossCost > 0 ? s.grossCost : s.netCost;
+        const avgStr = (s.shares > 0 && avgCost > 0) ? (market==='tw'?fmtTWD2(avgCost/s.shares):fmt(avgCost/s.shares)) : '-';
         return `<tr><td><strong>${s.ticker}</strong></td><td>${priceStr}</td><td>${avgStr}</td><td>${s.shares.toFixed(2)}</td><td>${fmtMkt(s.marketValue)}</td><td>${pct}%</td></tr>`;
       }).join('')}</tbody></table>
     </div>` : ''}
@@ -6551,13 +6551,31 @@ function renderOwnerTrendCharts(idx, g) {
   const twVals = interpolateTrendData(twData.dates, twData.values, dates);
   const combinedTWD = dates.map((_, i) => (usVals[i] || 0) * usdTwdRate + (twVals[i] || 0));
 
-  // 市值趨勢 — 全部換算為 TWD 統一軸
+  // 市值趨勢 — 雙Y軸：USD(左) + TWD(右)
   const usValsTWD = usVals.map(v => (v || 0) * usdTwdRate);
-  chartInstances[`ovOwnerTrend_${idx}`] = createTrendChart(`ovOwnerTrend_${idx}`, [
-    { label: '美股 (TWD)', data: usValsTWD, borderColor: '#3b82f6', fill: false, tension: 0.3, pointRadius: 0, borderWidth: 1.5 },
-    { label: '台股 (TWD)', data: twVals, borderColor: '#f97316', fill: false, tension: 0.3, pointRadius: 0, borderWidth: 1.5 },
-    { label: '合計 (TWD)', data: combinedTWD, borderColor: '#fbbf24', fill: true, backgroundColor: 'rgba(251,191,36,0.06)', tension: 0.3, pointRadius: 0, borderWidth: 2, borderDash: [6, 3] }
-  ], dates);
+  const ownerTrendDatasets = [
+    { label: '美股 (USD)', data: usVals, borderColor: '#3b82f6', fill: false, tension: 0.3, pointRadius: 0, borderWidth: 2, yAxisID: 'yUSD' },
+    { label: '美股 (TWD)', data: usValsTWD, borderColor: '#60a5fa', fill: false, tension: 0.3, pointRadius: 0, borderWidth: 1.5, borderDash: [3, 2], yAxisID: 'yTWD' },
+    { label: '台股 (TWD)', data: twVals, borderColor: '#f97316', fill: false, tension: 0.3, pointRadius: 0, borderWidth: 1.5, yAxisID: 'yTWD' },
+    { label: '合計 (TWD)', data: combinedTWD, borderColor: '#fbbf24', fill: true, backgroundColor: 'rgba(251,191,36,0.06)', tension: 0.3, pointRadius: 0, borderWidth: 2, borderDash: [6, 3], yAxisID: 'yTWD' }
+  ];
+  const ownerTrendCanvas = document.getElementById(`ovOwnerTrend_${idx}`);
+  if (ownerTrendCanvas) {
+    chartInstances[`ovOwnerTrend_${idx}`] = new Chart(ownerTrendCanvas, {
+      type: 'line',
+      data: { labels: dates, datasets: ownerTrendDatasets },
+      options: {
+        responsive: true,
+        interaction: { mode: 'index', intersect: false },
+        scales: {
+          x: { ticks: { color: '#888', maxTicksLimit: 8, font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.05)' } },
+          yUSD: { position: 'left', ticks: { color: '#3b82f6', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.05)' }, title: { display: true, text: 'USD', color: '#3b82f6' } },
+          yTWD: { position: 'right', ticks: { color: '#f97316', font: { size: 10 } }, grid: { drawOnChartArea: false }, title: { display: true, text: 'TWD', color: '#f97316' } }
+        },
+        plugins: { legend: { labels: { color: '#aaa', font: { size: 11 } } }, tooltip: { mode: 'index' } }
+      }
+    });
+  }
 
   // 淨資產 vs 負債
   const ownerAccIds = g.accounts.map(a => a.id);
