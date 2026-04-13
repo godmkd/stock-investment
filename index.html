@@ -4623,7 +4623,7 @@ function renderTplList() {
     }).join('、');
     return `<div class="tpl-list-item">
       <div class="tpl-info">
-        <div class="tpl-name">${t.name} — ${t.ticker}</div>
+        <div class="tpl-name">${t.name} <span style="color:#888;font-weight:400">(${t.ticker})</span></div>
         <div class="tpl-detail">扣款日: ${schedDesc} | 費率: ${(t.feeRate * 100).toFixed(4)}%</div>
       </div>
       <div class="tpl-actions">
