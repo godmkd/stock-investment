@@ -982,7 +982,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 let currentUser = null;
 
-async function withTimeout(promise, ms = 8000) {
+async function withTimeout(promise, ms = 3000) {
   const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("請求逾時")), ms));
   return Promise.race([promise, timeout]);
 }
@@ -1404,16 +1404,11 @@ async function authInit() {
   });
 
   // Auto refresh on tab focus
-  let _lastVisible = Date.now();
-  document.addEventListener('visibilitychange', () => {
+  // Refresh session silently when returning to app
+  document.addEventListener('visibilitychange', async () => {
     if (document.visibilityState === 'visible' && currentUser) {
-      const elapsed = Date.now() - _lastVisible;
-      if (elapsed > 3000) {
-        location.reload();
-        return;
-      }
+      try { await sb.auth.refreshSession(); } catch(e) {}
     }
-    if (document.visibilityState === 'hidden') _lastVisible = Date.now();
   });
 }
 
