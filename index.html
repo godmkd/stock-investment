@@ -3539,7 +3539,7 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
       <tbody>${mergedList.map(s => {
         const pct = totalMV > 0 ? (s.marketValue / totalMV * 100).toFixed(1) : '0.0';
         const priceStr = s.currentPrice ? (market==='tw'?fmtTWD2(s.currentPrice):fmt(s.currentPrice)) : '-';
-        const avgStr = (s.shares > 0 && s.netCost > 0) ? (market==='tw'?fmtTWD2(s.netCost/s.shares):fmt(s.netCost/s.shares)) : '-';
+        const avgStr = s.shares > 0 ? (market==='tw'?fmtTWD2(s.netCost/s.shares):fmt(s.netCost/s.shares)) : '-';
         const twdCol = market==='us' ? `<td>${fmtTWD(s.marketValue * usdTwdRate)}</td>` : '';
         return `<tr><td><strong>${s.ticker}</strong></td><td>${priceStr}</td><td>${avgStr}</td><td>${s.shares.toFixed(2)}</td><td>${fmtMkt(s.marketValue)}</td>${twdCol}<td>${pct}%</td></tr>`;
       }).join('')}</tbody></table>
