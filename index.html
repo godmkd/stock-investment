@@ -620,7 +620,7 @@
   </div>
 
   <div class="table-container">
-    <div class="table-header">
+    <div class="table-header" style="display:flex;justify-content:space-between;align-items:center">
       <h2>📋 持倉明細 <span id="usPositionsCount" style="font-size:0.8em;color:#888"></span> <span class="help-tip">!<span class="help-text">現均價 = 扣除配息後的淨成本均價。已清倉的股票會顯示在下方（半透明）。</span></span></h2>
     </div>
     <div style="overflow-x:auto">
@@ -640,7 +640,7 @@
         <h2>💰 資金紀錄 <span id="usFundsCount" style="font-size:0.8em;color:#888"></span></h2>
       </div>
     </div>
-    <div id="usFundsPanel"></div>
+    <div id="usFundsPanel" style="display:none"></div>
   </div>
 
   <div class="table-container">
@@ -650,7 +650,7 @@
         <h2>📊 股利 & 利息紀錄 <span id="usIncomeCount" style="font-size:0.8em;color:#888"></span></h2>
       </div>
     </div>
-    <div id="usIncomePanel"></div>
+    <div id="usIncomePanel" style="display:none"></div>
   </div>
 
   <div id="usStockSections"></div>
@@ -790,7 +790,7 @@
         <h2>💰 資金紀錄 <span id="twFundsCount" style="font-size:0.8em;color:#888"></span></h2>
       </div>
     </div>
-    <div id="twFundsPanel"></div>
+    <div id="twFundsPanel" style="display:none"></div>
   </div>
 
   <div class="table-container">
@@ -800,7 +800,7 @@
         <h2>📊 股利 & 利息紀錄 <span id="twIncomeCount" style="font-size:0.8em;color:#888"></span></h2>
       </div>
     </div>
-    <div id="twIncomePanel"></div>
+    <div id="twIncomePanel" style="display:none"></div>
   </div>
 
   <div id="twStockSections"></div>
@@ -6723,7 +6723,7 @@ function renderMergedPortfolio() {
         </div>
         <div style="font-size:0.85em;color:#fbbf24;font-weight:600">${fmtTWD(totalWeightedValueTWD)}</div>
       </div>
-      <div id="mergedPortfolioPanel" style="overflow-x:auto">
+      <div id="mergedPortfolioPanel" style="overflow-x:auto;display:none">
         <table>
           <thead><tr><th>股票</th><th>市場</th><th>總股數</th><th>加權股數</th><th>原始市值</th><th>加權市值</th><th>加權市值 TWD</th><th>佔比</th><th>帳戶明細</th></tr></thead>
           <tbody>`;
