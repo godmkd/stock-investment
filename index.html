@@ -4585,11 +4585,12 @@ const twHolidays = new Set([
 ]);
 
 function nextBusinessDay(dateStr) {
-  let d = new Date(dateStr + 'T00:00:00');
-  while (d.getDay() === 0 || d.getDay() === 6 || twHolidays.has(d.toISOString().slice(0,10))) {
+  let d = new Date(dateStr + 'T12:00:00'); // Use noon to avoid timezone issues
+  const fmt = dt => `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
+  while (d.getDay() === 0 || d.getDay() === 6 || twHolidays.has(fmt(d))) {
     d.setDate(d.getDate() + 1);
   }
-  return d.toISOString().slice(0,10);
+  return fmt(d);
 }
 
 let _dcaTemplatesCache = null;
