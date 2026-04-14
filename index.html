@@ -982,6 +982,11 @@
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 <script>
+// Global error handler for debugging
+window.onerror = function(msg, url, line, col, error) {
+  console.error('JS Error:', msg, 'at line', line);
+  if (document.getElementById('debugErrors')) document.getElementById('debugErrors').innerHTML += `<div style="color:red;font-size:12px">${msg} (line ${line})</div>`;
+};
 // ===================== SUPABASE CONFIG =====================
 const SUPABASE_URL = 'https://kvnwfesbnxzoqpdgauov.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2bndmZXNibnh6b3FwZGdhdW92Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUwNTAwMjIsImV4cCI6MjA5MDYyNjAyMn0.wpf9rUcPiaTUkDVhVgUaxBJ2rA4WaAMHG7tgSv9BOOQ';
