@@ -2809,6 +2809,7 @@ function submitTWQIFund() {
 }
 
 function submitTWQIIncome() {
+  console.log('[submitTWQIIncome] currentTWAccount:', currentTWAccount);
   if (!checkAccountSelected('tw')) return;
   const type = document.getElementById('twQiIncomeType').value;
   const defaultSource = (document.getElementById('twQiIncomeDefaultSource')?.value || '').trim();
