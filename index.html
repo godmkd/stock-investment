@@ -2609,7 +2609,17 @@ function parseQILines(text) {
 }
 
 // --- US Quick Input ---
+function checkAccountSelected(market) {
+  const acc = market === 'us' ? currentUSAccount : currentTWAccount;
+  if (!acc || acc.startsWith('_')) {
+    alert('請先在上方分頁選擇一個銀行帳戶');
+    return false;
+  }
+  return true;
+}
+
 function submitUSQITrade() {
+  if (!checkAccountSelected('us')) return;
   const ticker = document.getElementById('usQiTradeTicker').value.trim().toUpperCase();
   const type = document.getElementById('usQiTradeType').value;
   const feeRate = parseFloat(document.getElementById('usQiFeeRate')?.value) || 0;
@@ -2645,6 +2655,7 @@ function submitUSQITrade() {
 }
 
 function submitUSQIFund() {
+  if (!checkAccountSelected('us')) return;
   const type = document.getElementById('usQiFundType').value;
   const text = document.getElementById('usQiFundText').value;
   const note = document.getElementById('usQiFundNote')?.value.trim() || '';
@@ -2685,6 +2696,7 @@ function submitUSQIFund() {
 }
 
 function submitUSQIIncome() {
+  if (!checkAccountSelected('us')) return;
   const type = document.getElementById('usQiIncomeType').value;
   const defaultSource = (document.getElementById('usQiIncomeDefaultSource')?.value || '').trim();
   const text = document.getElementById('usQiIncomeText').value;
@@ -2731,6 +2743,7 @@ function submitUSQIIncome() {
 
 // --- TW Quick Input ---
 function submitTWQITrade() {
+  if (!checkAccountSelected('tw')) return;
   const ticker = document.getElementById('twQiTradeTicker').value.trim();
   const type = document.getElementById('twQiTradeType').value;
   const feeRatePermille = parseFloat(document.getElementById('twQiFeeRate')?.value);
@@ -2767,6 +2780,7 @@ function submitTWQITrade() {
 }
 
 function submitTWQIFund() {
+  if (!checkAccountSelected('tw')) return;
   const type = document.getElementById('twQiFundType').value;
   const text = document.getElementById('twQiFundText').value;
   const lines = parseQILines(text);
@@ -2795,6 +2809,7 @@ function submitTWQIFund() {
 }
 
 function submitTWQIIncome() {
+  if (!checkAccountSelected('tw')) return;
   const type = document.getElementById('twQiIncomeType').value;
   const defaultSource = (document.getElementById('twQiIncomeDefaultSource')?.value || '').trim();
   const text = document.getElementById('twQiIncomeText').value;
