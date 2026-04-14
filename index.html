@@ -539,7 +539,7 @@
           </div>
           <div style="color:#666;font-size:0.75em;margin:4px 0 8px">格式：<code>日期 股數 價格 (手續費)</code>・手續費率不填=0・行內第4欄可覆蓋預設 <span class="help-tip">!<span class="help-text">每行格式：日期 股數 價格，行內第4欄可指定手續費。</span></span></div>
           <div class="form-group" style="margin-bottom:8px"><label>備註（選填）</label><input type="text" id="usQiTradeNote" placeholder="備註" style="font-size:0.85em"></div>
-          <button class="btn btn-add" onclick="submitUSQITrade()">✅ 快速送出</button>
+          <button class="btn btn-add" onclick="try{submitUSQITrade()}catch(e){alert('錯誤:'+e.message)}">✅ 快速送出</button>
         </div>
         <!-- Fund mode -->
         <div id="usQiFund" style="display:none">
@@ -555,7 +555,7 @@
           </div>
           <div style="color:#666;font-size:0.75em;margin:4px 0 8px">格式：<code>日期 美金</code> 或 <code>日期 美金 台幣</code> 或 <code>日期 美金 台幣 匯率</code> <span class="help-tip">!<span class="help-text">美股：日期 美金 台幣，台股：日期 金額。</span></span></div>
           <div class="form-group" style="margin-bottom:8px"><label>備註（選填）</label><input type="text" id="usQiFundNote" placeholder="備註" style="font-size:0.85em"></div>
-          <button class="btn btn-add" onclick="submitUSQIFund()">✅ 快速送出</button>
+          <button class="btn btn-add" onclick="try{submitUSQIFund()}catch(e){alert('錯誤:'+e.message)}">✅ 快速送出</button>
         </div>
         <!-- Income mode -->
         <div id="usQiIncome" style="display:none">
@@ -575,7 +575,7 @@
           </div>
           <div style="color:#666;font-size:0.75em;margin:4px 0 8px">格式：<code>日期 金額</code> 或 <code>日期 來源 金額</code>・行內有來源會覆蓋上方預設 <span class="help-tip">!<span class="help-text">日期 (來源) 金額，來源可省略。</span></span></div>
           <div class="form-group" style="margin-bottom:8px"><label>備註（選填）</label><input type="text" id="usQiIncomeNote" placeholder="備註" style="font-size:0.85em"></div>
-          <button class="btn btn-add" onclick="submitUSQIIncome()">✅ 快速送出</button>
+          <button class="btn btn-add" onclick="try{submitUSQIIncome()}catch(e){alert('錯誤:'+e.message)}">✅ 快速送出</button>
         </div>
       </div>
       <div style="margin-top:16px;padding:12px;background:rgba(167,139,250,0.06);border:1px solid rgba(167,139,250,0.15);border-radius:10px">
@@ -729,7 +729,7 @@
           </div>
           <div style="color:#666;font-size:0.75em;margin:4px 0 8px">格式：<code>日期 股數 價格 (手續費)</code>・預設手續費率千分之1.425・行內第4欄可覆蓋預設 <span class="help-tip">!<span class="help-text">每行格式：日期 股數 價格，行內第4欄可指定手續費。</span></span></div>
           <div class="form-group" style="margin-bottom:8px"><label>備註（選填）</label><input type="text" id="twQiTradeNote" placeholder="備註" style="font-size:0.85em"></div>
-          <button class="btn btn-add" onclick="submitTWQITrade()">✅ 快速送出</button>
+          <button class="btn btn-add" onclick="try{submitTWQITrade()}catch(e){alert('錯誤:'+e.message)}">✅ 快速送出</button>
         </div>
         <!-- Fund mode -->
         <div id="twQiFund" style="display:none">
@@ -745,7 +745,7 @@
           </div>
           <div style="color:#666;font-size:0.75em;margin:4px 0 8px">格式：<code>日期 金額</code>，例 <code>2024.3.5 300000</code> <span class="help-tip">!<span class="help-text">美股：日期 美金 台幣，台股：日期 金額。</span></span></div>
           <div class="form-group" style="margin-bottom:8px"><label>備註（選填）</label><input type="text" id="twQiFundNote" placeholder="備註" style="font-size:0.85em"></div>
-          <button class="btn btn-add" onclick="submitTWQIFund()">✅ 快速送出</button>
+          <button class="btn btn-add" onclick="try{submitTWQIFund()}catch(e){alert('錯誤:'+e.message)}">✅ 快速送出</button>
         </div>
         <!-- Income mode -->
         <div id="twQiIncome" style="display:none">
@@ -765,7 +765,7 @@
           </div>
           <div style="color:#666;font-size:0.75em;margin:4px 0 8px">格式：<code>日期 金額</code> 或 <code>日期 來源 金額</code>・行內有來源會覆蓋上方預設 <span class="help-tip">!<span class="help-text">日期 (來源) 金額，來源可省略。</span></span></div>
           <div class="form-group" style="margin-bottom:8px"><label>備註（選填）</label><input type="text" id="twQiIncomeNote" placeholder="備註" style="font-size:0.85em"></div>
-          <button class="btn btn-add" onclick="submitTWQIIncome()">✅ 快速送出</button>
+          <button class="btn btn-add" onclick="try{submitTWQIIncome()}catch(e){alert('錯誤:'+e.message)}">✅ 快速送出</button>
         </div>
       </div>
     </div>
