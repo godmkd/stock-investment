@@ -3493,6 +3493,10 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
   }
 
   container.innerHTML = `
+    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+      <button class="btn btn-primary" style="padding:4px 12px;font-size:0.82em" onclick="${market==='us'?'refreshUSPrices()':'refreshTWPrices()'}">🔄 更新${market==='us'?'美股':'台股'}股價</button>
+      <span style="font-size:0.75em;color:#555;align-self:center" id="${market}OvwLastUpdate"></span>
+    </div>
     <div class="summary">
       <div class="card"><div class="label">總淨值</div><div class="value blue">${fmtMkt(totalNetWorth)}</div></div>
       <div class="card"><div class="label">持倉市值</div><div class="value">${fmtMkt(totalMV)}</div></div>
