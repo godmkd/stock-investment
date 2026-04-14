@@ -538,6 +538,7 @@
             <textarea id="usQiTradeText" rows="6" placeholder="2024.3.5 10 250&#10;2024.4.1 5 260&#10;3.15 20 245 5.99（個別手續費覆蓋預設）" style="font-family:monospace;font-size:0.88em"></textarea>
           </div>
           <div style="color:#666;font-size:0.75em;margin:4px 0 8px">格式：<code>日期 股數 價格 (手續費)</code>・手續費率不填=0・行內第4欄可覆蓋預設 <span class="help-tip">!<span class="help-text">每行格式：日期 股數 價格，行內第4欄可指定手續費。</span></span></div>
+          <div class="form-group" style="margin-bottom:8px"><label>備註（選填）</label><input type="text" id="usQiTradeNote" placeholder="備註" style="font-size:0.85em"></div>
           <button class="btn btn-add" onclick="submitUSQITrade()">✅ 快速送出</button>
         </div>
         <!-- Fund mode -->
@@ -553,6 +554,7 @@
             <textarea id="usQiFundText" rows="6" placeholder="2024.3.5 1000 31500&#10;2024.4.1 2000&#10;3.15 500 15750 31.5" style="font-family:monospace;font-size:0.88em"></textarea>
           </div>
           <div style="color:#666;font-size:0.75em;margin:4px 0 8px">格式：<code>日期 美金</code> 或 <code>日期 美金 台幣</code> 或 <code>日期 美金 台幣 匯率</code> <span class="help-tip">!<span class="help-text">美股：日期 美金 台幣，台股：日期 金額。</span></span></div>
+          <div class="form-group" style="margin-bottom:8px"><label>備註（選填）</label><input type="text" id="usQiFundNote" placeholder="備註" style="font-size:0.85em"></div>
           <button class="btn btn-add" onclick="submitUSQIFund()">✅ 快速送出</button>
         </div>
         <!-- Income mode -->
@@ -572,6 +574,7 @@
             <textarea id="usQiIncomeText" rows="6" placeholder="2024.3.5 25.50&#10;2024.4.1 150&#10;3.15 MSFT 30（此行用 MSFT 而非預設）" style="font-family:monospace;font-size:0.88em"></textarea>
           </div>
           <div style="color:#666;font-size:0.75em;margin:4px 0 8px">格式：<code>日期 金額</code> 或 <code>日期 來源 金額</code>・行內有來源會覆蓋上方預設 <span class="help-tip">!<span class="help-text">日期 (來源) 金額，來源可省略。</span></span></div>
+          <div class="form-group" style="margin-bottom:8px"><label>備註（選填）</label><input type="text" id="usQiIncomeNote" placeholder="備註" style="font-size:0.85em"></div>
           <button class="btn btn-add" onclick="submitUSQIIncome()">✅ 快速送出</button>
         </div>
       </div>
@@ -725,6 +728,7 @@
             <textarea id="twQiTradeText" rows="6" placeholder="2024.3.5 1000 580&#10;2024.4.1 500 595&#10;3.15 2000 570 500（個別手續費覆蓋預設）" style="font-family:monospace;font-size:0.88em"></textarea>
           </div>
           <div style="color:#666;font-size:0.75em;margin:4px 0 8px">格式：<code>日期 股數 價格 (手續費)</code>・預設手續費率千分之1.425・行內第4欄可覆蓋預設 <span class="help-tip">!<span class="help-text">每行格式：日期 股數 價格，行內第4欄可指定手續費。</span></span></div>
+          <div class="form-group" style="margin-bottom:8px"><label>備註（選填）</label><input type="text" id="twQiTradeNote" placeholder="備註" style="font-size:0.85em"></div>
           <button class="btn btn-add" onclick="submitTWQITrade()">✅ 快速送出</button>
         </div>
         <!-- Fund mode -->
@@ -740,6 +744,7 @@
             <textarea id="twQiFundText" rows="6" placeholder="2024.3.5 300000&#10;2024.4.1 500000&#10;3.15 100000" style="font-family:monospace;font-size:0.88em"></textarea>
           </div>
           <div style="color:#666;font-size:0.75em;margin:4px 0 8px">格式：<code>日期 金額</code>，例 <code>2024.3.5 300000</code> <span class="help-tip">!<span class="help-text">美股：日期 美金 台幣，台股：日期 金額。</span></span></div>
+          <div class="form-group" style="margin-bottom:8px"><label>備註（選填）</label><input type="text" id="twQiFundNote" placeholder="備註" style="font-size:0.85em"></div>
           <button class="btn btn-add" onclick="submitTWQIFund()">✅ 快速送出</button>
         </div>
         <!-- Income mode -->
@@ -759,6 +764,7 @@
             <textarea id="twQiIncomeText" rows="6" placeholder="2024.3.5 5000&#10;2024.4.1 3000&#10;3.15 2884 1200（此行用 2884）" style="font-family:monospace;font-size:0.88em"></textarea>
           </div>
           <div style="color:#666;font-size:0.75em;margin:4px 0 8px">格式：<code>日期 金額</code> 或 <code>日期 來源 金額</code>・行內有來源會覆蓋上方預設 <span class="help-tip">!<span class="help-text">日期 (來源) 金額，來源可省略。</span></span></div>
+          <div class="form-group" style="margin-bottom:8px"><label>備註（選填）</label><input type="text" id="twQiIncomeNote" placeholder="備註" style="font-size:0.85em"></div>
           <button class="btn btn-add" onclick="submitTWQIIncome()">✅ 快速送出</button>
         </div>
       </div>
@@ -2608,6 +2614,7 @@ function submitUSQITrade() {
   const type = document.getElementById('usQiTradeType').value;
   const feeRate = parseFloat(document.getElementById('usQiFeeRate')?.value) || 0;
   const text = document.getElementById('usQiTradeText').value;
+  const note = document.getElementById('usQiTradeNote')?.value.trim() || '';
   if (!ticker) { alert('請輸入股票代號'); return; }
   const lines = parseQILines(text);
   if (lines.length === 0) { alert('沒有有效的資料'); return; }
@@ -2622,7 +2629,7 @@ function submitUSQITrade() {
     const price = parseFloat(parts[2]);
     const fee = parts.length >= 4 ? parseFloat(parts[3]) : (feeRate > 0 ? shares * price * feeRate : 0);
     if (isNaN(shares) || isNaN(price) || shares <= 0 || price <= 0) { errors.push(`行 ${i+1}: 數值不正確 "${line}"`); return; }
-    data.push({ id: Date.now() + count, date, ticker, type, shares, price, fee: fee || 0, adjust: 0 });
+    data.push({ id: Date.now() + count, date, ticker, type, shares, price, fee: fee || 0, adjust: 0, note });
     count++;
   });
   if (errors.length > 0 && count === 0) { alert('解析錯誤:\n' + errors.join('\n')); return; }
@@ -2640,6 +2647,7 @@ function submitUSQITrade() {
 function submitUSQIFund() {
   const type = document.getElementById('usQiFundType').value;
   const text = document.getElementById('usQiFundText').value;
+  const note = document.getElementById('usQiFundNote')?.value.trim() || '';
   const lines = parseQILines(text);
   if (lines.length === 0) { alert('沒有有效的資料'); return; }
   let data = getAccountData(currentUSAccount, 'us', 'funds');
@@ -2662,7 +2670,7 @@ function submitUSQIFund() {
     }
     if (twdAmount && !rate) rate = twdAmount / amount;
     if (rate && !twdAmount) twdAmount = amount * rate;
-    data.push({ id: Date.now() + count, date, type, amount, twdAmount, rate, note: '' });
+    data.push({ id: Date.now() + count, date, type, amount, twdAmount, rate, note });
     count++;
   });
   if (errors.length > 0 && count === 0) { alert('解析錯誤:\n' + errors.join('\n')); return; }
@@ -2680,6 +2688,7 @@ function submitUSQIIncome() {
   const type = document.getElementById('usQiIncomeType').value;
   const defaultSource = (document.getElementById('usQiIncomeDefaultSource')?.value || '').trim();
   const text = document.getElementById('usQiIncomeText').value;
+  const note = document.getElementById('usQiIncomeNote')?.value.trim() || '';
   const lines = parseQILines(text);
   if (lines.length === 0) { alert('沒有有效的資料'); return; }
   let data = getAccountData(currentUSAccount, 'us', 'income');
@@ -2705,7 +2714,7 @@ function submitUSQIIncome() {
     if (!source && type === 'tax') source = 'Tax';
     if (!source && type === 'adjust') source = 'Adjustment';
     const finalAmount = (type === 'tax' && amount > 0) ? -amount : amount;
-    data.push({ id: Date.now() + count, date, type, source, amount: finalAmount, note: '' });
+    data.push({ id: Date.now() + count, date, type, source, amount: finalAmount, note });
     count++;
   });
   if (errors.length > 0 && count === 0) { alert('解析錯誤:\n' + errors.join('\n')); return; }
@@ -2727,6 +2736,7 @@ function submitTWQITrade() {
   const feeRatePermille = parseFloat(document.getElementById('twQiFeeRate')?.value);
   const feeRate = !isNaN(feeRatePermille) ? feeRatePermille / 1000 : 0.001425;
   const text = document.getElementById('twQiTradeText').value;
+  const note = document.getElementById('twQiTradeNote')?.value.trim() || '';
   if (!ticker) { alert('請輸入股票代號'); return; }
   const resolved = resolveTWTicker(ticker);
   const lines = parseQILines(text);
@@ -2742,7 +2752,7 @@ function submitTWQITrade() {
     const price = parseFloat(parts[2]);
     if (isNaN(shares) || isNaN(price) || shares <= 0 || price <= 0) { errors.push(`行 ${i+1}: 數值不正確 "${line}"`); return; }
     const fee = parts.length >= 4 ? parseFloat(parts[3]) : Math.max(1, Math.floor(shares * price * feeRate));
-    data.push({ id: Date.now() + count, date, ticker: resolved, type, shares, price, fee: fee || 0, adjust: 0 });
+    data.push({ id: Date.now() + count, date, ticker: resolved, type, shares, price, fee: fee || 0, adjust: 0, note });
     count++;
   });
   if (errors.length > 0 && count === 0) { alert('解析錯誤:\n' + errors.join('\n')); return; }
@@ -2812,7 +2822,7 @@ function submitTWQIIncome() {
     if (!source && type === 'tax') source = '稅';
     if (!source && type === 'adjust') source = '微調';
     const finalAmount = (type === 'tax' && amount > 0) ? -amount : amount;
-    data.push({ id: Date.now() + count, date, type, source, amount: finalAmount, note: '' });
+    data.push({ id: Date.now() + count, date, type, source, amount: finalAmount, note });
     count++;
   });
   if (errors.length > 0 && count === 0) { alert('解析錯誤:\n' + errors.join('\n')); return; }
