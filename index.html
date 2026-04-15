@@ -2788,6 +2788,7 @@ function submitTWQIFund() {
   if (!checkAccountSelected('tw')) return;
   const type = document.getElementById('twQiFundType').value;
   const text = document.getElementById('twQiFundText').value;
+  const note = document.getElementById('twQiFundNote')?.value.trim() || '';
   const lines = parseQILines(text);
   if (lines.length === 0) { alert('沒有有效的資料'); return; }
   let data = getAccountData(currentTWAccount, 'tw', 'funds');
@@ -2799,7 +2800,7 @@ function submitTWQIFund() {
     const date = parseFlexDate(parts[0]);
     const amount = parseFloat(parts[1]);
     if (isNaN(amount) || amount <= 0) { errors.push(`行 ${i+1}: 金額不正確 "${line}"`); return; }
-    data.push({ id: Date.now() + count, date, type, amount, note: '' });
+    data.push({ id: Date.now() + count, date, type, amount, note });
     count++;
   });
   if (errors.length > 0 && count === 0) { alert('解析錯誤:\n' + errors.join('\n')); return; }
@@ -2818,6 +2819,7 @@ function submitTWQIIncome() {
   if (!checkAccountSelected('tw')) return;
   const type = document.getElementById('twQiIncomeType').value;
   const defaultSource = (document.getElementById('twQiIncomeDefaultSource')?.value || '').trim();
+  const note = document.getElementById('twQiIncomeNote')?.value.trim() || '';
   const text = document.getElementById('twQiIncomeText').value;
   const lines = parseQILines(text);
   if (lines.length === 0) { alert('沒有有效的資料'); return; }
