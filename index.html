@@ -3684,14 +3684,14 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
     if (market === 'us') {
       // Show both USD and TWD lines for US market
       trendDatasets.push({
-        label: '美股持倉 (TWD)',
+        label: '美股淨值 (TWD)',
         data: histData.values.map(v => v * usdTwdRate),
         borderColor: '#fbbf24',
         backgroundColor: 'rgba(251,191,36,0.08)',
         fill: true, tension: 0.3, pointRadius: 0
       });
       trendDatasets.push({
-        label: '美股持倉 (USD)',
+        label: '美股淨值 (USD)',
         data: histData.values,
         borderColor: trendColor,
         backgroundColor: trendBg,
@@ -3700,7 +3700,7 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
       });
     } else {
       trendDatasets.push({
-        label: '台股持倉市值 (TWD)',
+        label: '台股淨值 (TWD)',
         data: histData.values,
         borderColor: trendColor,
         backgroundColor: trendBg,
@@ -6147,25 +6147,54 @@ function createDoughnutChart(canvasId, labels, data, colors) {
 }
 
 function buildHistoricalData(accountIds, market, startDate, endDate) {
-  // Collect all trades across accounts
+  // Collect all events (trades, funds, income) across accounts
   let allTrades = [];
+  let allFunds = [];
+  let allIncome = [];
   for (const accId of accountIds) {
     const trades = getAccountData(accId, market, 'trades');
+    const funds = getAccountData(accId, market, 'funds');
+    const income = getAccountData(accId, market, 'income');
     allTrades = allTrades.concat(trades);
+    allFunds = allFunds.concat(funds);
+    allIncome = allIncome.concat(income);
   }
-  if (allTrades.length === 0) return { dates: [], values: [] };
+  if (allTrades.length === 0 && allFunds.length === 0) return { dates: [], values: [] };
 
+  // Sort all events by date
   allTrades.sort((a, b) => a.date.localeCompare(b.date));
+  allFunds.sort((a, b) => a.date.localeCompare(b.date));
+  allIncome.sort((a, b) => a.date.localeCompare(b.date));
 
   const start = new Date(startDate);
   const end = new Date(endDate);
   const totalDays = Math.ceil((end - start) / 86400000);
   const step = totalDays > 365 ? 7 : totalDays > 90 ? 3 : 1;
 
-  // Build holdings map over time
-  // For each ticker, track last known trade price
+  // Build holdings and cash over time
   const holdingsMap = {}; // ticker -> { shares, lastPrice }
-  let tradeIdx = 0;
+  let cash = 0;
+  let tradeIdx = 0, fundIdx = 0, incomeIdx = 0;
+
+  // Process all events BEFORE start date to get initial state
+  const startDs = start.toISOString().slice(0, 10);
+  while (fundIdx < allFunds.length && allFunds[fundIdx].date < startDs) {
+    cash += fundCashImpact(allFunds[fundIdx]);
+    fundIdx++;
+  }
+  while (tradeIdx < allTrades.length && allTrades[tradeIdx].date < startDs) {
+    const t = allTrades[tradeIdx];
+    if (!holdingsMap[t.ticker]) holdingsMap[t.ticker] = { shares: 0, lastPrice: t.price };
+    if (t.type === 'buy') holdingsMap[t.ticker].shares += t.shares;
+    else holdingsMap[t.ticker].shares = Math.max(0, holdingsMap[t.ticker].shares - t.shares);
+    holdingsMap[t.ticker].lastPrice = t.price;
+    cash += calcTradeCashImpact(t, market);
+    tradeIdx++;
+  }
+  while (incomeIdx < allIncome.length && allIncome[incomeIdx].date < startDs) {
+    cash += allIncome[incomeIdx].amount;
+    incomeIdx++;
+  }
 
   const dates = [];
   const values = [];
@@ -6173,34 +6202,43 @@ function buildHistoricalData(accountIds, market, startDate, endDate) {
   for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
     const ds = d.toISOString().slice(0, 10);
 
+    // Process funds up to this date
+    while (fundIdx < allFunds.length && allFunds[fundIdx].date <= ds) {
+      cash += fundCashImpact(allFunds[fundIdx]);
+      fundIdx++;
+    }
+
     // Process trades up to this date
     while (tradeIdx < allTrades.length && allTrades[tradeIdx].date <= ds) {
       const t = allTrades[tradeIdx];
-      const ticker = t.ticker;
-      if (!holdingsMap[ticker]) holdingsMap[ticker] = { shares: 0, lastPrice: t.price };
-      if (t.type === 'buy') {
-        holdingsMap[ticker].shares += t.shares;
-      } else {
-        holdingsMap[ticker].shares = Math.max(0, holdingsMap[ticker].shares - t.shares);
-      }
-      holdingsMap[ticker].lastPrice = t.price;
+      if (!holdingsMap[t.ticker]) holdingsMap[t.ticker] = { shares: 0, lastPrice: t.price };
+      if (t.type === 'buy') holdingsMap[t.ticker].shares += t.shares;
+      else holdingsMap[t.ticker].shares = Math.max(0, holdingsMap[t.ticker].shares - t.shares);
+      holdingsMap[t.ticker].lastPrice = t.price;
+      cash += calcTradeCashImpact(t, market);
       tradeIdx++;
+    }
+
+    // Process income up to this date
+    while (incomeIdx < allIncome.length && allIncome[incomeIdx].date <= ds) {
+      cash += allIncome[incomeIdx].amount;
+      incomeIdx++;
     }
 
     // Only sample at step interval or on end date
     const daysSinceStart = Math.ceil((d - start) / 86400000);
     if (daysSinceStart % step !== 0 && ds !== endDate) continue;
 
-    let totalValue = 0;
+    // Calculate holdings market value
+    let marketValue = 0;
     for (const [ticker, h] of Object.entries(holdingsMap)) {
       if (h.shares < 0.0001) continue;
       let price = h.lastPrice;
-      // Try historical cached price first
+      // Try historical cached price
       const histPrice = getHistoricalPrice(ticker, ds, market);
       if (histPrice) {
         price = histPrice;
       } else if (ds === todayStr()) {
-        // Use current live price for today
         if (market === 'us') {
           const p = prices[ticker];
           if (p) price = p.price;
@@ -6209,9 +6247,8 @@ function buildHistoricalData(accountIds, market, startDate, endDate) {
           if (p) price = p.price;
         }
       }
-      // For weekends/holidays without data, find nearest previous date
+      // Weekend/holiday fallback
       if (!histPrice && ds !== todayStr() && priceHistory[ticker]) {
-        // Walk back up to 5 days to find last known price
         for (let back = 1; back <= 5; back++) {
           const prevD = new Date(d.getTime() - back * 86400000);
           const prevDs = prevD.toISOString().slice(0, 10);
@@ -6221,11 +6258,12 @@ function buildHistoricalData(accountIds, market, startDate, endDate) {
           }
         }
       }
-      totalValue += h.shares * price;
+      marketValue += h.shares * price;
     }
 
+    // Net worth = market value + cash
     dates.push(ds);
-    values.push(totalValue);
+    values.push(marketValue + cash);
   }
 
   return { dates, values };
@@ -6351,7 +6389,7 @@ function renderTWTrendChart(range) {
   const data = buildHistoricalData(accIds, 'tw', start, end);
   if (data.dates.length === 0) return;
   chartInstances['twTrend'] = createTrendChart('twTrendCanvas', [{
-    label: '台股持倉市值 (TWD)',
+    label: '台股淨值 (TWD)',
     data: data.values,
     borderColor: '#f97316',
     backgroundColor: 'rgba(249,115,22,0.1)',
