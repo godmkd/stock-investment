@@ -1763,8 +1763,12 @@ async function refreshUSPrices() {
     await fetchPrice(tickers[i]);
     if (i < tickers.length - 1) await new Promise(r => setTimeout(r, 300));
   }
-  document.getElementById('usLastUpdate').textContent = '最後更新：' + new Date().toLocaleString('zh-TW');
+  document.getElementById('usLastUpdate').textContent = '更新股價完成，正在載入歷史數據...';
   renderUSTab();
+  renderOverviewTab();
+  // Fetch historical candles for trend charts (background)
+  await refreshHistoricalPrices();
+  document.getElementById('usLastUpdate').textContent = '最後更新：' + new Date().toLocaleString('zh-TW');
   renderOverviewTab();
 }
 
@@ -1780,6 +1784,66 @@ async function fetchPrice(ticker) {
       savePricesToCloud().catch(()=>{});
     }
   } catch (e) { console.error(`Fetch ${ticker} failed`, e); }
+}
+
+// ===== Historical Price Cache (for trend charts) =====
+let priceHistory = JSON.parse(localStorage.getItem('stock_price_history') || '{}');
+// priceHistory format: { TICKER: { "2025-01-01": 150.5, "2025-01-02": 152.3, ... , _updated: timestamp } }
+
+function getHistoricalPrice(ticker, dateStr, market) {
+  // Try historical cache first
+  if (priceHistory[ticker] && priceHistory[ticker][dateStr] !== undefined) {
+    return priceHistory[ticker][dateStr];
+  }
+  return null;
+}
+
+async function fetchHistoricalCandles(ticker, fromTs, toTs) {
+  const key = localStorage.getItem('us_finnhub_key') || localStorage.getItem('finnhub_key');
+  if (!key) return {};
+  try {
+    const res = await fetch(`https://finnhub.io/api/v1/stock/candle?symbol=${ticker}&resolution=D&from=${fromTs}&to=${toTs}&token=${key}`);
+    const data = await res.json();
+    if (data.s !== 'ok' || !data.t) return {};
+    const result = {};
+    for (let i = 0; i < data.t.length; i++) {
+      const d = new Date(data.t[i] * 1000);
+      const ds = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+      result[ds] = data.c[i]; // closing price
+    }
+    return result;
+  } catch(e) { console.error(`Historical candle ${ticker} failed`, e); return {}; }
+}
+
+async function refreshHistoricalPrices() {
+  const key = localStorage.getItem('us_finnhub_key') || localStorage.getItem('finnhub_key');
+  if (!key) return;
+
+  // Get all US tickers with active holdings
+  const allTickers = new Set();
+  for (const acc of accounts) {
+    const trades = getAccountData(acc.id, 'us', 'trades');
+    trades.forEach(t => allTickers.add(t.ticker));
+  }
+  if (allTickers.size === 0) return;
+
+  const now = Math.floor(Date.now() / 1000);
+  const oneYearAgo = now - 400 * 86400; // ~13 months for safety
+
+  for (const ticker of allTickers) {
+    // Skip if updated within last 12 hours
+    if (priceHistory[ticker]?._updated && (Date.now() - priceHistory[ticker]._updated) < 12 * 3600000) continue;
+
+    const candles = await fetchHistoricalCandles(ticker, oneYearAgo, now);
+    if (Object.keys(candles).length > 0) {
+      if (!priceHistory[ticker]) priceHistory[ticker] = {};
+      Object.assign(priceHistory[ticker], candles);
+      priceHistory[ticker]._updated = Date.now();
+    }
+    await new Promise(r => setTimeout(r, 350)); // rate limit
+  }
+
+  localStorage.setItem('stock_price_history', JSON.stringify(priceHistory));
 }
 
 // Save prices to Supabase cloud
@@ -6104,15 +6168,31 @@ function buildHistoricalData(accountIds, market, startDate, endDate) {
     let totalValue = 0;
     for (const [ticker, h] of Object.entries(holdingsMap)) {
       if (h.shares < 0.0001) continue;
-      // Use current price for today, otherwise last trade price
       let price = h.lastPrice;
-      if (ds === todayStr()) {
+      // Try historical cached price first
+      const histPrice = getHistoricalPrice(ticker, ds, market);
+      if (histPrice) {
+        price = histPrice;
+      } else if (ds === todayStr()) {
+        // Use current live price for today
         if (market === 'us') {
           const p = prices[ticker];
           if (p) price = p.price;
         } else {
           const p = getTWPrice(ticker);
           if (p) price = p.price;
+        }
+      }
+      // For weekends/holidays without data, find nearest previous date
+      if (!histPrice && ds !== todayStr() && priceHistory[ticker]) {
+        // Walk back up to 5 days to find last known price
+        for (let back = 1; back <= 5; back++) {
+          const prevD = new Date(d.getTime() - back * 86400000);
+          const prevDs = prevD.toISOString().slice(0, 10);
+          if (priceHistory[ticker][prevDs]) {
+            price = priceHistory[ticker][prevDs];
+            break;
+          }
         }
       }
       totalValue += h.shares * price;
