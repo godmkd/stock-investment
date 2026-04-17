@@ -1582,6 +1582,8 @@ function initApp() {
   if (apiKey) {
     refreshUSPrices().then(() => { renderUSTab(); renderOverviewTab(); });
   }
+  // Auto-fetch historical prices for trend charts
+  maybeAutoFetchHistory();
   // 台股自動更新（TWSE 免費不需 API Key）
   if (accounts.some(a => getAccountData(a.id, 'tw', 'trades').length > 0)) {
     refreshTWPrices().catch(() => {});
@@ -1789,6 +1791,12 @@ async function fetchPrice(ticker) {
 // ===== Historical Price Cache (for trend charts) =====
 let priceHistory = JSON.parse(localStorage.getItem('stock_price_history') || '{}');
 // priceHistory format: { TICKER: { "2025-01-01": 150.5, "2025-01-02": 152.3, ... , _updated: timestamp } }
+// v2: clear old cache with timezone bug (force re-fetch)
+if (!localStorage.getItem('price_history_v2')) {
+  priceHistory = {};
+  localStorage.removeItem('stock_price_history');
+  localStorage.setItem('price_history_v2', '1');
+}
 
 function getHistoricalPrice(ticker, dateStr, market) {
   // Try historical cache first
@@ -1807,8 +1815,8 @@ async function fetchHistoricalCandles(ticker, fromTs, toTs) {
     if (data.s !== 'ok' || !data.t) return {};
     const result = {};
     for (let i = 0; i < data.t.length; i++) {
-      const d = new Date(data.t[i] * 1000);
-      const ds = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+      // Use UTC date to match buildHistoricalData's toISOString().slice(0,10)
+      const ds = new Date(data.t[i] * 1000).toISOString().slice(0, 10);
       result[ds] = data.c[i]; // closing price
     }
     return result;
@@ -1844,6 +1852,24 @@ async function refreshHistoricalPrices() {
   }
 
   localStorage.setItem('stock_price_history', JSON.stringify(priceHistory));
+}
+
+// Auto-fetch historical prices on first load if cache is empty or stale
+function maybeAutoFetchHistory() {
+  const key = localStorage.getItem('us_finnhub_key') || localStorage.getItem('finnhub_key');
+  if (!key) return;
+  const allTickers = new Set();
+  for (const acc of accounts) {
+    getAccountData(acc.id, 'us', 'trades').forEach(t => allTickers.add(t.ticker));
+  }
+  // Check if any ticker is missing from cache
+  let needsFetch = false;
+  for (const ticker of allTickers) {
+    if (!priceHistory[ticker] || !priceHistory[ticker]._updated) { needsFetch = true; break; }
+  }
+  if (needsFetch) {
+    refreshHistoricalPrices().then(() => { renderOverviewTab(); });
+  }
 }
 
 // Save prices to Supabase cloud
