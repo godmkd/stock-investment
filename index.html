@@ -1188,10 +1188,11 @@ async function loadAllDataFromSupabase() {
     if (settings.settings?.monthly_snapshots) {
       const cloud = settings.settings.monthly_snapshots;
       // Merge: cloud + local, keep both (cloud values fill in missing months)
-      for (const mkt of ['us', 'tw']) {
-        if (cloud[mkt]) {
-          if (!monthlySnapshots[mkt]) monthlySnapshots[mkt] = {};
-          Object.assign(monthlySnapshots[mkt], cloud[mkt]);
+      // Handles both global keys ('us','tw') and per-owner keys ('us_ownerName','tw_ownerName')
+      for (const key of Object.keys(cloud)) {
+        if (cloud[key] && typeof cloud[key] === 'object') {
+          if (!monthlySnapshots[key]) monthlySnapshots[key] = {};
+          Object.assign(monthlySnapshots[key], cloud[key]);
         }
       }
       localStorage.setItem('monthly_snapshots', JSON.stringify(monthlySnapshots));
@@ -3290,8 +3291,12 @@ function renderOverviewTab() {
       const ownerAccIds = ownerAccounts.map(a => a.id);
       const ownerMortgages = mortgages.filter(m => m.owner === owner || (m.accountId && ownerAccIds.includes(m.accountId)));
       const summary = calcOwnerSummary(ownerAccounts, ownerMortgages);
+      // Save per-owner snapshots
+      if (summary.usNetWorth > 0) saveMonthlySnapshot('us', summary.usNetWorth, owner);
+      if (summary.twNetWorth > 0) saveMonthlySnapshot('tw', summary.twNetWorth, owner);
       const idx = ownerGroups.length;
       html += renderOwnerBlock('👤 ' + owner, summary, ownerMortgages);
+      html += renderCombinedMonthlySnapshotTable('us_' + owner, 'tw_' + owner, '📊 ' + owner + ' 每月淨值紀錄');
       html += renderAccountCards(ownerAccounts, ownerMortgages);
       html += `<div id="ownerCharts_${idx}" style="margin-bottom:20px"></div>`;
       ownerGroups.push({ owner, accounts: ownerAccounts });
@@ -3337,7 +3342,14 @@ function renderOverviewTab() {
 
   const summary = calcOwnerSummary(filteredAccounts, filteredMortgages, !!currentOwnerFilter);
   const titleText = currentOwnerFilter ? '👤 ' + currentOwnerFilter : '';
-  summaryEl.innerHTML = renderOwnerBlock(titleText, summary, filteredMortgages);
+  // Save per-owner snapshots from overview tab
+  const ovwOwner = currentOwnerFilter || null;
+  if (summary.usNetWorth > 0) saveMonthlySnapshot('us', summary.usNetWorth, ovwOwner);
+  if (summary.twNetWorth > 0) saveMonthlySnapshot('tw', summary.twNetWorth, ovwOwner);
+  // Render summary + monthly snapshot table
+  const usSnapKey = ovwOwner ? 'us_' + ovwOwner : 'us';
+  const twSnapKey = ovwOwner ? 'tw_' + ovwOwner : 'tw';
+  summaryEl.innerHTML = renderOwnerBlock(titleText, summary, filteredMortgages) + renderCombinedMonthlySnapshotTable(usSnapKey, twSnapKey, '📊 每月淨值紀錄');
   accSection.innerHTML = renderAccountCards(filteredAccounts, filteredMortgages);
 
   // Charts
@@ -3416,7 +3428,7 @@ function onTWAccountChange() {
   renderBankTabs('tw');
 }
 
-function renderMarketOverviewForAccounts(container, marketAccounts, flag, market) {
+function renderMarketOverviewForAccounts(container, marketAccounts, flag, market, owner) {
 
   let allAnalysis = [];
   let totalMV = 0, totalCash = 0, totalFundIn = 0, totalIncome = 0;
@@ -3476,7 +3488,7 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
   const totalRet = totalFundIn > 0 ? (totalPL / totalFundIn * 100) : 0;
 
   // Save monthly net worth snapshot
-  if (totalNetWorth > 0) saveMonthlySnapshot(market, totalNetWorth);
+  if (totalNetWorth > 0) saveMonthlySnapshot(market, totalNetWorth, owner);
 
   // Merge holdings by ticker
   const merged = {};
@@ -3564,6 +3576,11 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
       }).join('')}</tbody></table>
     </div>
 
+    ${(() => {
+      const snapshotKey = owner ? market + '_' + owner : market;
+      return renderMonthlySnapshotTable(snapshotKey, fmtMkt, flag + ' 每月淨值紀錄');
+    })()}
+
     ${mergedList.length > 0 ? `
     <div class="table-container" style="margin-top:16px;overflow-x:auto">
       <div class="table-header"><h3>${flag} 合併持股 <span class="help-tip">!<span class="help-text">各帳戶持股按比例加權後合併顯示。</span></span></h3></div>
@@ -3593,14 +3610,15 @@ function renderUSTab() {
     document.getElementById('usAccountDetail').style.display = 'none';
     document.getElementById('usMarketOverview').style.display = 'block';
     let mktAccs;
+    let usOwner = null;
     if (currentUSAccount === '_all_') {
       // 全部帳戶：所有帳戶比例都視為100%
       mktAccs = accounts.filter(a => !a.market || a.market === 'us').map(a => ({ ...a, ownership_pct: 100 }));
     } else {
-      const owner = currentUSAccount.replace('_owner_', '');
-      mktAccs = accounts.filter(a => (!a.market || a.market === 'us') && (a.owner||a.name) === owner);
+      usOwner = currentUSAccount.replace('_owner_', '');
+      mktAccs = accounts.filter(a => (!a.market || a.market === 'us') && (a.owner||a.name) === usOwner);
     }
-    renderMarketOverviewForAccounts(document.getElementById('usMarketOverview'), mktAccs, '🇺🇸', 'us');
+    renderMarketOverviewForAccounts(document.getElementById('usMarketOverview'), mktAccs, '🇺🇸', 'us', usOwner);
     return;
   }
 
@@ -3963,13 +3981,14 @@ function renderTWTab() {
     document.getElementById('twAccountDetail').style.display = 'none';
     document.getElementById('twMarketOverview').style.display = 'block';
     let mktAccs;
+    let twOwner = null;
     if (currentTWAccount === '_all_') {
       mktAccs = accounts.filter(a => !a.market || a.market === 'tw').map(a => ({ ...a, ownership_pct: 100 }));
     } else {
-      const owner = currentTWAccount.replace('_owner_', '');
-      mktAccs = accounts.filter(a => (!a.market || a.market === 'tw') && (a.owner||a.name) === owner);
+      twOwner = currentTWAccount.replace('_owner_', '');
+      mktAccs = accounts.filter(a => (!a.market || a.market === 'tw') && (a.owner||a.name) === twOwner);
     }
-    renderMarketOverviewForAccounts(document.getElementById('twMarketOverview'), mktAccs, '🇹🇼', 'tw');
+    renderMarketOverviewForAccounts(document.getElementById('twMarketOverview'), mktAccs, '🇹🇼', 'tw', twOwner);
     return;
   }
 
@@ -6004,13 +6023,54 @@ function createDoughnutChart(canvasId, labels, data, colors) {
 let monthlySnapshots = JSON.parse(localStorage.getItem('monthly_snapshots') || '{}');
 // Format: { "us": { "2026-04": 12345.67, ... }, "tw": { "2026-04": 999999, ... } }
 
-function saveMonthlySnapshot(market, netWorth) {
+function saveMonthlySnapshot(market, netWorth, owner) {
   const now = new Date();
   const monthKey = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
   // Always update current month's value (latest value wins)
+  // Global snapshot (market = 'us' or 'tw')
   if (!monthlySnapshots[market]) monthlySnapshots[market] = {};
   monthlySnapshots[market][monthKey] = Math.round(netWorth * 100) / 100;
+  // Per-owner snapshot (key = 'us_ownerName' or 'tw_ownerName')
+  if (owner) {
+    const ownerKey = market + '_' + owner;
+    if (!monthlySnapshots[ownerKey]) monthlySnapshots[ownerKey] = {};
+    monthlySnapshots[ownerKey][monthKey] = Math.round(netWorth * 100) / 100;
+  }
   localStorage.setItem('monthly_snapshots', JSON.stringify(monthlySnapshots));
+}
+
+function renderMonthlySnapshotTable(snapshotKey, fmtFn, title) {
+  const data = monthlySnapshots[snapshotKey];
+  if (!data || Object.keys(data).length === 0) return '';
+  const months = Object.keys(data).sort().reverse();
+  const rows = months.map(m => {
+    const val = data[m];
+    return `<tr><td>${m}</td><td style="text-align:right">${fmtFn(val)}</td></tr>`;
+  }).join('');
+  return `
+    <div class="table-container" style="margin-top:16px;overflow-x:auto">
+      <div class="table-header"><h3>${title || '📊 每月淨值紀錄'}</h3></div>
+      <table style="min-width:200px"><thead><tr><th>月份</th><th style="text-align:right">淨值</th></tr></thead>
+      <tbody>${rows}</tbody></table>
+    </div>`;
+}
+
+function renderCombinedMonthlySnapshotTable(usKey, twKey, title) {
+  const usData = monthlySnapshots[usKey] || {};
+  const twData = monthlySnapshots[twKey] || {};
+  const allMonths = [...new Set([...Object.keys(usData), ...Object.keys(twData)])].sort().reverse();
+  if (allMonths.length === 0) return '';
+  const rows = allMonths.map(m => {
+    const usVal = usData[m];
+    const twVal = twData[m];
+    return `<tr><td>${m}</td><td style="text-align:right">${usVal != null ? fmt(usVal) : '--'}</td><td style="text-align:right">${twVal != null ? fmtTWD(twVal) : '--'}</td></tr>`;
+  }).join('');
+  return `
+    <div class="table-container" style="margin-top:16px;overflow-x:auto">
+      <div class="table-header"><h3>${title || '📊 每月淨值紀錄'}</h3></div>
+      <table style="min-width:300px"><thead><tr><th>月份</th><th style="text-align:right">🇺🇸 美股</th><th style="text-align:right">🇹🇼 台股</th></tr></thead>
+      <tbody>${rows}</tbody></table>
+    </div>`;
 }
 
 
