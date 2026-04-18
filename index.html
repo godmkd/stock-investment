@@ -1594,8 +1594,7 @@ function initApp() {
   if (apiKey) {
     refreshUSPrices().then(() => { renderUSTab(); renderOverviewTab(); });
   }
-  // Backfill historical snapshots (one-time, then auto-saves daily)
-  backfillSnapshots().then(() => { renderOverviewTab(); });
+  // Save today's snapshot (happens automatically via renderOverviewTab → saveNetWorthSnapshot)
   // 台股自動更新（TWSE 免費不需 API Key）
   if (accounts.some(a => getAccountData(a.id, 'tw', 'trades').length > 0)) {
     refreshTWPrices().catch(() => {});
@@ -3652,6 +3651,7 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
           return '<button onclick="mktOvwRangeSelect(\''+r+'\',\''+market+'\')" style="padding:4px 12px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;background:'+(isActive?'rgba(167,139,250,0.3)':'rgba(255,255,255,0.06)')+';color:'+(isActive?'#a78bfa':'#aaa')+';cursor:pointer;font-size:0.8em">'+labels[r]+'</button>';
         }).join('')}
       </div>
+      <div id="${trendCanvasId}_msg" style="display:none;text-align:center;padding:20px;color:#888;font-size:0.85em"></div>
       <canvas id="${trendCanvasId}" style="width:100%;min-height:180px;max-height:300px"></canvas>
     </div>
 
@@ -3693,7 +3693,19 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
   const mktRange = market === 'us' ? usCurrentRange : twCurrentRange;
   const { start, end } = getDateRange(mktRange);
   const histData = buildHistoricalData(accountIds, market, start, end);
-  if (histData.dates.length > 0) {
+  const trendMsgEl = document.getElementById(`${trendCanvasId}_msg`);
+  const trendCanvasEl = document.getElementById(trendCanvasId);
+  if (histData.dates.length < 2) {
+    // Not enough snapshot data yet
+    if (trendMsgEl) {
+      const snapCount = Object.keys(netWorthSnapshots[market] || {}).length;
+      trendMsgEl.style.display = 'block';
+      trendMsgEl.innerHTML = `📈 趨勢數據累積中（目前 ${snapCount} 天）<br><span style="font-size:0.8em;color:#666">每次開啟系統會自動記錄當天淨值，持續使用即可看到趨勢變化</span>`;
+    }
+    if (trendCanvasEl) trendCanvasEl.style.display = 'none';
+  } else if (histData.dates.length > 0) {
+    if (trendMsgEl) trendMsgEl.style.display = 'none';
+    if (trendCanvasEl) trendCanvasEl.style.display = 'block';
     const trendColor = market === 'tw' ? '#f97316' : '#3b82f6';
     const trendBg = market === 'tw' ? 'rgba(249,115,22,0.1)' : 'rgba(59,130,246,0.1)';
     const trendDatasets = [];
@@ -6164,6 +6176,11 @@ function createDoughnutChart(canvasId, labels, data, colors) {
 
 // ===== Net Worth Snapshots =====
 // Save daily snapshots of actual net worth (much more accurate than price reconstruction)
+// Clear bad backfill data (v4 and before had wrong values from trade prices)
+if (!localStorage.getItem('nw_snapshots_v5_clean')) {
+  localStorage.removeItem('nw_snapshots');
+  localStorage.setItem('nw_snapshots_v5_clean', '1');
+}
 let netWorthSnapshots = JSON.parse(localStorage.getItem('nw_snapshots') || '{}');
 // Format: { "us": { "2026-04-18": 12345.67, ... }, "tw": { "2026-04-18": 999999, ... } }
 
@@ -6283,48 +6300,27 @@ async function backfillSnapshots(force) {
 }
 
 function buildHistoricalData(accountIds, market, startDate, endDate) {
-  // Use snapshot data as primary source
+  // Use snapshot data only — trade-based reconstruction is inaccurate without historical prices
   const snapshots = netWorthSnapshots[market] || {};
   const snapshotDates = Object.keys(snapshots).sort();
 
+  if (snapshotDates.length === 0) return { dates: [], values: [] };
+
   const start = new Date(startDate);
   const end = new Date(endDate);
-  const totalDays = Math.ceil((end - start) / 86400000);
-  const step = totalDays > 365 ? 7 : totalDays > 90 ? 3 : 1;
 
   const dates = [];
   const values = [];
 
-  if (snapshotDates.length >= 2) {
-    // Use snapshots — much more accurate
-    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-      const ds = d.toISOString().slice(0, 10);
-      const daysSinceStart = Math.ceil((d - start) / 86400000);
-      if (daysSinceStart % step !== 0 && ds !== endDate) continue;
-
-      // Find exact or nearest previous snapshot
-      if (snapshots[ds] !== undefined) {
-        dates.push(ds);
-        values.push(snapshots[ds]);
-      } else {
-        // Find nearest previous snapshot
-        let found = null;
-        for (let back = 1; back <= 7; back++) {
-          const prevD = new Date(d.getTime() - back * 86400000);
-          const prevDs = prevD.toISOString().slice(0, 10);
-          if (snapshots[prevDs] !== undefined) { found = snapshots[prevDs]; break; }
-        }
-        if (found !== null) {
-          dates.push(ds);
-          values.push(found);
-        }
-      }
+  // Only show dates where we have actual snapshot data
+  for (const ds of snapshotDates) {
+    if (ds >= startDate && ds <= endDate) {
+      dates.push(ds);
+      values.push(snapshots[ds]);
     }
-    if (dates.length > 0) return { dates, values };
   }
 
-  // Fallback: reconstruct from trades (less accurate, no historical prices)
-  return buildHistoricalDataFromTrades(accountIds, market, startDate, endDate);
+  return { dates, values };
 }
 
 function buildHistoricalDataFromTrades(accountIds, market, startDate, endDate) {
