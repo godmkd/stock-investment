@@ -6253,8 +6253,32 @@ async function backfillSnapshots(force) {
 
   localStorage.setItem('nw_snapshots', JSON.stringify(netWorthSnapshots));
   localStorage.setItem('nw_snapshots_v4', '1');
-  hideBackfillStatus();
-  console.log('Snapshots backfilled:', Object.keys(netWorthSnapshots.us || {}).length, 'US,', Object.keys(netWorthSnapshots.tw || {}).length, 'TW');
+
+  // Debug: show summary
+  const usSnaps = netWorthSnapshots.us || {};
+  const twSnaps = netWorthSnapshots.tw || {};
+  const usDates = Object.keys(usSnaps).sort();
+  const twDates = Object.keys(twSnaps).sort();
+  const usVals = usDates.map(d => usSnaps[d]);
+  const twVals = twDates.map(d => twSnaps[d]);
+  const usMin = usVals.length ? Math.min(...usVals).toFixed(0) : 0;
+  const usMax = usVals.length ? Math.max(...usVals).toFixed(0) : 0;
+  const twMin = twVals.length ? Math.min(...twVals).toFixed(0) : 0;
+  const twMax = twVals.length ? Math.max(...twVals).toFixed(0) : 0;
+  const histTickers = Object.keys(priceHistory).filter(t => t !== '_updated');
+  const histWithData = histTickers.filter(t => Object.keys(priceHistory[t]).length > 5);
+
+  showBackfillStatus(`✅ 回補完成！US:${usDates.length}天(${usMin}~${usMax}) TW:${twDates.length}天 歷史價:${histWithData.length}/${histTickers.length}支`);
+  setTimeout(hideBackfillStatus, 8000);
+
+  console.log('Backfill summary:', {
+    usSnapshots: usDates.length, usRange: `${usMin}~${usMax}`,
+    twSnapshots: twDates.length, twRange: `${twMin}~${twMax}`,
+    priceHistoryTickers: histWithData.length + '/' + histTickers.length,
+    sampleUS: usDates.slice(0, 3).map(d => `${d}:${usSnaps[d]}`),
+    sampleUSEnd: usDates.slice(-3).map(d => `${d}:${usSnaps[d]}`)
+  });
+
   savePricesToCloud().catch(() => {});
 }
 
