@@ -1184,17 +1184,17 @@ async function loadAllDataFromSupabase() {
       Object.assign(twPrices, settings.settings.tw_prices);
       localStorage.setItem('tw_stock_prices', JSON.stringify(twPrices));
     }
-    // Restore net worth snapshots from cloud
-    if (settings.settings?.nw_snapshots) {
-      const cloud = settings.settings.nw_snapshots;
-      // Merge: cloud + local, keep the one with more data per market
+    // Restore monthly snapshots from cloud
+    if (settings.settings?.monthly_snapshots) {
+      const cloud = settings.settings.monthly_snapshots;
+      // Merge: cloud + local, keep both (cloud values fill in missing months)
       for (const mkt of ['us', 'tw']) {
         if (cloud[mkt]) {
-          if (!netWorthSnapshots[mkt]) netWorthSnapshots[mkt] = {};
-          Object.assign(netWorthSnapshots[mkt], cloud[mkt]);
+          if (!monthlySnapshots[mkt]) monthlySnapshots[mkt] = {};
+          Object.assign(monthlySnapshots[mkt], cloud[mkt]);
         }
       }
-      localStorage.setItem('nw_snapshots', JSON.stringify(netWorthSnapshots));
+      localStorage.setItem('monthly_snapshots', JSON.stringify(monthlySnapshots));
     }
   }
 
@@ -1594,7 +1594,7 @@ function initApp() {
   if (apiKey) {
     refreshUSPrices().then(() => { renderUSTab(); renderOverviewTab(); });
   }
-  // Save today's snapshot (happens automatically via renderOverviewTab → saveNetWorthSnapshot)
+  // Monthly snapshot saved automatically via renderOverviewTab → saveMonthlySnapshot
   // 台股自動更新（TWSE 免費不需 API Key）
   if (accounts.some(a => getAccountData(a.id, 'tw', 'trades').length > 0)) {
     refreshTWPrices().catch(() => {});
@@ -1776,12 +1776,8 @@ async function refreshUSPrices() {
     await fetchPrice(tickers[i]);
     if (i < tickers.length - 1) await new Promise(r => setTimeout(r, 300));
   }
-  document.getElementById('usLastUpdate').textContent = '更新股價完成，正在載入歷史數據...';
-  renderUSTab();
-  renderOverviewTab();
-  // Fetch historical candles for trend charts (background)
-  await refreshHistoricalPrices();
   document.getElementById('usLastUpdate').textContent = '最後更新：' + new Date().toLocaleString('zh-TW');
+  renderUSTab();
   renderOverviewTab();
 }
 
@@ -1799,90 +1795,6 @@ async function fetchPrice(ticker) {
   } catch (e) { console.error(`Fetch ${ticker} failed`, e); }
 }
 
-// ===== Historical Price Cache (for trend charts) =====
-let priceHistory = JSON.parse(localStorage.getItem('stock_price_history') || '{}');
-// priceHistory format: { TICKER: { "2025-01-01": 150.5, "2025-01-02": 152.3, ... , _updated: timestamp } }
-// v2: clear old cache with timezone bug (force re-fetch)
-if (!localStorage.getItem('price_history_v2')) {
-  priceHistory = {};
-  localStorage.removeItem('stock_price_history');
-  localStorage.setItem('price_history_v2', '1');
-}
-
-function getHistoricalPrice(ticker, dateStr, market) {
-  // Try historical cache first
-  if (priceHistory[ticker] && priceHistory[ticker][dateStr] !== undefined) {
-    return priceHistory[ticker][dateStr];
-  }
-  return null;
-}
-
-async function fetchHistoricalCandles(ticker, fromTs, toTs) {
-  const key = localStorage.getItem('us_finnhub_key') || localStorage.getItem('finnhub_key');
-  if (!key) return {};
-  try {
-    const res = await fetch(`https://finnhub.io/api/v1/stock/candle?symbol=${ticker}&resolution=D&from=${fromTs}&to=${toTs}&token=${key}`);
-    const data = await res.json();
-    if (data.s !== 'ok' || !data.t) return {};
-    const result = {};
-    for (let i = 0; i < data.t.length; i++) {
-      // Use UTC date to match buildHistoricalData's toISOString().slice(0,10)
-      const ds = new Date(data.t[i] * 1000).toISOString().slice(0, 10);
-      result[ds] = data.c[i]; // closing price
-    }
-    return result;
-  } catch(e) { console.error(`Historical candle ${ticker} failed`, e); return {}; }
-}
-
-async function refreshHistoricalPrices() {
-  const key = localStorage.getItem('us_finnhub_key') || localStorage.getItem('finnhub_key');
-  if (!key) return;
-
-  // Get all US tickers with active holdings
-  const allTickers = new Set();
-  for (const acc of accounts) {
-    const trades = getAccountData(acc.id, 'us', 'trades');
-    trades.forEach(t => allTickers.add(t.ticker));
-  }
-  if (allTickers.size === 0) return;
-
-  const now = Math.floor(Date.now() / 1000);
-  const oneYearAgo = now - 400 * 86400; // ~13 months for safety
-
-  for (const ticker of allTickers) {
-    // Skip if updated within last 12 hours
-    if (priceHistory[ticker]?._updated && (Date.now() - priceHistory[ticker]._updated) < 12 * 3600000) continue;
-
-    const candles = await fetchHistoricalCandles(ticker, oneYearAgo, now);
-    if (Object.keys(candles).length > 0) {
-      if (!priceHistory[ticker]) priceHistory[ticker] = {};
-      Object.assign(priceHistory[ticker], candles);
-      priceHistory[ticker]._updated = Date.now();
-    }
-    await new Promise(r => setTimeout(r, 350)); // rate limit
-  }
-
-  localStorage.setItem('stock_price_history', JSON.stringify(priceHistory));
-}
-
-// Auto-fetch historical prices on first load if cache is empty or stale
-function maybeAutoFetchHistory() {
-  const key = localStorage.getItem('us_finnhub_key') || localStorage.getItem('finnhub_key');
-  if (!key) return;
-  const allTickers = new Set();
-  for (const acc of accounts) {
-    getAccountData(acc.id, 'us', 'trades').forEach(t => allTickers.add(t.ticker));
-  }
-  // Check if any ticker is missing from cache
-  let needsFetch = false;
-  for (const ticker of allTickers) {
-    if (!priceHistory[ticker] || !priceHistory[ticker]._updated) { needsFetch = true; break; }
-  }
-  if (needsFetch) {
-    refreshHistoricalPrices().then(() => { renderOverviewTab(); });
-  }
-}
-
 // Save prices to Supabase cloud
 async function savePricesToCloud() {
   if (!currentUser) return;
@@ -1891,7 +1803,7 @@ async function savePricesToCloud() {
   const s = existing?.settings || {};
   s.us_prices = prices;
   s.tw_prices = twPrices;
-  s.nw_snapshots = netWorthSnapshots;
+  s.monthly_snapshots = monthlySnapshots;
   await sb.from('inv_user_settings').upsert({ user_id: uid, finnhub_key: localStorage.getItem('us_finnhub_key') || '', settings: s }, { onConflict: 'user_id' });
 }
 
@@ -3563,8 +3475,8 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
   const totalPL = totalNetWorth - totalFundIn;
   const totalRet = totalFundIn > 0 ? (totalPL / totalFundIn * 100) : 0;
 
-  // Save today's net worth snapshot for trend chart
-  if (totalNetWorth > 0) saveNetWorthSnapshot(market, totalNetWorth);
+  // Save monthly net worth snapshot
+  if (totalNetWorth > 0) saveMonthlySnapshot(market, totalNetWorth);
 
   // Merge holdings by ticker
   const merged = {};
@@ -3586,13 +3498,8 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
   const pieColors = pieLabels.map((_, i) => chartColors[i % chartColors.length]);
   const pieCanvasId = `mktOvwChart_${market}`;
 
-  // Prepare trend chart
-  const trendCanvasId = `mktOvwTrend_${market}`;
-  const accountIds = marketAccounts.map(a => a.id);
-
   // Destroy previous chart instances
   destroyChart(`mktOvwPie_${market}`);
-  destroyChart(`mktOvwTrend_${market}`);
 
   // TWD P&L for US market overview
   let usTwdSection = '';
@@ -3642,19 +3549,6 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
       <canvas id="${pieCanvasId}"></canvas>
     </div>` : ''}
 
-    <div style="margin-bottom:20px">
-      <h3 style="font-size:0.9em;color:#aaa;margin-bottom:8px">${flag} 資產趨勢</h3>
-      <div style="display:flex;gap:4px;margin-bottom:8px;flex-wrap:wrap">
-        ${['30d','6m','1y'].map(r => {
-          const labels = {'30d':'30天','6m':'6個月','1y':'1年'};
-          const isActive = r === (market==='us'?usCurrentRange:twCurrentRange);
-          return '<button onclick="mktOvwRangeSelect(\''+r+'\',\''+market+'\')" style="padding:4px 12px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;background:'+(isActive?'rgba(167,139,250,0.3)':'rgba(255,255,255,0.06)')+';color:'+(isActive?'#a78bfa':'#aaa')+';cursor:pointer;font-size:0.8em">'+labels[r]+'</button>';
-        }).join('')}
-      </div>
-      <div id="${trendCanvasId}_msg" style="display:none;text-align:center;padding:20px;color:#888;font-size:0.85em"></div>
-      <canvas id="${trendCanvasId}" style="width:100%;min-height:180px;max-height:300px"></canvas>
-    </div>
-
     <div class="table-container" style="margin-top:16px;overflow-x:auto">
       <div class="table-header"><h3>${flag} 各帳戶摘要</h3></div>
       <table style="min-width:max-content"><thead><tr><th>帳戶</th><th>比例</th><th>淨值</th><th>投入</th><th>損益</th><th>投報率</th></tr></thead>
@@ -3689,75 +3583,6 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
     chartInstances[`mktOvwPie_${market}`] = createDoughnutChart(pieCanvasId, pieLabels, pieData, pieColors);
   }
 
-  // Render trend chart
-  const mktRange = market === 'us' ? usCurrentRange : twCurrentRange;
-  const { start, end } = getDateRange(mktRange);
-  const histData = buildHistoricalData(accountIds, market, start, end);
-  const trendMsgEl = document.getElementById(`${trendCanvasId}_msg`);
-  const trendCanvasEl = document.getElementById(trendCanvasId);
-  if (histData.dates.length < 2) {
-    // Not enough snapshot data yet
-    if (trendMsgEl) {
-      const snapCount = Object.keys(netWorthSnapshots[market] || {}).length;
-      trendMsgEl.style.display = 'block';
-      trendMsgEl.innerHTML = `📈 趨勢數據累積中（目前 ${snapCount} 天）<br><span style="font-size:0.8em;color:#666">每次開啟系統會自動記錄當天淨值，持續使用即可看到趨勢變化</span>`;
-    }
-    if (trendCanvasEl) trendCanvasEl.style.display = 'none';
-  } else if (histData.dates.length > 0) {
-    if (trendMsgEl) trendMsgEl.style.display = 'none';
-    if (trendCanvasEl) trendCanvasEl.style.display = 'block';
-    const trendColor = market === 'tw' ? '#f97316' : '#3b82f6';
-    const trendBg = market === 'tw' ? 'rgba(249,115,22,0.1)' : 'rgba(59,130,246,0.1)';
-    const trendDatasets = [];
-    if (market === 'us') {
-      // Show both USD and TWD lines for US market
-      trendDatasets.push({
-        label: '美股淨值 (TWD)',
-        data: histData.values.map(v => v * usdTwdRate),
-        borderColor: '#fbbf24',
-        backgroundColor: 'rgba(251,191,36,0.08)',
-        fill: true, tension: 0.3, pointRadius: 0
-      });
-      trendDatasets.push({
-        label: '美股淨值 (USD)',
-        data: histData.values,
-        borderColor: trendColor,
-        backgroundColor: trendBg,
-        fill: false, tension: 0.3, pointRadius: 0,
-        yAxisID: 'yRight'
-      });
-    } else {
-      trendDatasets.push({
-        label: '台股淨值 (TWD)',
-        data: histData.values,
-        borderColor: trendColor,
-        backgroundColor: trendBg,
-        fill: true, tension: 0.3, pointRadius: 0
-      });
-    }
-
-    if (market === 'us' && histData.dates.length > 0) {
-      const ctx = document.getElementById(trendCanvasId);
-      if (ctx) {
-        chartInstances[`mktOvwTrend_${market}`] = new Chart(ctx, {
-          type: 'line',
-          data: { labels: histData.dates, datasets: trendDatasets },
-          options: {
-            responsive: true,
-            interaction: { mode: 'index', intersect: false },
-            scales: {
-              x: { ticks: { color: '#888', maxTicksLimit: 8 }, grid: { color: 'rgba(255,255,255,0.05)' } },
-              y: { position: 'left', ticks: { color: '#fbbf24' }, grid: { color: 'rgba(255,255,255,0.05)' }, title: { display: true, text: 'TWD', color: '#fbbf24' } },
-              yRight: { position: 'right', ticks: { color: '#3b82f6' }, grid: { drawOnChartArea: false }, title: { display: true, text: 'USD', color: '#3b82f6' } }
-            },
-            plugins: { legend: { labels: { color: '#aaa' } } }
-          }
-        });
-      }
-    } else {
-      chartInstances[`mktOvwTrend_${market}`] = createTrendChart(trendCanvasId, trendDatasets, histData.dates);
-    }
-  }
 }
 
 function renderUSTab() {
@@ -6174,586 +5999,21 @@ function createDoughnutChart(canvasId, labels, data, colors) {
   });
 }
 
-// ===== Net Worth Snapshots =====
-// Save daily snapshots of actual net worth (much more accurate than price reconstruction)
-// Clear bad backfill data (v4 and before had wrong values from trade prices)
-if (!localStorage.getItem('nw_snapshots_v5_clean')) {
-  localStorage.removeItem('nw_snapshots');
-  localStorage.setItem('nw_snapshots_v5_clean', '1');
-}
-let netWorthSnapshots = JSON.parse(localStorage.getItem('nw_snapshots') || '{}');
-// Format: { "us": { "2026-04-18": 12345.67, ... }, "tw": { "2026-04-18": 999999, ... } }
+// ===== Monthly Net Worth Snapshots =====
+// Save monthly snapshots of net worth (one entry per month, latest value wins)
+let monthlySnapshots = JSON.parse(localStorage.getItem('monthly_snapshots') || '{}');
+// Format: { "us": { "2026-04": 12345.67, ... }, "tw": { "2026-04": 999999, ... } }
 
-function saveNetWorthSnapshot(market, netWorth) {
-  const today = todayStr();
-  if (!netWorthSnapshots[market]) netWorthSnapshots[market] = {};
-  netWorthSnapshots[market][today] = Math.round(netWorth * 100) / 100;
-  // Keep max 400 days
-  const dates = Object.keys(netWorthSnapshots[market]).sort();
-  if (dates.length > 400) {
-    for (let i = 0; i < dates.length - 400; i++) delete netWorthSnapshots[market][dates[i]];
-  }
-  localStorage.setItem('nw_snapshots', JSON.stringify(netWorthSnapshots));
+function saveMonthlySnapshot(market, netWorth) {
+  const now = new Date();
+  const monthKey = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  // Always update current month's value (latest value wins)
+  if (!monthlySnapshots[market]) monthlySnapshots[market] = {};
+  monthlySnapshots[market][monthKey] = Math.round(netWorth * 100) / 100;
+  localStorage.setItem('monthly_snapshots', JSON.stringify(monthlySnapshots));
 }
 
-// Backfill historical snapshots from trade data + Finnhub prices
-function showBackfillStatus(text) {
-  let el = document.getElementById('backfillStatus');
-  if (!el) {
-    el = document.createElement('div');
-    el.id = 'backfillStatus';
-    el.style.cssText = 'position:fixed;bottom:16px;left:50%;transform:translateX(-50%);padding:10px 20px;border-radius:10px;background:rgba(0,0,0,0.9);color:#67e8f9;font-size:0.85em;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,0.5);white-space:nowrap';
-    document.body.appendChild(el);
-  }
-  el.textContent = text;
-  el.style.display = 'block';
-}
-function hideBackfillStatus() {
-  const el = document.getElementById('backfillStatus');
-  if (el) el.style.display = 'none';
-}
 
-async function backfillSnapshots(force) {
-  if (!force && localStorage.getItem('nw_snapshots_v4')) return;
-
-  const key = localStorage.getItem('us_finnhub_key') || localStorage.getItem('finnhub_key');
-
-  // Clear old bad data
-  netWorthSnapshots = {};
-  showBackfillStatus('📊 開始回補歷史趨勢數據...');
-
-  // Collect all US tickers
-  const usTickers = new Set();
-  for (const acc of accounts) {
-    getAccountData(acc.id, 'us', 'trades').forEach(t => usTickers.add(t.ticker));
-  }
-
-  // Fetch 1 year of US candles from Finnhub
-  let fetchedCount = 0;
-  if (key && usTickers.size > 0) {
-    const now = Math.floor(Date.now() / 1000);
-    const oneYearAgo = now - 400 * 86400;
-    for (const ticker of usTickers) {
-      fetchedCount++;
-      showBackfillStatus(`📊 歷史數據回補中... ${fetchedCount}/${usTickers.size} (${ticker})`);
-      const candles = await fetchHistoricalCandles(ticker, oneYearAgo, now);
-      const candleCount = Object.keys(candles).length;
-      if (candleCount > 0) {
-        if (!priceHistory[ticker]) priceHistory[ticker] = {};
-        Object.assign(priceHistory[ticker], candles);
-        priceHistory[ticker]._updated = Date.now();
-        console.log(`${ticker}: ${candleCount} candles loaded`);
-      } else {
-        console.warn(`${ticker}: no candles returned`);
-      }
-      await new Promise(r => setTimeout(r, 400));
-    }
-    localStorage.setItem('stock_price_history', JSON.stringify(priceHistory));
-    showBackfillStatus('📊 歷史數據回補完成，重建趨勢中...');
-  }
-
-  // Reconstruct snapshots for each market
-  const allAccIds = accounts.map(a => a.id);
-  for (const market of ['us', 'tw']) {
-    const { start } = getDateRange('1y');
-    const end = todayStr();
-    const result = buildHistoricalDataFromTrades(allAccIds, market, start, end);
-    if (result.dates.length > 0) {
-      if (!netWorthSnapshots[market]) netWorthSnapshots[market] = {};
-      for (let i = 0; i < result.dates.length; i++) {
-        if (result.values[i] > 0) {
-          netWorthSnapshots[market][result.dates[i]] = Math.round(result.values[i] * 100) / 100;
-        }
-      }
-    }
-  }
-
-  localStorage.setItem('nw_snapshots', JSON.stringify(netWorthSnapshots));
-  localStorage.setItem('nw_snapshots_v4', '1');
-
-  // Debug: show summary
-  const usSnaps = netWorthSnapshots.us || {};
-  const twSnaps = netWorthSnapshots.tw || {};
-  const usDates = Object.keys(usSnaps).sort();
-  const twDates = Object.keys(twSnaps).sort();
-  const usVals = usDates.map(d => usSnaps[d]);
-  const twVals = twDates.map(d => twSnaps[d]);
-  const usMin = usVals.length ? Math.min(...usVals).toFixed(0) : 0;
-  const usMax = usVals.length ? Math.max(...usVals).toFixed(0) : 0;
-  const twMin = twVals.length ? Math.min(...twVals).toFixed(0) : 0;
-  const twMax = twVals.length ? Math.max(...twVals).toFixed(0) : 0;
-  const histTickers = Object.keys(priceHistory).filter(t => t !== '_updated');
-  const histWithData = histTickers.filter(t => Object.keys(priceHistory[t]).length > 5);
-
-  showBackfillStatus(`✅ 回補完成！US:${usDates.length}天(${usMin}~${usMax}) TW:${twDates.length}天 歷史價:${histWithData.length}/${histTickers.length}支`);
-  setTimeout(hideBackfillStatus, 8000);
-
-  console.log('Backfill summary:', {
-    usSnapshots: usDates.length, usRange: `${usMin}~${usMax}`,
-    twSnapshots: twDates.length, twRange: `${twMin}~${twMax}`,
-    priceHistoryTickers: histWithData.length + '/' + histTickers.length,
-    sampleUS: usDates.slice(0, 3).map(d => `${d}:${usSnaps[d]}`),
-    sampleUSEnd: usDates.slice(-3).map(d => `${d}:${usSnaps[d]}`)
-  });
-
-  savePricesToCloud().catch(() => {});
-}
-
-function buildHistoricalData(accountIds, market, startDate, endDate) {
-  // Use snapshot data only — trade-based reconstruction is inaccurate without historical prices
-  const snapshots = netWorthSnapshots[market] || {};
-  const snapshotDates = Object.keys(snapshots).sort();
-
-  if (snapshotDates.length === 0) return { dates: [], values: [] };
-
-  const start = new Date(startDate);
-  const end = new Date(endDate);
-
-  const dates = [];
-  const values = [];
-
-  // Only show dates where we have actual snapshot data
-  for (const ds of snapshotDates) {
-    if (ds >= startDate && ds <= endDate) {
-      dates.push(ds);
-      values.push(snapshots[ds]);
-    }
-  }
-
-  return { dates, values };
-}
-
-function buildHistoricalDataFromTrades(accountIds, market, startDate, endDate) {
-  const accObjs = accountIds.map(id => {
-    if (typeof id === 'object') return id;
-    return accounts.find(a => a.id === id) || { id, ownership_pct: 100 };
-  });
-
-  const start = new Date(startDate);
-  const end = new Date(endDate);
-  const totalDays = Math.ceil((end - start) / 86400000);
-  const step = totalDays > 365 ? 7 : totalDays > 90 ? 3 : 1;
-  const startDs = start.toISOString().slice(0, 10);
-
-  const dateSamples = [];
-  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-    const ds = d.toISOString().slice(0, 10);
-    const daysSinceStart = Math.ceil((d - start) / 86400000);
-    if (daysSinceStart % step !== 0 && ds !== endDate) continue;
-    dateSamples.push(ds);
-  }
-  if (dateSamples.length === 0) return { dates: [], values: [] };
-
-  const perAccountValues = [];
-  let hasData = false;
-
-  for (const accObj of accObjs) {
-    const accId = typeof accObj === 'object' ? accObj.id : accObj;
-    const ownPct = ((typeof accObj === 'object' ? accObj.ownership_pct : null) ?? 100) / 100;
-
-    const allTrades = getAccountData(accId, market, 'trades').sort((a, b) => a.date.localeCompare(b.date));
-    const allFunds = getAccountData(accId, market, 'funds').sort((a, b) => a.date.localeCompare(b.date));
-    const allIncome = getAccountData(accId, market, 'income').sort((a, b) => a.date.localeCompare(b.date));
-
-    if (allTrades.length === 0 && allFunds.length === 0) {
-      perAccountValues.push(new Array(dateSamples.length).fill(0));
-      continue;
-    }
-    hasData = true;
-
-    const holdingsMap = {};
-    let cash = 0;
-    let tradeIdx = 0, fundIdx = 0, incomeIdx = 0;
-    const accValues = [];
-    let sampleIdx = 0;
-
-    const earliest = [allTrades[0]?.date, allFunds[0]?.date, allIncome[0]?.date, startDs].filter(Boolean).sort()[0];
-    const walkStart = new Date(earliest < startDs ? earliest : startDs);
-
-    for (let d = new Date(walkStart); d <= end; d.setDate(d.getDate() + 1)) {
-      const ds = d.toISOString().slice(0, 10);
-
-      while (fundIdx < allFunds.length && allFunds[fundIdx].date <= ds) { cash += fundCashImpact(allFunds[fundIdx]); fundIdx++; }
-      while (tradeIdx < allTrades.length && allTrades[tradeIdx].date <= ds) {
-        const t = allTrades[tradeIdx];
-        if (!holdingsMap[t.ticker]) holdingsMap[t.ticker] = { shares: 0, lastPrice: t.price };
-        if (t.type === 'buy') holdingsMap[t.ticker].shares += t.shares;
-        else holdingsMap[t.ticker].shares = Math.max(0, holdingsMap[t.ticker].shares - t.shares);
-        holdingsMap[t.ticker].lastPrice = t.price;
-        cash += calcTradeCashImpact(t, market);
-        tradeIdx++;
-      }
-      while (incomeIdx < allIncome.length && allIncome[incomeIdx].date <= ds) { cash += allIncome[incomeIdx].amount; incomeIdx++; }
-
-      if (sampleIdx < dateSamples.length && ds === dateSamples[sampleIdx]) {
-        let mv = 0;
-        for (const [ticker, h] of Object.entries(holdingsMap)) {
-          if (h.shares < 0.0001) continue;
-          let price = h.lastPrice;
-          if (ds === todayStr()) {
-            if (market === 'us') { const p = prices[ticker]; if (p) price = p.price; }
-            else { const p = getTWPrice(ticker); if (p) price = p.price; }
-          }
-          const histPrice = getHistoricalPrice(ticker, ds, market);
-          if (histPrice) price = histPrice;
-          mv += h.shares * price;
-        }
-        accValues.push((mv + cash) * ownPct);
-        sampleIdx++;
-      }
-    }
-
-    while (accValues.length < dateSamples.length) accValues.push(accValues.length > 0 ? accValues[accValues.length - 1] : 0);
-    perAccountValues.push(accValues);
-  }
-
-  if (!hasData) return { dates: [], values: [] };
-  const values = dateSamples.map((_, i) => perAccountValues.reduce((sum, av) => sum + av[i], 0));
-  return { dates: dateSamples, values };
-}
-
-function createTrendChart(canvasId, datasets, labels) {
-  const ctx = document.getElementById(canvasId);
-  if (!ctx) return null;
-  return new Chart(ctx, {
-    type: 'line',
-    data: { labels, datasets },
-    options: {
-      responsive: true,
-      interaction: { mode: 'index', intersect: false },
-      scales: {
-        x: { ticks: { color: '#888', maxTicksLimit: 8, font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.05)' } },
-        y: { ticks: { color: '#888', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.05)' } }
-      },
-      plugins: {
-        legend: { labels: { color: '#aaa', font: { size: 11 } } },
-        tooltip: { mode: 'index' }
-      }
-    }
-  });
-}
-
-function getDateRange(range) {
-  const end = todayStr();
-  const endD = new Date(end);
-  let startD;
-  if (range === '30d') startD = new Date(endD.getTime() - 30 * 86400000);
-  else if (range === '6m') startD = new Date(endD.getTime() - 180 * 86400000);
-  else if (range === '1y') startD = new Date(endD.getTime() - 365 * 86400000);
-  else startD = new Date(endD.getTime() - 365 * 86400000);
-  const start = startD.toISOString().slice(0, 10);
-  return { start, end };
-}
-
-function buildRangeButtons(prefix, onSelect) {
-  const ranges = [
-    { label: '30天', value: '30d' },
-    { label: '6個月', value: '6m' },
-    { label: '1年', value: '1y' },
-    { label: '自訂', value: 'custom' }
-  ];
-  let html = '<div style="display:flex;gap:6px;align-items:center;margin-bottom:10px;flex-wrap:wrap">';
-  for (const r of ranges) {
-    html += `<button onclick="${onSelect}('${r.value}','${prefix}')" id="${prefix}RangeBtn_${r.value}" style="padding:4px 12px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;background:${r.value === '1y' ? 'rgba(167,139,250,0.3)' : 'rgba(255,255,255,0.06)'};color:${r.value === '1y' ? '#a78bfa' : '#aaa'};cursor:pointer;font-size:0.8em">${r.label}</button>`;
-  }
-  html += `<span id="${prefix}CustomRange" style="display:none;gap:6px;align-items:center">`;
-  html += `<input type="date" id="${prefix}CustomStart" style="padding:4px 8px;border:1px solid rgba(255,255,255,0.15);border-radius:4px;background:rgba(255,255,255,0.08);color:#fff;font-size:0.8em" onchange="${onSelect}('custom','${prefix}')">`;
-  html += `<span style="color:#888">~</span>`;
-  html += `<input type="date" id="${prefix}CustomEnd" value="${todayStr()}" style="padding:4px 8px;border:1px solid rgba(255,255,255,0.15);border-radius:4px;background:rgba(255,255,255,0.08);color:#fff;font-size:0.8em" onchange="${onSelect}('custom','${prefix}')">`;
-  html += `</span></div>`;
-  return html;
-}
-
-function onRangeSelect(range, prefix) {
-  // Update button styles
-  ['30d','6m','1y','custom'].forEach(v => {
-    const btn = document.getElementById(`${prefix}RangeBtn_${v}`);
-    if (btn) {
-      btn.style.background = v === range ? 'rgba(167,139,250,0.3)' : 'rgba(255,255,255,0.06)';
-      btn.style.color = v === range ? '#a78bfa' : '#aaa';
-    }
-  });
-  const customEl = document.getElementById(`${prefix}CustomRange`);
-  if (customEl) customEl.style.display = range === 'custom' ? 'flex' : 'none';
-
-  // Trigger chart update
-  if (prefix === 'us') renderUSTrendChart(range);
-  else if (prefix === 'tw') renderTWTrendChart(range);
-  else if (prefix === 'ov') renderOverviewTrendChart(range);
-}
-
-// Current range states
-let usCurrentRange = '1y', twCurrentRange = '1y', ovCurrentRange = '1y';
-
-function getAccountIdsForSelection(selectVal, market) {
-  if (selectVal === '_all_') return accounts.map(a => a.id);
-  if (selectVal?.startsWith('_owner_')) {
-    const owner = selectVal.replace('_owner_', '');
-    return accounts.filter(a => (a.owner || a.name) === owner && (!a.market || a.market === market)).map(a => a.id);
-  }
-  return [selectVal];
-}
-
-function renderUSTrendChart(range) {
-  usCurrentRange = range || usCurrentRange;
-  destroyChart('usTrend');
-  let start, end;
-  if (usCurrentRange === 'custom') {
-    start = document.getElementById('usCustomStart')?.value || getDateRange('1y').start;
-    end = document.getElementById('usCustomEnd')?.value || todayStr();
-  } else {
-    ({ start, end } = getDateRange(usCurrentRange));
-  }
-  const accIds = getAccountIdsForSelection(currentUSAccount, 'us');
-  const data = buildHistoricalData(accIds, 'us', start, end);
-  if (data.dates.length === 0) return;
-  chartInstances['usTrend'] = createTrendChart('usTrendCanvas', [{
-    label: '美股持倉市值 (USD)',
-    data: data.values,
-    borderColor: '#3b82f6',
-    backgroundColor: 'rgba(59,130,246,0.1)',
-    fill: true,
-    tension: 0.3,
-    pointRadius: 0
-  }], data.dates);
-}
-
-function renderTWTrendChart(range) {
-  twCurrentRange = range || twCurrentRange;
-  destroyChart('twTrend');
-  let start, end;
-  if (twCurrentRange === 'custom') {
-    start = document.getElementById('twCustomStart')?.value || getDateRange('1y').start;
-    end = document.getElementById('twCustomEnd')?.value || todayStr();
-  } else {
-    ({ start, end } = getDateRange(twCurrentRange));
-  }
-  const accIds = getAccountIdsForSelection(currentTWAccount, 'tw');
-  const data = buildHistoricalData(accIds, 'tw', start, end);
-  if (data.dates.length === 0) return;
-  chartInstances['twTrend'] = createTrendChart('twTrendCanvas', [{
-    label: '台股淨值 (TWD)',
-    data: data.values,
-    borderColor: '#f97316',
-    backgroundColor: 'rgba(249,115,22,0.1)',
-    fill: true,
-    tension: 0.3,
-    pointRadius: 0
-  }], data.dates);
-}
-
-// 顏色配對：每位持有人分配不同色系
-const ownerColorSets = [
-  { us: '#3b82f6', tw: '#93c5fd', usBg: 'rgba(59,130,246,0.08)', twBg: 'rgba(147,197,253,0.08)' },
-  { us: '#f97316', tw: '#fdba74', usBg: 'rgba(249,115,22,0.08)', twBg: 'rgba(253,186,116,0.08)' },
-  { us: '#8b5cf6', tw: '#c4b5fd', usBg: 'rgba(139,92,246,0.08)', twBg: 'rgba(196,181,253,0.08)' },
-  { us: '#10b981', tw: '#6ee7b7', usBg: 'rgba(16,185,129,0.08)', twBg: 'rgba(110,231,183,0.08)' },
-  { us: '#ef4444', tw: '#fca5a5', usBg: 'rgba(239,68,68,0.08)', twBg: 'rgba(252,165,165,0.08)' },
-  { us: '#06b6d4', tw: '#67e8f9', usBg: 'rgba(6,182,212,0.08)', twBg: 'rgba(103,232,249,0.08)' },
-];
-
-function interpolateTrendData(dates, values, targetDates) {
-  const result = [];
-  let idx = 0;
-  let lastVal = 0;
-  for (const td of targetDates) {
-    while (idx < dates.length && dates[idx] <= td) { lastVal = values[idx]; idx++; }
-    result.push(lastVal);
-  }
-  return result;
-}
-
-function renderOverviewTrendChart(range) {
-  ovCurrentRange = range || ovCurrentRange;
-  destroyChart('ovTrend');
-  let start, end;
-  if (ovCurrentRange === 'custom') {
-    start = document.getElementById('ovCustomStart')?.value || getDateRange('1y').start;
-    end = document.getElementById('ovCustomEnd')?.value || todayStr();
-  } else {
-    ({ start, end } = getDateRange(ovCurrentRange));
-  }
-
-  // 根據戶名篩選狀態決定顯示方式
-  const allOwners = [...new Set(accounts.map(a => a.owner).filter(Boolean))].sort();
-  const datasets = [];
-  let allDateSets = [];
-
-  if (currentOwnerFilter === '__by_owner__') {
-    // 按戶名分開：每位持有人各自的美股/台股線
-    allOwners.forEach((owner, oi) => {
-      const ownerAccIds = accounts.filter(a => a.owner === owner).map(a => a.id);
-      if (ownerAccIds.length === 0) return;
-      const colors = ownerColorSets[oi % ownerColorSets.length];
-      const usData = buildHistoricalData(ownerAccIds, 'us', start, end);
-      const twData = buildHistoricalData(ownerAccIds, 'tw', start, end);
-      allDateSets.push(...usData.dates, ...twData.dates);
-      if (usData.dates.length > 0) {
-        datasets.push({ _dates: usData.dates, _values: usData.values,
-          label: `${owner} 美股 (USD)`, borderColor: colors.us, backgroundColor: colors.usBg,
-          fill: false, tension: 0.3, pointRadius: 0, yAxisID: 'yUS', borderWidth: 2 });
-        datasets.push({ _dates: usData.dates, _values: usData.values.map(v => v * usdTwdRate),
-          label: `${owner} 美股 (TWD)`, borderColor: colors.us, backgroundColor: 'transparent',
-          fill: false, tension: 0.3, pointRadius: 0, yAxisID: 'yTW', borderWidth: 1.5, borderDash: [3, 2] });
-      }
-      if (twData.dates.length > 0) {
-        datasets.push({ _dates: twData.dates, _values: twData.values,
-          label: `${owner} 台股 (TWD)`, borderColor: colors.tw, backgroundColor: colors.twBg,
-          fill: true, tension: 0.3, pointRadius: 0, yAxisID: 'yTW', borderWidth: 2, borderDash: [5, 3] });
-      }
-    });
-    // 未指定戶名的帳戶
-    const noOwnerAccIds = accounts.filter(a => !a.owner).map(a => a.id);
-    if (noOwnerAccIds.length > 0) {
-      const colors = { us: '#9ca3af', tw: '#d1d5db', usBg: 'rgba(156,163,175,0.08)', twBg: 'rgba(209,213,219,0.08)' };
-      const usData = buildHistoricalData(noOwnerAccIds, 'us', start, end);
-      const twData = buildHistoricalData(noOwnerAccIds, 'tw', start, end);
-      allDateSets.push(...usData.dates, ...twData.dates);
-      if (usData.dates.length > 0) {
-        datasets.push({ _dates: usData.dates, _values: usData.values,
-          label: '未指定 美股 (USD)', borderColor: colors.us, backgroundColor: colors.usBg,
-          fill: false, tension: 0.3, pointRadius: 0, yAxisID: 'yUS', borderWidth: 2 });
-        datasets.push({ _dates: usData.dates, _values: usData.values.map(v => v * usdTwdRate),
-          label: '未指定 美股 (TWD)', borderColor: colors.us, backgroundColor: 'transparent',
-          fill: false, tension: 0.3, pointRadius: 0, yAxisID: 'yTW', borderWidth: 1.5, borderDash: [3, 2] });
-      }
-      if (twData.dates.length > 0) {
-        datasets.push({ _dates: twData.dates, _values: twData.values,
-          label: '未指定 台股 (TWD)', borderColor: colors.tw, backgroundColor: colors.twBg,
-          fill: true, tension: 0.3, pointRadius: 0, yAxisID: 'yTW', borderWidth: 2, borderDash: [5, 3] });
-      }
-    }
-  } else {
-    // 單一戶名或全部合計
-    const filteredAccIds = (currentOwnerFilter
-      ? accounts.filter(a => a.owner === currentOwnerFilter)
-      : accounts
-    ).map(a => a.id);
-    const usData = buildHistoricalData(filteredAccIds, 'us', start, end);
-    const twData = buildHistoricalData(filteredAccIds, 'tw', start, end);
-    allDateSets.push(...usData.dates, ...twData.dates);
-    if (usData.dates.length > 0) {
-      datasets.push({ _dates: usData.dates, _values: usData.values,
-        label: '美股 (USD)', borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.08)',
-        fill: false, tension: 0.3, pointRadius: 0, yAxisID: 'yUS' });
-      datasets.push({ _dates: usData.dates, _values: usData.values.map(v => v * usdTwdRate),
-        label: '美股 (TWD)', borderColor: '#60a5fa', backgroundColor: 'transparent',
-        fill: false, tension: 0.3, pointRadius: 0, yAxisID: 'yTW', borderWidth: 1.5, borderDash: [3, 2] });
-    }
-    if (twData.dates.length > 0) {
-      datasets.push({ _dates: twData.dates, _values: twData.values,
-        label: '台股 (TWD)', borderColor: '#f97316', backgroundColor: 'rgba(249,115,22,0.08)',
-        fill: true, tension: 0.3, pointRadius: 0, yAxisID: 'yTW' });
-    }
-  }
-
-  const allDates = [...new Set(allDateSets)].sort();
-  if (allDates.length === 0 || datasets.length === 0) return;
-
-  // 將每條線的資料對齊到統一的日期軸
-  for (const ds of datasets) {
-    ds.data = interpolateTrendData(ds._dates, ds._values, allDates);
-    delete ds._dates;
-    delete ds._values;
-  }
-
-  // 加入美股+台股合計 (TWD) 線
-  // 先找出所有 US 和 TW 的資料來合併
-  const filteredAccIdsForCombined = (currentOwnerFilter && currentOwnerFilter !== '__by_owner__'
-    ? accounts.filter(a => a.owner === currentOwnerFilter)
-    : accounts
-  ).map(a => a.id);
-  const usCombined = buildHistoricalData(filteredAccIdsForCombined, 'us', start, end);
-  const twCombined = buildHistoricalData(filteredAccIdsForCombined, 'tw', start, end);
-  // 合併日期
-  const combinedDatesSet = new Set([...usCombined.dates, ...twCombined.dates, ...allDates]);
-  const combinedDates = [...combinedDatesSet].sort();
-  const usValsForCombined = interpolateTrendData(usCombined.dates, usCombined.values, combinedDates);
-  const twValsForCombined = interpolateTrendData(twCombined.dates, twCombined.values, combinedDates);
-  const combinedTWD = combinedDates.map((_, i) => (usValsForCombined[i] || 0) * usdTwdRate + (twValsForCombined[i] || 0));
-
-  // 也重新對齊其他 datasets 到 combinedDates
-  for (const ds of datasets) {
-    if (ds.data && ds.data.length === allDates.length) {
-      ds.data = interpolateTrendData(allDates, ds.data, combinedDates);
-    }
-  }
-
-  // 加入合計線
-  datasets.push({
-    label: '股票總值 (TWD)',
-    data: combinedTWD,
-    borderColor: '#fbbf24',
-    backgroundColor: 'rgba(251,191,36,0.08)',
-    fill: false,
-    tension: 0.3,
-    pointRadius: 0,
-    yAxisID: 'yTW',
-    borderWidth: 3,
-    borderDash: [8, 4]
-  });
-
-  chartInstances['ovTrend'] = createTrendChart('ovTrendCanvas', datasets, combinedDates);
-
-  // 設定雙 Y 軸
-  if (chartInstances['ovTrend']) {
-    chartInstances['ovTrend'].options.scales = {
-      x: { ticks: { color: '#888', maxTicksLimit: 8, font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.05)' } },
-      yUS: { position: 'left', ticks: { color: '#3b82f6', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.05)' }, title: { display: true, text: 'USD', color: '#3b82f6' } },
-      yTW: { position: 'right', ticks: { color: '#f97316', font: { size: 10 } }, grid: { display: false }, title: { display: true, text: 'TWD', color: '#f97316' } }
-    };
-    chartInstances['ovTrend'].update();
-  }
-
-  // === 淨資產 vs 總負債 趨勢圖 ===
-  destroyChart('ovAssetDebt');
-  const assetDebtCanvas = document.getElementById('ovAssetDebtCanvas');
-  if (assetDebtCanvas && combinedDates.length > 0) {
-    // 淨資產 = 股票總值 + 房產 - 負債（房產和負債目前是靜態值，用當前值畫水平線）
-    // 但股票部分是動態的
-    const currentFilteredAccs = (currentOwnerFilter && currentOwnerFilter !== '__by_owner__'
-      ? accounts.filter(a => a.owner === currentOwnerFilter)
-      : accounts);
-    const currentFilteredAccIds = currentFilteredAccs.map(a => a.id);
-    const currentFilteredMortgages = (currentOwnerFilter && currentOwnerFilter !== '__by_owner__'
-      ? mortgages.filter(m => m.owner === currentOwnerFilter || (m.accountId && currentFilteredAccIds.includes(m.accountId)))
-      : mortgages);
-
-    // 房產價值（靜態）
-    const propValue = currentFilteredMortgages.reduce((s, m) => s + m.totalPrice * 10000, 0);
-    // 負債（靜態）
-    const debt = currentFilteredMortgages.reduce((s, m) => s + getMortgageDebt(m), 0);
-
-    // 淨資產隨時間 = 股票總值(動態) + 房產(靜態) - 負債(靜態)
-    const netAssetData = combinedTWD.map(v => v + propValue - debt);
-    const debtData = combinedDates.map(() => debt);
-    const totalAssetData = combinedTWD.map(v => v + propValue);
-
-    chartInstances['ovAssetDebt'] = createTrendChart('ovAssetDebtCanvas', [
-      {
-        label: '總資產 (TWD)',
-        data: totalAssetData,
-        borderColor: '#a78bfa',
-        backgroundColor: 'rgba(167,139,250,0.08)',
-        fill: false, tension: 0.3, pointRadius: 0, borderWidth: 2
-      },
-      {
-        label: '淨資產 (TWD)',
-        data: netAssetData,
-        borderColor: '#34d399',
-        backgroundColor: 'rgba(52,211,153,0.08)',
-        fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2
-      },
-      {
-        label: '總負債 (TWD)',
-        data: debtData,
-        borderColor: '#f87171',
-        backgroundColor: 'rgba(248,113,113,0.06)',
-        fill: true, tension: 0, pointRadius: 0, borderWidth: 2, borderDash: [6, 3]
-      }
-    ], combinedDates);
-  }
-}
 
 function renderUSCharts() {
   if (typeof Chart === 'undefined') return;
@@ -6774,24 +6034,16 @@ function renderUSCharts() {
   if (active.length === 0 && trades.length === 0) { section.innerHTML = ''; return; }
 
   // Build HTML — compact charts
-  let html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0;max-width:100%">';
+  let html = '';
 
   // Doughnut
   if (active.length > 0) {
-    html += `<div style="background:rgba(255,255,255,0.04);border-radius:10px;padding:12px;max-height:280px">
-      <h3 style="color:#888;font-size:0.82em;margin-bottom:8px">📊 持股配置</h3>
-      <canvas id="usDoughnutCanvas" style="max-height:230px"></canvas>
+    html += `<div style="max-width:360px;margin:12px auto">
+      <h3 style="color:#888;font-size:0.82em;margin-bottom:8px;text-align:center">📊 持股配置</h3>
+      <canvas id="usDoughnutCanvas" style="max-height:280px"></canvas>
     </div>`;
   }
 
-  // Trend
-  html += `<div style="background:rgba(255,255,255,0.04);border-radius:10px;padding:12px;max-height:280px">
-    <h3 style="color:#888;font-size:0.82em;margin-bottom:8px">📈 持倉市值走勢</h3>
-    ${buildRangeButtons('us', 'onRangeSelect')}
-    <canvas id="usTrendCanvas" style="max-height:200px"></canvas>
-  </div>`;
-
-  html += '</div>';
   section.innerHTML = html;
 
   // Render doughnut (with cash)
@@ -6803,9 +6055,6 @@ function renderUSCharts() {
     if (cash > 0) { dLabels.push('💵 現金'); dData.push(cash); dColors.push('#9ca3af'); }
     chartInstances['usDoughnut'] = createDoughnutChart('usDoughnutCanvas', dLabels, dData, dColors);
   }
-
-  // Render trend
-  renderUSTrendChart(usCurrentRange);
 }
 
 function renderTWCharts() {
@@ -6826,22 +6075,15 @@ function renderTWCharts() {
 
   if (active.length === 0 && trades.length === 0) { section.innerHTML = ''; return; }
 
-  let html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0;max-width:100%">';
+  let html = '';
 
   if (active.length > 0) {
-    html += `<div style="background:rgba(255,255,255,0.04);border-radius:10px;padding:12px;max-height:280px">
-      <h3 style="color:#888;font-size:0.82em;margin-bottom:8px">📊 持股配置</h3>
-      <canvas id="twDoughnutCanvas" style="max-height:230px"></canvas>
+    html += `<div style="max-width:360px;margin:12px auto">
+      <h3 style="color:#888;font-size:0.82em;margin-bottom:8px;text-align:center">📊 持股配置</h3>
+      <canvas id="twDoughnutCanvas" style="max-height:280px"></canvas>
     </div>`;
   }
 
-  html += `<div style="background:rgba(255,255,255,0.04);border-radius:10px;padding:12px;max-height:280px">
-    <h3 style="color:#888;font-size:0.82em;margin-bottom:8px">📈 持倉市值走勢</h3>
-    ${buildRangeButtons('tw', 'onRangeSelect')}
-    <canvas id="twTrendCanvas" style="max-height:200px"></canvas>
-  </div>`;
-
-  html += '</div>';
   section.innerHTML = html;
 
   if (active.length > 0 || cash > 0) {
@@ -6852,8 +6094,6 @@ function renderTWCharts() {
     if (cash > 0) { dLabels.push('💵 現金'); dData.push(cash); dColors.push('#9ca3af'); }
     chartInstances['twDoughnut'] = createDoughnutChart('twDoughnutCanvas', dLabels, dData, dColors);
   }
-
-  renderTWTrendChart(twCurrentRange);
 }
 
 // 取得某組帳戶的美股/台股持倉資訊
@@ -6881,87 +6121,6 @@ function getAccountGroupHoldings(accList) {
     }
   }
   return { usTotalValue, twTotalValue, allActiveUS, allActiveTW };
-}
-
-// 每位戶名各自的趨勢圖時間範圍
-const ownerRangeStates = {};
-
-function renderOwnerTrendCharts(idx, g) {
-  const range = ownerRangeStates[idx] || '1y';
-  const accIds = g.accounts.map(a => a.id);
-  const { start, end } = getDateRange(range);
-
-  destroyChart(`ovOwnerTrend_${idx}`);
-  destroyChart(`ovOwnerAsset_${idx}`);
-
-  const usData = buildHistoricalData(accIds, 'us', start, end);
-  const twData = buildHistoricalData(accIds, 'tw', start, end);
-  const dates = [...new Set([...usData.dates, ...twData.dates])].sort();
-  if (dates.length === 0) return;
-
-  const usVals = interpolateTrendData(usData.dates, usData.values, dates);
-  const twVals = interpolateTrendData(twData.dates, twData.values, dates);
-  const combinedTWD = dates.map((_, i) => (usVals[i] || 0) * usdTwdRate + (twVals[i] || 0));
-
-  // 市值趨勢 — 雙Y軸：USD(左) + TWD(右)
-  const usValsTWD = usVals.map(v => (v || 0) * usdTwdRate);
-  const ownerTrendDatasets = [
-    { label: '美股 (USD)', data: usVals, borderColor: '#3b82f6', fill: false, tension: 0.3, pointRadius: 0, borderWidth: 2, yAxisID: 'yUSD' },
-    { label: '美股 (TWD)', data: usValsTWD, borderColor: '#60a5fa', fill: false, tension: 0.3, pointRadius: 0, borderWidth: 1.5, borderDash: [3, 2], yAxisID: 'yTWD' },
-    { label: '台股 (TWD)', data: twVals, borderColor: '#f97316', fill: false, tension: 0.3, pointRadius: 0, borderWidth: 1.5, yAxisID: 'yTWD' },
-    { label: '合計 (TWD)', data: combinedTWD, borderColor: '#fbbf24', fill: true, backgroundColor: 'rgba(251,191,36,0.06)', tension: 0.3, pointRadius: 0, borderWidth: 2, borderDash: [6, 3], yAxisID: 'yTWD' }
-  ];
-  const ownerTrendCanvas = document.getElementById(`ovOwnerTrend_${idx}`);
-  if (ownerTrendCanvas) {
-    chartInstances[`ovOwnerTrend_${idx}`] = new Chart(ownerTrendCanvas, {
-      type: 'line',
-      data: { labels: dates, datasets: ownerTrendDatasets },
-      options: {
-        responsive: true,
-        interaction: { mode: 'index', intersect: false },
-        scales: {
-          x: { ticks: { color: '#888', maxTicksLimit: 8, font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.05)' } },
-          yUSD: { position: 'left', ticks: { color: '#3b82f6', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.05)' }, title: { display: true, text: 'USD', color: '#3b82f6' } },
-          yTWD: { position: 'right', ticks: { color: '#f97316', font: { size: 10 } }, grid: { drawOnChartArea: false }, title: { display: true, text: 'TWD', color: '#f97316' } }
-        },
-        plugins: { legend: { labels: { color: '#aaa', font: { size: 11 } } }, tooltip: { mode: 'index' } }
-      }
-    });
-  }
-
-  // 淨資產 vs 負債
-  const ownerAccIds = g.accounts.map(a => a.id);
-  const ownerMorts = mortgages.filter(m => (g.owner && m.owner === g.owner) || (m.accountId && ownerAccIds.includes(m.accountId)));
-  const propValue = ownerMorts.reduce((s, m) => s + m.totalPrice * 10000, 0);
-  const debt = ownerMorts.reduce((s, m) => s + getMortgageDebt(m), 0);
-
-  chartInstances[`ovOwnerAsset_${idx}`] = createTrendChart(`ovOwnerAsset_${idx}`, [
-    { label: '總資產', data: combinedTWD.map(v => v + propValue), borderColor: '#a78bfa', fill: false, tension: 0.3, pointRadius: 0, borderWidth: 1.5 },
-    { label: '淨資產', data: combinedTWD.map(v => v + propValue - debt), borderColor: '#34d399', backgroundColor: 'rgba(52,211,153,0.06)', fill: true, tension: 0.3, pointRadius: 0, borderWidth: 1.5 },
-    { label: '總負債', data: dates.map(() => debt), borderColor: '#f87171', fill: false, tension: 0, pointRadius: 0, borderWidth: 1.5, borderDash: [6, 3] }
-  ], dates);
-}
-
-function onOwnerRangeSelect(range, prefix) {
-  // prefix = 'ovo0', 'ovo1', etc. — extract index
-  const idx = parseInt(prefix.replace('ovo', ''));
-  ownerRangeStates[idx] = range;
-
-  // Update button styles for this owner's buttons
-  ['30d','6m','1y','custom'].forEach(v => {
-    const btn = document.getElementById(`${prefix}RangeBtn_${v}`);
-    if (btn) {
-      btn.style.background = v === range ? 'rgba(167,139,250,0.3)' : 'rgba(255,255,255,0.06)';
-      btn.style.color = v === range ? '#a78bfa' : '#aaa';
-    }
-  });
-  const customEl = document.getElementById(`${prefix}CustomRange`);
-  if (customEl) customEl.style.display = range === 'custom' ? 'flex' : 'none';
-
-  // Re-render only this owner's trend charts
-  if (_lastOwnerGroups && _lastOwnerGroups[idx]) {
-    renderOwnerTrendCharts(idx, _lastOwnerGroups[idx]);
-  }
 }
 
 let _lastOwnerGroups = null;
@@ -7112,18 +6271,14 @@ function renderOverviewCharts(ownerGroups) {
   }
 
   if (ownerGroups) {
-    // === 按戶名分開：圓餅圖+趨勢圖嵌在各戶名區塊內 ===
+    // === 按戶名分開：圓餅圖嵌在各戶名區塊內 ===
     ownerGroups.forEach((g, idx) => {
       const container = document.getElementById(`ownerCharts_${idx}`);
       if (!container) return;
       const h = getAccountGroupHoldings(g.accounts);
       const hasData = h.usTotalValue > 0 || h.twTotalValue > 0;
       const allActive = h.allActiveUS.length + h.allActiveTW.length;
-      const accIds = g.accounts.map(a => a.id);
-      const hasTrades = g.accounts.some(a =>
-        getAccountData(a.id, 'us', 'trades').length > 0 || getAccountData(a.id, 'tw', 'trades').length > 0
-      );
-      if (!hasData && allActive === 0 && !hasTrades) return;
+      if (!hasData && allActive === 0) return;
 
       // 上排：圓餅圖（一左一右）
       let chartHtml = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:100%">';
@@ -7140,21 +6295,6 @@ function renderOverviewCharts(ownerGroups) {
         </div>`;
       }
       chartHtml += '</div>';
-
-      // 下排：時間範圍按鈕 + 趨勢圖（一左一右）
-      if (hasTrades) {
-        chartHtml += `<div style="margin-top:10px">${buildRangeButtons('ovo' + idx, 'onOwnerRangeSelect')}</div>`;
-        chartHtml += `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;max-width:100%">
-          <div style="background:rgba(255,255,255,0.04);border-radius:10px;padding:12px">
-            <h3 style="color:#888;font-size:0.8em;margin-bottom:6px">📈 市值走勢 (TWD)</h3>
-            <canvas id="ovOwnerTrend_${idx}" style="min-height:180px;max-height:300px"></canvas>
-          </div>
-          <div style="background:rgba(255,255,255,0.04);border-radius:10px;padding:12px">
-            <h3 style="color:#888;font-size:0.8em;margin-bottom:6px">📈 淨資產 vs 負債</h3>
-            <canvas id="ovOwnerAsset_${idx}" style="min-height:180px;max-height:300px"></canvas>
-          </div>
-        </div>`;
-      }
 
       container.innerHTML = chartHtml;
 
@@ -7175,10 +6315,6 @@ function renderOverviewCharts(ownerGroups) {
         );
       }
 
-      // 渲染該戶名的趨勢圖
-      if (hasTrades) {
-        renderOwnerTrendCharts(idx, g);
-      }
     });
 
     section.innerHTML = '';
@@ -7192,11 +6328,8 @@ function renderOverviewCharts(ownerGroups) {
 
   const h = getAccountGroupHoldings(filteredAccounts);
   const hasData = h.usTotalValue > 0 || h.twTotalValue > 0;
-  const hasTrades = filteredAccounts.some(a =>
-    getAccountData(a.id, 'us', 'trades').length > 0 || getAccountData(a.id, 'tw', 'trades').length > 0
-  );
 
-  if (!hasData && !hasTrades) { section.innerHTML = ''; return; }
+  if (!hasData) { section.innerHTML = ''; return; }
 
   let html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0;max-width:100%">';
 
@@ -7215,18 +6348,6 @@ function renderOverviewCharts(ownerGroups) {
   }
 
   html += '</div>';
-
-  if (hasTrades) {
-    html += `<div style="background:rgba(255,255,255,0.04);border-radius:10px;padding:12px;margin:0 0 12px 0;max-height:300px">
-      <h3 style="color:#888;font-size:0.82em;margin-bottom:8px">📈 投資組合市值走勢</h3>
-      ${buildRangeButtons('ov', 'onRangeSelect')}
-      <canvas id="ovTrendCanvas" style="min-height:200px;max-height:320px"></canvas>
-    </div>
-    <div style="background:rgba(255,255,255,0.04);border-radius:10px;padding:12px;margin:0 0 12px 0;max-height:300px">
-      <h3 style="color:#888;font-size:0.82em;margin-bottom:8px">📈 淨資產 vs 總負債</h3>
-      <canvas id="ovAssetDebtCanvas" style="max-height:220px"></canvas>
-    </div>`;
-  }
 
   section.innerHTML = html;
 
@@ -7248,13 +6369,6 @@ function renderOverviewCharts(ownerGroups) {
     );
   }
 
-  if (hasTrades) renderOverviewTrendChart(ovCurrentRange);
-}
-
-// Market overview range select (for US/TW all-accounts trend charts)
-function mktOvwRangeSelect(range, market) {
-  if (market === 'us') { usCurrentRange = range; renderUSTab(); }
-  else { twCurrentRange = range; renderTWTab(); }
 }
 
 // ===== Report Tab =====
