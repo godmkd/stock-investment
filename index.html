@@ -6180,13 +6180,30 @@ function saveNetWorthSnapshot(market, netWorth) {
 }
 
 // Backfill historical snapshots from trade data + Finnhub prices
+function showBackfillStatus(text) {
+  let el = document.getElementById('backfillStatus');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'backfillStatus';
+    el.style.cssText = 'position:fixed;bottom:16px;left:50%;transform:translateX(-50%);padding:10px 20px;border-radius:10px;background:rgba(0,0,0,0.9);color:#67e8f9;font-size:0.85em;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,0.5);white-space:nowrap';
+    document.body.appendChild(el);
+  }
+  el.textContent = text;
+  el.style.display = 'block';
+}
+function hideBackfillStatus() {
+  const el = document.getElementById('backfillStatus');
+  if (el) el.style.display = 'none';
+}
+
 async function backfillSnapshots(force) {
-  if (!force && localStorage.getItem('nw_snapshots_v3')) return;
+  if (!force && localStorage.getItem('nw_snapshots_v4')) return;
 
   const key = localStorage.getItem('us_finnhub_key') || localStorage.getItem('finnhub_key');
 
   // Clear old bad data
   netWorthSnapshots = {};
+  showBackfillStatus('📊 開始回補歷史趨勢數據...');
 
   // Collect all US tickers
   const usTickers = new Set();
@@ -6199,10 +6216,9 @@ async function backfillSnapshots(force) {
   if (key && usTickers.size > 0) {
     const now = Math.floor(Date.now() / 1000);
     const oneYearAgo = now - 400 * 86400;
-    const statusEl = document.getElementById('usOvwLastUpdate') || document.getElementById('usLastUpdate');
     for (const ticker of usTickers) {
       fetchedCount++;
-      if (statusEl) statusEl.textContent = `歷史數據回補中... ${fetchedCount}/${usTickers.size} (${ticker})`;
+      showBackfillStatus(`📊 歷史數據回補中... ${fetchedCount}/${usTickers.size} (${ticker})`);
       const candles = await fetchHistoricalCandles(ticker, oneYearAgo, now);
       const candleCount = Object.keys(candles).length;
       if (candleCount > 0) {
@@ -6216,7 +6232,7 @@ async function backfillSnapshots(force) {
       await new Promise(r => setTimeout(r, 400));
     }
     localStorage.setItem('stock_price_history', JSON.stringify(priceHistory));
-    if (statusEl) statusEl.textContent = `歷史數據回補完成，重建趨勢中...`;
+    showBackfillStatus('📊 歷史數據回補完成，重建趨勢中...');
   }
 
   // Reconstruct snapshots for each market
@@ -6236,7 +6252,8 @@ async function backfillSnapshots(force) {
   }
 
   localStorage.setItem('nw_snapshots', JSON.stringify(netWorthSnapshots));
-  localStorage.setItem('nw_snapshots_v3', '1');
+  localStorage.setItem('nw_snapshots_v4', '1');
+  hideBackfillStatus();
   console.log('Snapshots backfilled:', Object.keys(netWorthSnapshots.us || {}).length, 'US,', Object.keys(netWorthSnapshots.tw || {}).length, 'TW');
   savePricesToCloud().catch(() => {});
 }
