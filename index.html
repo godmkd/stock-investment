@@ -3551,6 +3551,9 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
   const totalPL = totalNetWorth - totalFundIn;
   const totalRet = totalFundIn > 0 ? (totalPL / totalFundIn * 100) : 0;
 
+  // Save today's net worth snapshot for trend chart
+  if (totalNetWorth > 0) saveNetWorthSnapshot(market, totalNetWorth);
+
   // Merge holdings by ticker
   const merged = {};
   allAnalysis.forEach(s => {
@@ -6146,22 +6149,81 @@ function createDoughnutChart(canvasId, labels, data, colors) {
   });
 }
 
-function buildHistoricalData(accountIds, market, startDate, endDate) {
-  // Resolve account objects to get ownership_pct
-  const accObjs = accountIds.map(id => {
-    if (typeof id === 'object') return id; // already an account object
-    return accounts.find(a => a.id === id) || { id, ownership_pct: 100 };
-  });
+// ===== Net Worth Snapshots =====
+// Save daily snapshots of actual net worth (much more accurate than price reconstruction)
+let netWorthSnapshots = JSON.parse(localStorage.getItem('nw_snapshots') || '{}');
+// Format: { "us": { "2026-04-18": 12345.67, ... }, "tw": { "2026-04-18": 999999, ... } }
 
-  // Build per-account historical data, then combine with ownership weighting
+function saveNetWorthSnapshot(market, netWorth) {
+  const today = todayStr();
+  if (!netWorthSnapshots[market]) netWorthSnapshots[market] = {};
+  netWorthSnapshots[market][today] = Math.round(netWorth * 100) / 100;
+  // Keep max 400 days
+  const dates = Object.keys(netWorthSnapshots[market]).sort();
+  if (dates.length > 400) {
+    for (let i = 0; i < dates.length - 400; i++) delete netWorthSnapshots[market][dates[i]];
+  }
+  localStorage.setItem('nw_snapshots', JSON.stringify(netWorthSnapshots));
+}
+
+function buildHistoricalData(accountIds, market, startDate, endDate) {
+  // Use snapshot data as primary source
+  const snapshots = netWorthSnapshots[market] || {};
+  const snapshotDates = Object.keys(snapshots).sort();
+
   const start = new Date(startDate);
   const end = new Date(endDate);
   const totalDays = Math.ceil((end - start) / 86400000);
   const step = totalDays > 365 ? 7 : totalDays > 90 ? 3 : 1;
 
-  // Generate date samples first
-  const dateSamples = [];
+  const dates = [];
+  const values = [];
+
+  if (snapshotDates.length >= 2) {
+    // Use snapshots — much more accurate
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      const ds = d.toISOString().slice(0, 10);
+      const daysSinceStart = Math.ceil((d - start) / 86400000);
+      if (daysSinceStart % step !== 0 && ds !== endDate) continue;
+
+      // Find exact or nearest previous snapshot
+      if (snapshots[ds] !== undefined) {
+        dates.push(ds);
+        values.push(snapshots[ds]);
+      } else {
+        // Find nearest previous snapshot
+        let found = null;
+        for (let back = 1; back <= 7; back++) {
+          const prevD = new Date(d.getTime() - back * 86400000);
+          const prevDs = prevD.toISOString().slice(0, 10);
+          if (snapshots[prevDs] !== undefined) { found = snapshots[prevDs]; break; }
+        }
+        if (found !== null) {
+          dates.push(ds);
+          values.push(found);
+        }
+      }
+    }
+    if (dates.length > 0) return { dates, values };
+  }
+
+  // Fallback: reconstruct from trades (less accurate, no historical prices)
+  return buildHistoricalDataFromTrades(accountIds, market, startDate, endDate);
+}
+
+function buildHistoricalDataFromTrades(accountIds, market, startDate, endDate) {
+  const accObjs = accountIds.map(id => {
+    if (typeof id === 'object') return id;
+    return accounts.find(a => a.id === id) || { id, ownership_pct: 100 };
+  });
+
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  const totalDays = Math.ceil((end - start) / 86400000);
+  const step = totalDays > 365 ? 7 : totalDays > 90 ? 3 : 1;
   const startDs = start.toISOString().slice(0, 10);
+
+  const dateSamples = [];
   for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
     const ds = d.toISOString().slice(0, 10);
     const daysSinceStart = Math.ceil((d - start) / 86400000);
@@ -6170,7 +6232,6 @@ function buildHistoricalData(accountIds, market, startDate, endDate) {
   }
   if (dateSamples.length === 0) return { dates: [], values: [] };
 
-  // For each account, compute net worth at each sample date
   const perAccountValues = [];
   let hasData = false;
 
@@ -6191,24 +6252,16 @@ function buildHistoricalData(accountIds, market, startDate, endDate) {
     const holdingsMap = {};
     let cash = 0;
     let tradeIdx = 0, fundIdx = 0, incomeIdx = 0;
-
     const accValues = [];
     let sampleIdx = 0;
 
-    // Walk through all days from earliest data to end
-    const earliest = [
-      allTrades[0]?.date, allFunds[0]?.date, allIncome[0]?.date, startDs
-    ].filter(Boolean).sort()[0];
+    const earliest = [allTrades[0]?.date, allFunds[0]?.date, allIncome[0]?.date, startDs].filter(Boolean).sort()[0];
     const walkStart = new Date(earliest < startDs ? earliest : startDs);
 
     for (let d = new Date(walkStart); d <= end; d.setDate(d.getDate() + 1)) {
       const ds = d.toISOString().slice(0, 10);
 
-      // Process events on this date
-      while (fundIdx < allFunds.length && allFunds[fundIdx].date <= ds) {
-        cash += fundCashImpact(allFunds[fundIdx]);
-        fundIdx++;
-      }
+      while (fundIdx < allFunds.length && allFunds[fundIdx].date <= ds) { cash += fundCashImpact(allFunds[fundIdx]); fundIdx++; }
       while (tradeIdx < allTrades.length && allTrades[tradeIdx].date <= ds) {
         const t = allTrades[tradeIdx];
         if (!holdingsMap[t.ticker]) holdingsMap[t.ticker] = { shares: 0, lastPrice: t.price };
@@ -6218,30 +6271,19 @@ function buildHistoricalData(accountIds, market, startDate, endDate) {
         cash += calcTradeCashImpact(t, market);
         tradeIdx++;
       }
-      while (incomeIdx < allIncome.length && allIncome[incomeIdx].date <= ds) {
-        cash += allIncome[incomeIdx].amount;
-        incomeIdx++;
-      }
+      while (incomeIdx < allIncome.length && allIncome[incomeIdx].date <= ds) { cash += allIncome[incomeIdx].amount; incomeIdx++; }
 
-      // Check if this is a sample date
       if (sampleIdx < dateSamples.length && ds === dateSamples[sampleIdx]) {
         let mv = 0;
         for (const [ticker, h] of Object.entries(holdingsMap)) {
           if (h.shares < 0.0001) continue;
           let price = h.lastPrice;
-          const histPrice = getHistoricalPrice(ticker, ds, market);
-          if (histPrice) {
-            price = histPrice;
-          } else if (ds === todayStr()) {
+          if (ds === todayStr()) {
             if (market === 'us') { const p = prices[ticker]; if (p) price = p.price; }
             else { const p = getTWPrice(ticker); if (p) price = p.price; }
-          } else if (priceHistory[ticker]) {
-            for (let back = 1; back <= 5; back++) {
-              const prevD = new Date(d.getTime() - back * 86400000);
-              const prevDs = prevD.toISOString().slice(0, 10);
-              if (priceHistory[ticker][prevDs]) { price = priceHistory[ticker][prevDs]; break; }
-            }
           }
+          const histPrice = getHistoricalPrice(ticker, ds, market);
+          if (histPrice) price = histPrice;
           mv += h.shares * price;
         }
         accValues.push((mv + cash) * ownPct);
@@ -6249,14 +6291,11 @@ function buildHistoricalData(accountIds, market, startDate, endDate) {
       }
     }
 
-    // Fill remaining samples if loop ended early
     while (accValues.length < dateSamples.length) accValues.push(accValues.length > 0 ? accValues[accValues.length - 1] : 0);
     perAccountValues.push(accValues);
   }
 
   if (!hasData) return { dates: [], values: [] };
-
-  // Sum across accounts
   const values = dateSamples.map((_, i) => perAccountValues.reduce((sum, av) => sum + av[i], 0));
   return { dates: dateSamples, values };
 }
