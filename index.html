@@ -6203,7 +6203,8 @@ function renderMergedPortfolio() {
   let totalWeightedValueTWD = 0;
 
   for (const acc of filteredAccounts) {
-    const pct = (acc.ownership_pct ?? 100) / 100;
+    // 全部合計 mode: use 100% for all accounts (no ownership weighting)
+    const pct = currentOwnerFilter ? (acc.ownership_pct ?? 100) / 100 : 1;
 
     // US stocks
     const usTrades = getAccountData(acc.id, 'us', 'trades');
@@ -6248,7 +6249,7 @@ function renderMergedPortfolio() {
       <div class="table-header" onclick="document.getElementById('mergedPortfolioPanel').style.display=document.getElementById('mergedPortfolioPanel').style.display==='none'?'block':'none';this.querySelector('.arrow').classList.toggle('open')" style="cursor:pointer;user-select:none">
         <div style="display:flex;align-items:center;gap:8px">
           <span class="arrow" style="transition:transform 0.2s">▼</span>
-          <h2>🔗 合併總覽（按持有比例加權）</h2>
+          <h2>🔗 合併總覽${currentOwnerFilter ? '（按持有比例加權）' : '（全部 100%）'}</h2>
         </div>
         <div style="font-size:0.85em;color:#fbbf24;font-weight:600">${fmtTWD(totalWeightedValueTWD)}</div>
       </div>
