@@ -1582,8 +1582,8 @@ function initApp() {
   if (apiKey) {
     refreshUSPrices().then(() => { renderUSTab(); renderOverviewTab(); });
   }
-  // Auto-fetch historical prices for trend charts
-  maybeAutoFetchHistory();
+  // Backfill historical snapshots (one-time, then auto-saves daily)
+  backfillSnapshots().then(() => { renderOverviewTab(); });
   // 台股自動更新（TWSE 免費不需 API Key）
   if (accounts.some(a => getAccountData(a.id, 'tw', 'trades').length > 0)) {
     refreshTWPrices().catch(() => {});
@@ -6164,6 +6164,58 @@ function saveNetWorthSnapshot(market, netWorth) {
     for (let i = 0; i < dates.length - 400; i++) delete netWorthSnapshots[market][dates[i]];
   }
   localStorage.setItem('nw_snapshots', JSON.stringify(netWorthSnapshots));
+}
+
+// Backfill historical snapshots from trade data + Finnhub prices (one-time)
+async function backfillSnapshots() {
+  const key = localStorage.getItem('us_finnhub_key') || localStorage.getItem('finnhub_key');
+  if (localStorage.getItem('nw_snapshots_backfilled')) return;
+
+  // Collect all US tickers
+  const usTickers = new Set();
+  const twTickers = new Set();
+  for (const acc of accounts) {
+    getAccountData(acc.id, 'us', 'trades').forEach(t => usTickers.add(t.ticker));
+    getAccountData(acc.id, 'tw', 'trades').forEach(t => twTickers.add(t.ticker));
+  }
+
+  // Fetch 1 year of US candles from Finnhub
+  if (key && usTickers.size > 0) {
+    const now = Math.floor(Date.now() / 1000);
+    const oneYearAgo = now - 400 * 86400;
+    for (const ticker of usTickers) {
+      if (priceHistory[ticker]?._updated) continue; // already have data
+      const candles = await fetchHistoricalCandles(ticker, oneYearAgo, now);
+      if (Object.keys(candles).length > 0) {
+        if (!priceHistory[ticker]) priceHistory[ticker] = {};
+        Object.assign(priceHistory[ticker], candles);
+        priceHistory[ticker]._updated = Date.now();
+      }
+      await new Promise(r => setTimeout(r, 350));
+    }
+    localStorage.setItem('stock_price_history', JSON.stringify(priceHistory));
+  }
+
+  // Now reconstruct snapshots for each market
+  const allAccIds = accounts.map(a => a.id);
+  for (const market of ['us', 'tw']) {
+    const { start } = getDateRange('1y');
+    const end = todayStr();
+    const result = buildHistoricalDataFromTrades(allAccIds, market, start, end);
+    if (result.dates.length > 0) {
+      if (!netWorthSnapshots[market]) netWorthSnapshots[market] = {};
+      for (let i = 0; i < result.dates.length; i++) {
+        // Only backfill if we don't already have a snapshot for this date
+        if (!netWorthSnapshots[market][result.dates[i]] && result.values[i] > 0) {
+          netWorthSnapshots[market][result.dates[i]] = Math.round(result.values[i] * 100) / 100;
+        }
+      }
+    }
+  }
+
+  localStorage.setItem('nw_snapshots', JSON.stringify(netWorthSnapshots));
+  localStorage.setItem('nw_snapshots_backfilled', '1');
+  console.log('Snapshots backfilled:', Object.keys(netWorthSnapshots.us || {}).length, 'US,', Object.keys(netWorthSnapshots.tw || {}).length, 'TW');
 }
 
 function buildHistoricalData(accountIds, market, startDate, endDate) {
