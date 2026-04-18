@@ -1184,6 +1184,18 @@ async function loadAllDataFromSupabase() {
       Object.assign(twPrices, settings.settings.tw_prices);
       localStorage.setItem('tw_stock_prices', JSON.stringify(twPrices));
     }
+    // Restore net worth snapshots from cloud
+    if (settings.settings?.nw_snapshots) {
+      const cloud = settings.settings.nw_snapshots;
+      // Merge: cloud + local, keep the one with more data per market
+      for (const mkt of ['us', 'tw']) {
+        if (cloud[mkt]) {
+          if (!netWorthSnapshots[mkt]) netWorthSnapshots[mkt] = {};
+          Object.assign(netWorthSnapshots[mkt], cloud[mkt]);
+        }
+      }
+      localStorage.setItem('nw_snapshots', JSON.stringify(netWorthSnapshots));
+    }
   }
 
   // Load DCA templates
@@ -1880,6 +1892,7 @@ async function savePricesToCloud() {
   const s = existing?.settings || {};
   s.us_prices = prices;
   s.tw_prices = twPrices;
+  s.nw_snapshots = netWorthSnapshots;
   await sb.from('inv_user_settings').upsert({ user_id: uid, finnhub_key: localStorage.getItem('us_finnhub_key') || '', settings: s }, { onConflict: 'user_id' });
 }
 
