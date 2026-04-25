@@ -220,6 +220,11 @@
   }
   .tpl-date-label .adjusted { font-size: 0.78em; color: #fb923c; }
 
+  .pledge-status { display:inline-block;padding:2px 8px;border-radius:10px;font-size:0.78em;font-weight:600; }
+  .pledge-status.safe { background:rgba(52,211,153,0.15);color:#34d399; }
+  .pledge-status.warning { background:rgba(251,191,36,0.15);color:#fbbf24; }
+  .pledge-status.danger { background:rgba(248,113,113,0.15);color:#f87171; }
+
   .mortgage-input {
     display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;
   }
@@ -421,7 +426,7 @@
   <button class="tab-btn" onclick="switchTab('tw')">🇹🇼 台股投資</button>
   <button class="tab-btn" onclick="switchTab('dca')">📅 定期定額</button>
   <button class="tab-btn" onclick="switchTab('report')">📈 報表分析</button>
-  <button class="tab-btn" onclick="switchTab('mortgage')">🏠 房產/房貸</button>
+  <button class="tab-btn" onclick="switchTab('mortgage')">💰 貸款</button>
   <button class="tab-btn" onclick="switchTab('accounts')">⚙️ 帳戶管理</button>
 </div>
 
@@ -887,23 +892,34 @@
 
 <!-- ========== MORTGAGE TAB ========== -->
 <div id="mortgage" class="content-area">
-  <h2 style="margin-bottom:16px">🏠 房產 / 房貸管理</h2>
+  <h2 style="margin-bottom:16px">💰 貸款管理</h2>
 
-  <div class="tutorial-banner" id="tutorial-mortgage">
-    <button class="tutorial-close" onclick="this.parentElement.style.display='none';localStorage.setItem('hide_tutorial_mortgage','1')">✕</button>
-    <div class="tutorial-title">💡 房產/房貸使用說明</div>
-    • 支援「預售屋」和「成屋」兩種類型<br>
-    • 預售屋有工程款分段付款功能，最後兩筆（倒數第二筆和交屋款）會自動聯動計算<br>
-    • 工程款佔總價 % 和工程款總額可擇一填入，另一個自動帶入<br>
-    • 貸款部分：填剩餘貸款或已繳本金，另一個自動計算<br>
-    • 未手動填寫剩餘貸款時，系統自動帶入「總價 × 貸款比例」<br>
-    • 可綁定帳戶（戶名），在總覽中會歸到該持有人名下
+  <div style="display:flex;gap:0;margin-bottom:16px;border-bottom:1px solid rgba(255,255,255,0.08)">
+    <button class="tab-btn active" id="loanSubTab-mortgage" onclick="switchLoanSubTab('mortgage')">🏠 房產/房貸</button>
+    <button class="tab-btn" id="loanSubTab-pledge" onclick="switchLoanSubTab('pledge')">📊 質押借款</button>
   </div>
-  <script>if(localStorage.getItem('hide_tutorial_mortgage'))document.getElementById('tutorial-mortgage').style.display='none';</script>
 
-  <div id="mortgageList"></div>
+  <div id="loanSubContent-mortgage">
+    <div class="tutorial-banner" id="tutorial-mortgage">
+      <button class="tutorial-close" onclick="this.parentElement.style.display='none';localStorage.setItem('hide_tutorial_mortgage','1')">✕</button>
+      <div class="tutorial-title">💡 房產/房貸使用說明</div>
+      • 支援「預售屋」和「成屋」兩種類型<br>
+      • 預售屋有工程款分段付款功能，最後兩筆（倒數第二筆和交屋款）會自動聯動計算<br>
+      • 工程款佔總價 % 和工程款總額可擇一填入，另一個自動帶入<br>
+      • 貸款部分：填剩餘貸款或已繳本金，另一個自動計算<br>
+      • 未手動填寫剩餘貸款時，系統自動帶入「總價 × 貸款比例」<br>
+      • 可綁定帳戶（戶名），在總覽中會歸到該持有人名下
+    </div>
+    <script>if(localStorage.getItem('hide_tutorial_mortgage'))document.getElementById('tutorial-mortgage').style.display='none';</script>
 
-  <button class="btn btn-add" onclick="addMortgage()" style="margin-bottom:20px">＋ 新增房產</button>
+    <div id="mortgageList"></div>
+
+    <button class="btn btn-add" onclick="addMortgage()" style="margin-bottom:20px">＋ 新增房產</button>
+  </div>
+
+  <div id="loanSubContent-pledge" style="display:none">
+    <div id="pledgeContent"></div>
+  </div>
 </div>
 
 <!-- ========== ACCOUNTS TAB ========== -->
@@ -1197,6 +1213,10 @@ async function loadAllDataFromSupabase() {
       }
       localStorage.setItem('monthly_snapshots', JSON.stringify(monthlySnapshots));
     }
+    if (settings.settings?.pledges) {
+      pledges = settings.settings.pledges;
+      localStorage.setItem('stock_pledges', JSON.stringify(pledges));
+    }
   }
 
   // Load DCA templates
@@ -1459,6 +1479,7 @@ let accounts = [];
 let prices = JSON.parse(localStorage.getItem('stock_prices') || '{}');
 let usdTwdRate = parseFloat(localStorage.getItem('usd_twd_rate') || '32');
 let mortgages = [];
+let pledges = JSON.parse(localStorage.getItem('stock_pledges') || '[]');
 let currentOwnerFilter = '';
 let dcaLastAmounts = JSON.parse(localStorage.getItem('dca_last_amounts') || '{}');
 
@@ -1614,7 +1635,7 @@ function switchTab(tabName) {
   else if (tabName === 'tw') renderTWTab();
   else if (tabName === 'dca') renderDCATab();
   else if (tabName === 'report') renderReportTab();
-  else if (tabName === 'mortgage') renderMortgageTab();
+  else if (tabName === 'mortgage') { renderMortgageTab(); if (currentLoanSubTab === 'pledge') renderPledgeTab(); }
   else if (tabName === 'accounts') renderAccountsTab();
 }
 
@@ -1805,6 +1826,7 @@ async function savePricesToCloud() {
   s.us_prices = prices;
   s.tw_prices = twPrices;
   s.monthly_snapshots = monthlySnapshots;
+  s.pledges = pledges;
   await sb.from('inv_user_settings').upsert({ user_id: uid, finnhub_key: localStorage.getItem('us_finnhub_key') || '', settings: s }, { onConflict: 'user_id' });
 }
 
@@ -5017,6 +5039,243 @@ function deleteMortgage(id) {
   renderMortgageTab();
 }
 
+// ===== Loan Sub-Tab Switching =====
+let currentLoanSubTab = 'mortgage';
+function switchLoanSubTab(tab) {
+  currentLoanSubTab = tab;
+  ['mortgage','pledge'].forEach(t => {
+    document.getElementById('loanSubContent-' + t).style.display = t === tab ? 'block' : 'none';
+    document.getElementById('loanSubTab-' + t).classList.toggle('active', t === tab);
+  });
+  if (tab === 'pledge') renderPledgeTab();
+}
+
+// ===== Pledge (質押) Management =====
+function savePledges() {
+  localStorage.setItem('stock_pledges', JSON.stringify(pledges));
+  savePricesToCloud().catch(e => console.error('savePledges cloud sync error:', e));
+}
+
+function getTotalPledgeDebt() {
+  return pledges.reduce((s, p) => s + (p.loanAmount || 0), 0);
+}
+
+function getPledgeStatus(maintenanceRatio) {
+  if (maintenanceRatio >= 166) return { icon: '🟢', cls: 'safe', label: '安全' };
+  if (maintenanceRatio >= 130) return { icon: '🟡', cls: 'warning', label: '注意' };
+  return { icon: '🔴', cls: 'danger', label: '危險' };
+}
+
+function renderPledgeTab() {
+  const container = document.getElementById('pledgeContent');
+  if (!container) return;
+
+  const fmt = n => '$' + (n || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  const fmtPct = n => (n || 0).toFixed(1) + '%';
+
+  // Summary calculations
+  let totalLoan = 0, totalValue = 0, totalMonthlyInterest = 0;
+  pledges.forEach(p => {
+    const curPrice = prices[p.ticker]?.price || 0;
+    const curValue = p.shares * curPrice;
+    totalLoan += p.loanAmount || 0;
+    totalValue += curValue;
+    totalMonthlyInterest += (p.loanAmount || 0) * (p.interestRate || 0) / 100 / 12;
+  });
+  const overallRatio = totalLoan > 0 ? (totalValue / totalLoan * 100) : 999;
+  const overallStatus = getPledgeStatus(overallRatio);
+
+  let html = '';
+
+  // Summary cards
+  html += `<div class="summary">
+    <div class="card"><div class="label">質押筆數</div><div class="value blue">${pledges.length}</div></div>
+    <div class="card"><div class="label">總借款</div><div class="value neg">${fmt(totalLoan)}</div></div>
+    <div class="card"><div class="label">擔保市值</div><div class="value pos">${fmt(totalValue)}</div></div>
+    <div class="card"><div class="label">整體維持率</div><div class="value"><span class="pledge-status ${overallStatus.cls}">${overallStatus.icon} ${fmtPct(overallRatio)}</span></div></div>
+    <div class="card"><div class="label">每月利息</div><div class="value yellow">${fmt(totalMonthlyInterest)}</div></div>
+  </div>`;
+
+  // Pledge table
+  if (pledges.length > 0) {
+    html += `<div class="table-container">
+      <div class="table-header"><h3>📊 質押明細</h3></div>
+      <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:0.85em">
+        <thead><tr style="border-bottom:1px solid rgba(255,255,255,0.1)">
+          <th style="padding:10px;text-align:left">股票</th>
+          <th style="padding:10px;text-align:right">股數</th>
+          <th style="padding:10px;text-align:right">現價</th>
+          <th style="padding:10px;text-align:right">擔保市值</th>
+          <th style="padding:10px;text-align:right">借款金額</th>
+          <th style="padding:10px;text-align:right">維持率</th>
+          <th style="padding:10px;text-align:center">狀態</th>
+          <th style="padding:10px;text-align:right">追繳價</th>
+          <th style="padding:10px;text-align:right">月息</th>
+          <th style="padding:10px;text-align:left">持有人</th>
+          <th style="padding:10px;text-align:center">操作</th>
+        </tr></thead><tbody>`;
+
+    pledges.forEach(p => {
+      const curPrice = prices[p.ticker]?.price || 0;
+      const curValue = p.shares * curPrice;
+      const ratio = p.loanAmount > 0 ? (curValue / p.loanAmount * 100) : 999;
+      const status = getPledgeStatus(ratio);
+      const marginCallPrice = p.shares > 0 ? (p.loanAmount * (p.marginCallRate || 130) / 100 / p.shares) : 0;
+      const monthlyInt = (p.loanAmount || 0) * (p.interestRate || 0) / 100 / 12;
+
+      html += `<tr style="border-bottom:1px solid rgba(255,255,255,0.05)">
+        <td style="padding:8px"><strong>${p.ticker}</strong><br><span style="font-size:0.8em;color:#888">${p.broker || ''}</span></td>
+        <td style="padding:8px;text-align:right">${(p.shares || 0).toLocaleString()}</td>
+        <td style="padding:8px;text-align:right">${fmt(curPrice)}</td>
+        <td style="padding:8px;text-align:right">${fmt(curValue)}</td>
+        <td style="padding:8px;text-align:right;color:#f87171">${fmt(p.loanAmount)}</td>
+        <td style="padding:8px;text-align:right">${fmtPct(ratio)}</td>
+        <td style="padding:8px;text-align:center"><span class="pledge-status ${status.cls}">${status.icon} ${status.label}</span></td>
+        <td style="padding:8px;text-align:right;color:#fb923c">${fmt(marginCallPrice)}</td>
+        <td style="padding:8px;text-align:right;color:#fbbf24">${fmt(monthlyInt)}</td>
+        <td style="padding:8px">${p.owner || '-'}</td>
+        <td style="padding:8px;text-align:center">
+          <button class="btn-danger" onclick="openPledgeModal('${p.id}')" style="margin-right:4px">✏️</button>
+          <button class="btn-danger" onclick="deletePledge('${p.id}')">🗑️</button>
+        </td>
+      </tr>`;
+    });
+    html += `</tbody></table></div></div>`;
+  }
+
+  html += `<button class="btn btn-add" onclick="openPledgeModal()" style="margin-top:12px;margin-bottom:20px">＋ 新增質押</button>`;
+  container.innerHTML = html;
+}
+
+function openPledgeModal(editId) {
+  const p = editId ? pledges.find(x => x.id === editId) : null;
+  const isEdit = !!p;
+
+  // Build owner options from accounts
+  const owners = [...new Set(accounts.map(a => a.owner).filter(Boolean))];
+  const ownerOpts = owners.map(o => `<option value="${o}" ${p && p.owner === o ? 'selected' : ''}>${o}</option>`).join('');
+
+  // Build ticker suggestions from prices
+  const tickerList = Object.keys(prices).filter(t => prices[t]?.price).sort();
+
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
+
+  overlay.innerHTML = `
+    <div style="background:#1a1a2e;border:1px solid rgba(255,255,255,0.1);border-radius:14px;padding:24px;max-width:500px;width:100%;max-height:90vh;overflow-y:auto">
+      <h3 style="color:#a78bfa;margin-bottom:16px">${isEdit ? '✏️ 編輯質押' : '＋ 新增質押'}</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group">
+          <label>股票代碼</label>
+          <input id="pledge-ticker" list="pledge-tickers" value="${p?.ticker || ''}" placeholder="如 AAPL">
+          <datalist id="pledge-tickers">${tickerList.map(t => `<option value="${t}">`).join('')}</datalist>
+        </div>
+        <div class="form-group">
+          <label>質押股數</label>
+          <input type="number" id="pledge-shares" value="${p?.shares || ''}" placeholder="1000">
+        </div>
+        <div class="form-group">
+          <label>質押時股價</label>
+          <input type="number" id="pledge-price" value="${p?.pledgePrice || ''}" step="0.01" placeholder="150.00">
+        </div>
+        <div class="form-group">
+          <label>質押率 (%)</label>
+          <input type="number" id="pledge-ratio" value="${p?.pledgeRatio || 60}" step="1" placeholder="60">
+        </div>
+        <div class="form-group">
+          <label>借款金額 (USD)</label>
+          <input type="number" id="pledge-loan" value="${p?.loanAmount || ''}" step="1" placeholder="自動計算或手填">
+        </div>
+        <div class="form-group">
+          <label>年利率 (%)</label>
+          <input type="number" id="pledge-rate" value="${p?.interestRate ?? 2.5}" step="0.01" placeholder="2.5">
+        </div>
+        <div class="form-group">
+          <label>起始日期</label>
+          <input type="date" id="pledge-start" value="${p?.startDate || new Date().toISOString().slice(0,10)}">
+        </div>
+        <div class="form-group">
+          <label>持有人</label>
+          <select id="pledge-owner"><option value="">-- 選擇 --</option>${ownerOpts}</select>
+        </div>
+        <div class="form-group">
+          <label>券商</label>
+          <input id="pledge-broker" value="${p?.broker || ''}" placeholder="如 IB, Firstrade">
+        </div>
+        <div class="form-group">
+          <label>追繳維持率 (%)</label>
+          <input type="number" id="pledge-margin" value="${p?.marginCallRate || 130}" step="1">
+        </div>
+        <div class="form-group">
+          <label>斷頭維持率 (%)</label>
+          <input type="number" id="pledge-liquidation" value="${p?.liquidationRate || 120}" step="1">
+        </div>
+      </div>
+      <div class="form-group" style="margin-top:12px">
+        <label>備註</label>
+        <textarea id="pledge-notes" rows="2" style="width:100%">${p?.notes || ''}</textarea>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:16px">
+        <button class="btn btn-add" onclick="savePledgeFromModal('${editId || ''}')">💾 儲存</button>
+        <button class="btn btn-danger" onclick="this.closest('div[style*=position]').remove()" style="padding:8px 16px;font-size:0.9em">取消</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  // Auto-calculate loan amount when pledge price or ratio changes
+  const calcLoan = () => {
+    const shares = parseFloat(document.getElementById('pledge-shares').value) || 0;
+    const price = parseFloat(document.getElementById('pledge-price').value) || 0;
+    const ratio = parseFloat(document.getElementById('pledge-ratio').value) || 60;
+    const loanEl = document.getElementById('pledge-loan');
+    if (!loanEl.value || loanEl.dataset.auto === '1') {
+      loanEl.value = Math.round(shares * price * ratio / 100);
+      loanEl.dataset.auto = '1';
+    }
+  };
+  document.getElementById('pledge-shares').addEventListener('input', calcLoan);
+  document.getElementById('pledge-price').addEventListener('input', calcLoan);
+  document.getElementById('pledge-ratio').addEventListener('input', calcLoan);
+  document.getElementById('pledge-loan').addEventListener('input', function() { this.dataset.auto = '0'; });
+}
+
+function savePledgeFromModal(editId) {
+  const ticker = document.getElementById('pledge-ticker').value.trim().toUpperCase();
+  if (!ticker) { alert('請輸入股票代碼'); return; }
+  const shares = parseFloat(document.getElementById('pledge-shares').value) || 0;
+  const pledgePrice = parseFloat(document.getElementById('pledge-price').value) || 0;
+  const pledgeRatio = parseFloat(document.getElementById('pledge-ratio').value) || 60;
+  const loanAmount = parseFloat(document.getElementById('pledge-loan').value) || Math.round(shares * pledgePrice * pledgeRatio / 100);
+  const interestRate = parseFloat(document.getElementById('pledge-rate').value) ?? 2.5;
+  const startDate = document.getElementById('pledge-start').value;
+  const owner = document.getElementById('pledge-owner').value;
+  const broker = document.getElementById('pledge-broker').value.trim();
+  const marginCallRate = parseFloat(document.getElementById('pledge-margin').value) || 130;
+  const liquidationRate = parseFloat(document.getElementById('pledge-liquidation').value) || 120;
+  const notes = document.getElementById('pledge-notes').value.trim();
+
+  if (editId) {
+    const p = pledges.find(x => x.id === editId);
+    if (p) Object.assign(p, { ticker, shares, pledgePrice, pledgeRatio, loanAmount, interestRate, startDate, owner, broker, marginCallRate, liquidationRate, notes });
+  } else {
+    pledges.push({ id: Date.now().toString(), ticker, shares, pledgePrice, pledgeRatio, loanAmount, interestRate, startDate, owner, broker, marginCallRate, liquidationRate, notes });
+  }
+  savePledges();
+  // Close modal
+  const overlay = document.querySelector('div[style*="position:fixed"][style*="z-index:9999"]');
+  if (overlay) overlay.remove();
+  renderPledgeTab();
+}
+
+function deletePledge(id) {
+  if (!confirm('確定刪除此質押紀錄？')) return;
+  pledges = pledges.filter(p => p.id !== id);
+  savePledges();
+  renderPledgeTab();
+}
+
 function calculateMonthlyPayment(remainingLoan, remainingMonths, annualRate) {
   // 本息均攤公式: 月付 = P * r * (1+r)^n / ((1+r)^n - 1)
   if (remainingLoan <= 0 || remainingMonths <= 0) return 0;
@@ -5644,6 +5903,7 @@ function backupAllLocalStorage() {
   // Save accounts and mortgages
   backup['inv_accounts'] = JSON.stringify(accounts);
   backup['inv_mortgages'] = JSON.stringify(mortgages);
+  backup['stock_pledges'] = JSON.stringify(pledges);
 
   // Save all account data from cache
   for (const acc of accounts) {
@@ -5710,6 +5970,12 @@ function restoreFromBackup(event) {
       for (const [key, value] of Object.entries(data)) {
         if (key.startsWith('_')) continue;
         localStorage.setItem(key, value);
+      }
+
+      // Restore pledges from backup
+      if (data['stock_pledges']) {
+        pledges = JSON.parse(data['stock_pledges']);
+        localStorage.setItem('stock_pledges', JSON.stringify(pledges));
       }
 
       // Parse and migrate to Supabase
