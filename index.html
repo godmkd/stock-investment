@@ -3109,7 +3109,7 @@ function getAccountTotalIncome(accountId, market) {
 }
 
 // ===== Render: Overview =====
-function calcOwnerSummary(ownerAccounts, ownerMortgages, applyPct = true) {
+function calcOwnerSummary(ownerAccounts, ownerMortgages, applyPct = true, owner = null) {
   let usStocksValue = 0, usNetCash = 0, usNetFunded = 0;
   let twStocksValue = 0, twNetCash = 0, twNetFunded = 0;
 
@@ -3150,7 +3150,11 @@ function calcOwnerSummary(ownerAccounts, ownerMortgages, applyPct = true) {
   const usNetWorth = usStocksValue + usNetCash; // USD
   const twNetWorth = twStocksValue + twNetCash; // TWD
   const propertyValue = ownerMortgages.reduce((s, m) => s + m.totalPrice * 10000, 0); // TWD
-  const totalDebt = ownerMortgages.reduce((s, m) => s + getMortgageDebt(m), 0); // TWD
+  const mortgageDebt = ownerMortgages.reduce((s, m) => s + getMortgageDebt(m), 0); // TWD
+  // Pledge debt: filter by owner, sum loan amounts (USD → TWD)
+  const ownerPledges = owner ? pledges.filter(p => p.owner === owner) : pledges;
+  const pledgeDebt = ownerPledges.reduce((s, p) => s + (p.loanAmount || 0), 0) * usdTwdRate; // TWD
+  const totalDebt = mortgageDebt + pledgeDebt;
   const totalAssets = usNetWorth * usdTwdRate + twNetWorth + propertyValue; // TWD
   const netAssets = totalAssets - totalDebt;
 
@@ -3312,7 +3316,7 @@ function renderOverviewTab() {
       const ownerAccounts = accounts.filter(a => a.owner === owner);
       const ownerAccIds = ownerAccounts.map(a => a.id);
       const ownerMortgages = mortgages.filter(m => m.owner === owner || (m.accountId && ownerAccIds.includes(m.accountId)));
-      const summary = calcOwnerSummary(ownerAccounts, ownerMortgages);
+      const summary = calcOwnerSummary(ownerAccounts, ownerMortgages, true, owner);
       // Save per-owner snapshots
       if (summary.usNetWorth > 0) saveMonthlySnapshot('us', summary.usNetWorth, owner);
       if (summary.twNetWorth > 0) saveMonthlySnapshot('tw', summary.twNetWorth, owner);
@@ -3362,7 +3366,7 @@ function renderOverviewTab() {
     return;
   }
 
-  const summary = calcOwnerSummary(filteredAccounts, filteredMortgages, !!currentOwnerFilter);
+  const summary = calcOwnerSummary(filteredAccounts, filteredMortgages, !!currentOwnerFilter, currentOwnerFilter || null);
   const titleText = currentOwnerFilter ? '👤 ' + currentOwnerFilter : '';
   // Save per-owner snapshots from overview tab
   const ovwOwner = currentOwnerFilter || null;
