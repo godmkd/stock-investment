@@ -5073,14 +5073,26 @@ function renderPledgeTab() {
   const fmt = n => '$' + (n || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
   const fmtPct = n => (n || 0).toFixed(1) + '%';
 
+  // Helper: get current price for pledge ticker (try multiple formats)
+  function getPledgePrice(ticker) {
+    const t = (ticker || '').toUpperCase().trim();
+    if (prices[t]?.price) return prices[t].price;
+    if (prices[ticker]?.price) return prices[ticker].price;
+    // Try TW price
+    const twP = typeof getTWPrice === 'function' ? getTWPrice(t) : null;
+    if (twP?.price) return twP.price;
+    return 0;
+  }
+
   // Summary calculations
-  let totalLoan = 0, totalValue = 0, totalMonthlyInterest = 0;
+  let totalLoan = 0, totalValue = 0, totalInterest = 0;
   pledges.forEach(p => {
-    const curPrice = prices[p.ticker]?.price || 0;
+    const curPrice = getPledgePrice(p.ticker) || p.pledgePrice || 0;
     const curValue = p.shares * curPrice;
     totalLoan += p.loanAmount || 0;
     totalValue += curValue;
-    totalMonthlyInterest += (p.loanAmount || 0) * (p.interestRate || 0) / 100 / 12;
+    // 利息 = 借款 × 年利率（結算時一次繳）
+    totalInterest += (p.loanAmount || 0) * (p.interestRate || 0) / 100;
   });
   const overallRatio = totalLoan > 0 ? (totalValue / totalLoan * 100) : 999;
   const overallStatus = getPledgeStatus(overallRatio);
@@ -5093,7 +5105,7 @@ function renderPledgeTab() {
     <div class="card"><div class="label">總借款</div><div class="value neg">${fmt(totalLoan)}</div></div>
     <div class="card"><div class="label">擔保市值</div><div class="value pos">${fmt(totalValue)}</div></div>
     <div class="card"><div class="label">整體維持率</div><div class="value"><span class="pledge-status ${overallStatus.cls}">${overallStatus.icon} ${fmtPct(overallRatio)}</span></div></div>
-    <div class="card"><div class="label">每月利息</div><div class="value yellow">${fmt(totalMonthlyInterest)}</div></div>
+    <div class="card"><div class="label">年利息</div><div class="value yellow">${fmt(totalInterest)}</div></div>
   </div>`;
 
   // Pledge table
@@ -5111,18 +5123,18 @@ function renderPledgeTab() {
           <th style="padding:10px;text-align:right">維持率</th>
           <th style="padding:10px;text-align:center">狀態</th>
           <th style="padding:10px;text-align:right">追繳價</th>
-          <th style="padding:10px;text-align:right">月息</th>
+          <th style="padding:10px;text-align:right">年息</th>
           <th style="padding:10px;text-align:left">持有人</th>
           <th style="padding:10px;text-align:center">操作</th>
         </tr></thead><tbody>`;
 
     pledges.forEach(p => {
-      const curPrice = prices[p.ticker]?.price || 0;
+      const curPrice = getPledgePrice(p.ticker) || p.pledgePrice || 0;
       const curValue = p.shares * curPrice;
       const ratio = p.loanAmount > 0 ? (curValue / p.loanAmount * 100) : 999;
       const status = getPledgeStatus(ratio);
       const marginCallPrice = p.shares > 0 ? (p.loanAmount * (p.marginCallRate || 130) / 100 / p.shares) : 0;
-      const monthlyInt = (p.loanAmount || 0) * (p.interestRate || 0) / 100 / 12;
+      const yearlyInt = (p.loanAmount || 0) * (p.interestRate || 0) / 100;
 
       html += `<tr style="border-bottom:1px solid rgba(255,255,255,0.05)">
         <td style="padding:8px"><strong>${p.ticker}</strong><br><span style="font-size:0.8em;color:#888">${p.broker || ''}</span></td>
@@ -5133,7 +5145,7 @@ function renderPledgeTab() {
         <td style="padding:8px;text-align:right">${fmtPct(ratio)}</td>
         <td style="padding:8px;text-align:center"><span class="pledge-status ${status.cls}">${status.icon} ${status.label}</span></td>
         <td style="padding:8px;text-align:right;color:#fb923c">${fmt(marginCallPrice)}</td>
-        <td style="padding:8px;text-align:right;color:#fbbf24">${fmt(monthlyInt)}</td>
+        <td style="padding:8px;text-align:right;color:#fbbf24">${fmt(yearlyInt)}</td>
         <td style="padding:8px">${p.owner || '-'}</td>
         <td style="padding:8px;text-align:center">
           <button class="btn-danger" onclick="openPledgeModal('${p.id}')" style="margin-right:4px">✏️</button>
