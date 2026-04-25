@@ -5124,6 +5124,9 @@ function renderPledgeTab() {
           <th style="padding:10px;text-align:center">狀態</th>
           <th style="padding:10px;text-align:right">追繳價</th>
           <th style="padding:10px;text-align:right">年息</th>
+          <th style="padding:10px;text-align:right">還款月數</th>
+          <th style="padding:10px;text-align:right">總利息</th>
+          <th style="padding:10px;text-align:right">總還款</th>
           <th style="padding:10px;text-align:left">持有人</th>
           <th style="padding:10px;text-align:center">操作</th>
         </tr></thead><tbody>`;
@@ -5146,6 +5149,9 @@ function renderPledgeTab() {
         <td style="padding:8px;text-align:center"><span class="pledge-status ${status.cls}">${status.icon} ${status.label}</span></td>
         <td style="padding:8px;text-align:right;color:#fb923c">${fmt(marginCallPrice)}</td>
         <td style="padding:8px;text-align:right;color:#fbbf24">${fmt(yearlyInt)}</td>
+        <td style="padding:8px;text-align:right">${p.repayMonths || '-'}</td>
+        <td style="padding:8px;text-align:right">${p.repayMonths ? fmt(p.loanAmount * p.interestRate / 100 * p.repayMonths / 12) : '-'}</td>
+        <td style="padding:8px;text-align:right;font-weight:600">${p.repayMonths ? fmt(p.loanAmount + p.loanAmount * p.interestRate / 100 * p.repayMonths / 12) : '-'}</td>
         <td style="padding:8px">${p.owner || '-'}</td>
         <td style="padding:8px;text-align:center">
           <button class="btn-danger" onclick="openPledgeModal('${p.id}')" style="margin-right:4px">✏️</button>
@@ -5224,6 +5230,14 @@ function openPledgeModal(editId) {
           <label>斷頭維持率 (%)</label>
           <input type="number" id="pledge-liquidation" value="${p?.liquidationRate || 120}" step="1">
         </div>
+        <div class="form-group">
+          <label>還款月數</label>
+          <input type="number" id="pledge-months" value="${p?.repayMonths || ''}" min="1" placeholder="如 12">
+        </div>
+        <div class="form-group">
+          <label>總利息 / 總還款</label>
+          <div id="pledge-calc-result" style="padding:6px 0;font-size:0.85em;color:#fbbf24">--</div>
+        </div>
       </div>
       <div class="form-group" style="margin-top:12px">
         <label>備註</label>
@@ -5247,10 +5261,26 @@ function openPledgeModal(editId) {
       loanEl.dataset.auto = '1';
     }
   };
-  document.getElementById('pledge-shares').addEventListener('input', calcLoan);
-  document.getElementById('pledge-price').addEventListener('input', calcLoan);
-  document.getElementById('pledge-ratio').addEventListener('input', calcLoan);
-  document.getElementById('pledge-loan').addEventListener('input', function() { this.dataset.auto = '0'; });
+  const calcRepay = () => {
+    const loan = parseFloat(document.getElementById('pledge-loan').value) || 0;
+    const rate = parseFloat(document.getElementById('pledge-rate').value) || 0;
+    const months = parseInt(document.getElementById('pledge-months').value) || 0;
+    const el = document.getElementById('pledge-calc-result');
+    if (loan > 0 && months > 0) {
+      const totalInterest = loan * rate / 100 * (months / 12);
+      const totalRepay = loan + totalInterest;
+      el.innerHTML = `利息：<strong>${fmt(totalInterest)}</strong> ｜ 總還款：<strong>${fmt(totalRepay)}</strong>`;
+    } else {
+      el.textContent = '請填入借款金額和還款月數';
+    }
+  };
+  document.getElementById('pledge-shares').addEventListener('input', () => { calcLoan(); calcRepay(); });
+  document.getElementById('pledge-price').addEventListener('input', () => { calcLoan(); calcRepay(); });
+  document.getElementById('pledge-ratio').addEventListener('input', () => { calcLoan(); calcRepay(); });
+  document.getElementById('pledge-loan').addEventListener('input', function() { this.dataset.auto = '0'; calcRepay(); });
+  document.getElementById('pledge-rate').addEventListener('input', calcRepay);
+  document.getElementById('pledge-months').addEventListener('input', calcRepay);
+  calcRepay(); // initial calculation for edit mode
 }
 
 function savePledgeFromModal(editId) {
@@ -5266,13 +5296,14 @@ function savePledgeFromModal(editId) {
   const broker = document.getElementById('pledge-broker').value.trim();
   const marginCallRate = parseFloat(document.getElementById('pledge-margin').value) || 130;
   const liquidationRate = parseFloat(document.getElementById('pledge-liquidation').value) || 120;
+  const repayMonths = parseInt(document.getElementById('pledge-months').value) || 0;
   const notes = document.getElementById('pledge-notes').value.trim();
 
   if (editId) {
     const p = pledges.find(x => x.id === editId);
-    if (p) Object.assign(p, { ticker, shares, pledgePrice, pledgeRatio, loanAmount, interestRate, startDate, owner, broker, marginCallRate, liquidationRate, notes });
+    if (p) Object.assign(p, { ticker, shares, pledgePrice, pledgeRatio, loanAmount, interestRate, startDate, owner, broker, marginCallRate, liquidationRate, repayMonths, notes });
   } else {
-    pledges.push({ id: Date.now().toString(), ticker, shares, pledgePrice, pledgeRatio, loanAmount, interestRate, startDate, owner, broker, marginCallRate, liquidationRate, notes });
+    pledges.push({ id: Date.now().toString(), ticker, shares, pledgePrice, pledgeRatio, loanAmount, interestRate, startDate, owner, broker, marginCallRate, liquidationRate, repayMonths, notes });
   }
   savePledges();
   // Close modal
