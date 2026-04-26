@@ -180,7 +180,12 @@ input{font-family:inherit;font-size:inherit}
 const SUPABASE_URL='https://kvnwfesbnxzoqpdgauov.supabase.co';
 const SUPABASE_ANON_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt2bndmZXNibnh6b3FwZGdhdW92Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUwNTAwMjIsImV4cCI6MjA5MDYyNjAyMn0.wpf9rUcPiaTUkDVhVgUaxBJ2rA4WaAMHG7tgSv9BOOQ';
 const sb=supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
-const CORS_PROXY='https://api.allorigins.win/raw?url=';
+// Multiple CORS proxies as fallback
+const CORS_PROXIES=[
+  'https://api.allorigins.win/raw?url=',
+  'https://corsproxy.io/?url=',
+  'https://api.codetabs.com/v1/proxy?quest='
+];
 
 let currentUser=null;
 let watchlist=[];
@@ -348,24 +353,30 @@ async function fetchStockData(code){
   for(let i=0;i<months.length;i++){
     const d=months[i];
     const ym=`${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}01`;
-    const url=`${CORS_PROXY}${encodeURIComponent(`https://www.twse.com.tw/exchangeReport/STOCK_DAY?response=json&date=${ym}&stockNo=${code}`)}`;
-    try{
-      const resp=await fetch(url);
-      const json=await resp.json();
-      if(json.stat==='OK'&&json.data){
-        for(const r of json.data){
-          rows.push({
-            date:twseDateToJS(r[0]),
-            dateStr:r[0],
-            volume:parseVolume(r[1]),
-            open:parsePrice(r[3]),
-            high:parsePrice(r[4]),
-            low:parsePrice(r[5]),
-            close:parsePrice(r[6]),
-          });
+    const twseUrl=`https://www.twse.com.tw/exchangeReport/STOCK_DAY?response=json&date=${ym}&stockNo=${code}`;
+    let fetched=false;
+    for(const proxy of CORS_PROXIES){
+      if(fetched)break;
+      try{
+        const url=proxy+encodeURIComponent(twseUrl);
+        const resp=await fetch(url,{signal:AbortSignal.timeout(8000)});
+        const json=await resp.json();
+        if(json.stat==='OK'&&json.data){
+          for(const r of json.data){
+            rows.push({
+              date:twseDateToJS(r[0]),
+              dateStr:r[0],
+              volume:parseVolume(r[1]),
+              open:parsePrice(r[3]),
+              high:parsePrice(r[4]),
+              low:parsePrice(r[5]),
+              close:parsePrice(r[6]),
+            });
+          }
+          fetched=true;
         }
-      }
-    }catch(e){console.log('fetch err',ym,e)}
+      }catch(e){console.log('proxy failed',proxy,ym,e)}
+    }
     if(i<months.length-1)await sleep(400);
   }
 
