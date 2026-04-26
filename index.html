@@ -3202,8 +3202,8 @@ function renderOwnerBlock(title, summary, ownerMortgages) {
         <div class="card" style="${cardStyle}">
           <div class="label">🇺🇸 美股淨值</div>
           <div class="value blue">${fmt(usNetWorth)}</div>
-          <div class="sub" style="color:#fbbf24;margin-top:2px">${fmtTWD(usNetWorth * usdTwdRate)}</div>
           <div class="sub">投報: <span class="${plClass(usRet)}">${fmtPct(usRet)}</span></div>
+          <div class="sub" style="color:#fbbf24;margin-top:2px">${fmtTWD(usNetWorth * usdTwdRate)}</div>
         </div>
         ${usWeightedAvgRate > 0 ? `<div class="card" style="${cardStyle}">
           <div class="label">🇺🇸 美股台幣損益</div>
