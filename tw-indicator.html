@@ -209,7 +209,7 @@ async function emailLogin(){
 
 async function lineLogin(){
   try{
-    const{error}=await sb.auth.signInWithOAuth({provider:'line',options:{redirectTo:location.href}});
+    const{error}=await sb.auth.signInWithOAuth({provider:'custom:line',options:{redirectTo:location.origin+location.pathname,queryParams:{prompt:'consent'}}});
     if(error)throw error;
   }catch(e){showMsg(e.message||'LINE 登入失敗')}
 }
