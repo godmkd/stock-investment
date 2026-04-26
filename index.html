@@ -3151,9 +3151,12 @@ function calcOwnerSummary(ownerAccounts, ownerMortgages, applyPct = true, owner 
   const twNetWorth = twStocksValue + twNetCash; // TWD
   const propertyValue = ownerMortgages.reduce((s, m) => s + m.totalPrice * 10000, 0); // TWD
   const mortgageDebt = ownerMortgages.reduce((s, m) => s + getMortgageDebt(m), 0); // TWD
-  // Pledge debt: filter by owner, sum loan amounts (USD → TWD)
+  // Pledge debt: filter by owner, sum loan amounts (convert to TWD based on market)
   const ownerPledges = owner ? pledges.filter(p => p.owner === owner) : pledges;
-  const pledgeDebt = ownerPledges.reduce((s, p) => s + (p.loanAmount || 0), 0) * usdTwdRate; // TWD
+  const pledgeDebt = ownerPledges.reduce((s, p) => {
+    const rate = (p.market || 'us') === 'us' ? usdTwdRate : 1;
+    return s + (p.loanAmount || 0) * rate;
+  }, 0); // TWD
   const totalDebt = mortgageDebt + pledgeDebt;
   const totalAssets = usNetWorth * usdTwdRate + twNetWorth + propertyValue; // TWD
   const netAssets = totalAssets - totalDebt;
@@ -5077,39 +5080,48 @@ function renderPledgeTab() {
   const fmt = n => '$' + (n || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
   const fmtPct = n => (n || 0).toFixed(1) + '%';
 
-  // Helper: get current price for pledge ticker (try multiple formats)
-  function getPledgePrice(ticker) {
+  // Helper: get current price for pledge ticker based on market
+  function getPledgePrice(ticker, market) {
     const t = (ticker || '').toUpperCase().trim();
-    if (prices[t]?.price) return prices[t].price;
-    if (prices[ticker]?.price) return prices[ticker].price;
-    // Try TW price
-    const twP = typeof getTWPrice === 'function' ? getTWPrice(t) : null;
-    if (twP?.price) return twP.price;
+    if (market === 'tw') {
+      const twP = typeof getTWPrice === 'function' ? getTWPrice(t) : null;
+      if (twP?.price) return twP.price;
+    } else {
+      if (prices[t]?.price) return prices[t].price;
+      if (prices[ticker]?.price) return prices[ticker].price;
+    }
     return 0;
   }
 
-  // Summary calculations
-  let totalLoan = 0, totalValue = 0, totalInterest = 0;
+  function pledgeCurrency(market) { return market === 'tw' ? 'TWD' : 'USD'; }
+  function fmtPledge(n, market) {
+    if (market === 'tw') return 'NT$' + Math.round(n || 0).toLocaleString();
+    return '$' + (n || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  }
+
+  // Summary calculations (convert everything to TWD for totals)
+  let totalLoanTWD = 0, totalValueTWD = 0, totalInterestTWD = 0;
   pledges.forEach(p => {
-    const curPrice = getPledgePrice(p.ticker) || p.pledgePrice || 0;
+    const mkt = p.market || 'us';
+    const rate = mkt === 'us' ? usdTwdRate : 1;
+    const curPrice = getPledgePrice(p.ticker, mkt) || p.pledgePrice || 0;
     const curValue = p.shares * curPrice;
-    totalLoan += p.loanAmount || 0;
-    totalValue += curValue;
-    // 利息 = 借款 × 年利率（結算時一次繳）
-    totalInterest += (p.loanAmount || 0) * (p.interestRate || 0) / 100;
+    totalLoanTWD += (p.loanAmount || 0) * rate;
+    totalValueTWD += curValue * rate;
+    totalInterestTWD += (p.loanAmount || 0) * (p.interestRate || 0) / 100 * rate;
   });
-  const overallRatio = totalLoan > 0 ? (totalValue / totalLoan * 100) : 999;
+  const overallRatio = totalLoanTWD > 0 ? (totalValueTWD / totalLoanTWD * 100) : 999;
   const overallStatus = getPledgeStatus(overallRatio);
 
   let html = '';
 
-  // Summary cards
+  // Summary cards (all in TWD)
   html += `<div class="summary">
     <div class="card"><div class="label">質押筆數</div><div class="value blue">${pledges.length}</div></div>
-    <div class="card"><div class="label">總借款</div><div class="value neg">${fmt(totalLoan)}</div></div>
-    <div class="card"><div class="label">擔保市值</div><div class="value pos">${fmt(totalValue)}</div></div>
+    <div class="card"><div class="label">總借款 (TWD)</div><div class="value neg">${fmtTWD(totalLoanTWD)}</div></div>
+    <div class="card"><div class="label">擔保市值 (TWD)</div><div class="value pos">${fmtTWD(totalValueTWD)}</div></div>
     <div class="card"><div class="label">整體維持率</div><div class="value"><span class="pledge-status ${overallStatus.cls}">${overallStatus.icon} ${fmtPct(overallRatio)}</span></div></div>
-    <div class="card"><div class="label">年利息</div><div class="value yellow">${fmt(totalInterest)}</div></div>
+    <div class="card"><div class="label">年利息 (TWD)</div><div class="value yellow">${fmtTWD(totalInterestTWD)}</div></div>
   </div>`;
 
   // Pledge table
@@ -5136,26 +5148,29 @@ function renderPledgeTab() {
         </tr></thead><tbody>`;
 
     pledges.forEach(p => {
-      const curPrice = getPledgePrice(p.ticker) || p.pledgePrice || 0;
+      const mkt = p.market || 'us';
+      const pFmt = (n) => fmtPledge(n, mkt);
+      const curPrice = getPledgePrice(p.ticker, mkt) || p.pledgePrice || 0;
       const curValue = p.shares * curPrice;
       const ratio = p.loanAmount > 0 ? (curValue / p.loanAmount * 100) : 999;
       const status = getPledgeStatus(ratio);
       const marginCallPrice = p.shares > 0 ? (p.loanAmount * (p.marginCallRate || 130) / 100 / p.shares) : 0;
       const yearlyInt = (p.loanAmount || 0) * (p.interestRate || 0) / 100;
+      const flag = mkt === 'tw' ? '🇹🇼' : '🇺🇸';
 
       html += `<tr style="border-bottom:1px solid rgba(255,255,255,0.05)">
-        <td style="padding:8px"><strong>${p.ticker}</strong><br><span style="font-size:0.8em;color:#888">${p.broker || ''}</span></td>
+        <td style="padding:8px"><strong>${flag} ${p.ticker}</strong><br><span style="font-size:0.8em;color:#888">${p.broker || ''}</span></td>
         <td style="padding:8px;text-align:right">${(p.shares || 0).toLocaleString()}</td>
-        <td style="padding:8px;text-align:right">${fmt(curPrice)}</td>
-        <td style="padding:8px;text-align:right">${fmt(curValue)}</td>
-        <td style="padding:8px;text-align:right;color:#f87171">${fmt(p.loanAmount)}</td>
+        <td style="padding:8px;text-align:right">${pFmt(curPrice)}</td>
+        <td style="padding:8px;text-align:right">${pFmt(curValue)}</td>
+        <td style="padding:8px;text-align:right;color:#f87171">${pFmt(p.loanAmount)}</td>
         <td style="padding:8px;text-align:right">${fmtPct(ratio)}</td>
         <td style="padding:8px;text-align:center"><span class="pledge-status ${status.cls}">${status.icon} ${status.label}</span></td>
-        <td style="padding:8px;text-align:right;color:#fb923c">${fmt(marginCallPrice)}</td>
-        <td style="padding:8px;text-align:right;color:#fbbf24">${fmt(yearlyInt)}</td>
+        <td style="padding:8px;text-align:right;color:#fb923c">${pFmt(marginCallPrice)}</td>
+        <td style="padding:8px;text-align:right;color:#fbbf24">${pFmt(yearlyInt)}</td>
         <td style="padding:8px;text-align:right">${p.repayMonths || '-'}</td>
-        <td style="padding:8px;text-align:right">${p.repayMonths ? fmt(p.loanAmount * p.interestRate / 100 * p.repayMonths / 12) : '-'}</td>
-        <td style="padding:8px;text-align:right;font-weight:600">${p.repayMonths ? fmt(p.loanAmount + p.loanAmount * p.interestRate / 100 * p.repayMonths / 12) : '-'}</td>
+        <td style="padding:8px;text-align:right">${p.repayMonths ? pFmt(p.loanAmount * p.interestRate / 100 * p.repayMonths / 12) : '-'}</td>
+        <td style="padding:8px;text-align:right;font-weight:600">${p.repayMonths ? pFmt(p.loanAmount + p.loanAmount * p.interestRate / 100 * p.repayMonths / 12) : '-'}</td>
         <td style="padding:8px">${p.owner || '-'}</td>
         <td style="padding:8px;text-align:center">
           <button class="btn-danger" onclick="openPledgeModal('${p.id}')" style="margin-right:4px">✏️</button>
@@ -5193,6 +5208,13 @@ function openPledgeModal(editId) {
           <label>股票代碼</label>
           <input id="pledge-ticker" list="pledge-tickers" value="${p?.ticker || ''}" placeholder="如 AAPL">
           <datalist id="pledge-tickers">${tickerList.map(t => `<option value="${t}">`).join('')}</datalist>
+        </div>
+        <div class="form-group">
+          <label>市場</label>
+          <select id="pledge-market">
+            <option value="us" ${(!p || p.market === 'us') ? 'selected' : ''}>🇺🇸 美股 (USD)</option>
+            <option value="tw" ${p?.market === 'tw' ? 'selected' : ''}>🇹🇼 台股 (TWD)</option>
+          </select>
         </div>
         <div class="form-group">
           <label>質押股數</label>
@@ -5288,6 +5310,7 @@ function openPledgeModal(editId) {
 }
 
 function savePledgeFromModal(editId) {
+  const market = document.getElementById('pledge-market').value;
   const ticker = document.getElementById('pledge-ticker').value.trim().toUpperCase();
   if (!ticker) { alert('請輸入股票代碼'); return; }
   const shares = parseFloat(document.getElementById('pledge-shares').value) || 0;
@@ -5305,9 +5328,9 @@ function savePledgeFromModal(editId) {
 
   if (editId) {
     const p = pledges.find(x => x.id === editId);
-    if (p) Object.assign(p, { ticker, shares, pledgePrice, pledgeRatio, loanAmount, interestRate, startDate, owner, broker, marginCallRate, liquidationRate, repayMonths, notes });
+    if (p) Object.assign(p, { market, ticker, shares, pledgePrice, pledgeRatio, loanAmount, interestRate, startDate, owner, broker, marginCallRate, liquidationRate, repayMonths, notes });
   } else {
-    pledges.push({ id: Date.now().toString(), ticker, shares, pledgePrice, pledgeRatio, loanAmount, interestRate, startDate, owner, broker, marginCallRate, liquidationRate, repayMonths, notes });
+    pledges.push({ id: Date.now().toString(), market, ticker, shares, pledgePrice, pledgeRatio, loanAmount, interestRate, startDate, owner, broker, marginCallRate, liquidationRate, repayMonths, notes });
   }
   savePledges();
   // Close modal
