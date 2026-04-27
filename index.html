@@ -4305,7 +4305,7 @@ function renderStockSections(containerId, analysis, trades, market) {
     </div>
   ` + analysis.map(s => {
     // Match trades by normalized key (e.g., both "台積電" and "2330" → "2330")
-    const tickerTrades = trades.filter(t => normalizeTickerKey(t.ticker, market) === s.ticker).sort((a, b) => a.date.localeCompare(b.date));
+    const tickerTrades = trades.filter(t => normalizeTickerKey(t.ticker, market) === s.ticker).sort((a, b) => b.date.localeCompare(a.date));
     const buys = tickerTrades.filter(t => t.type === 'buy');
     const sells = tickerTrades.filter(t => t.type === 'sell');
     const twDisplay = isTW ? getTWTickerDisplay(s.ticker) : null;
