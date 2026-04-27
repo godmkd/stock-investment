@@ -22,6 +22,8 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY")
 
 TWSE_STOCK_DAY_URL = "https://www.twse.com.tw/exchangeReport/STOCK_DAY"
+TWSE_T86_URL = "https://www.twse.com.tw/fund/T86"  # 三大法人買賣超
+TWSE_EPS_URL = "https://mops.twse.com.tw/mops/web/ajax_t163sb04"  # EPS
 API_DELAY_SECONDS = 1.5  # be polite to TWSE
 BACKFILL_MONTHS = 6
 
@@ -110,6 +112,49 @@ def fetch_twse_month(stock_code: str, year: int, month: int) -> list[dict]:
         })
 
     return rows
+
+
+def fetch_institutional_data(date_str: str, stock_codes: list[str]) -> dict[str, dict]:
+    """
+    Fetch 三大法人買賣超 for a given date (YYYYMMDD format).
+    Returns dict: stock_code -> { foreign_buy, foreign_sell, foreign_net, trust_buy, trust_sell, trust_net, dealer_net, institutional_net }
+    """
+    params = {"response": "json", "date": date_str, "selectType": "ALL"}
+    try:
+        resp = requests.get(TWSE_T86_URL, params=params, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+    except (requests.RequestException, ValueError) as exc:
+        print(f"  [WARN] T86 fetch error for {date_str}: {exc}")
+        return {}
+
+    if data.get("stat") != "OK" or "data" not in data:
+        return {}
+
+    result = {}
+    codes_set = set(stock_codes)
+    for row in data["data"]:
+        code = row[0].strip()
+        if code not in codes_set:
+            continue
+        # T86 columns: 證券代號, 證券名稱, 外陸資買(不含自營), 外陸資賣(不含自營), 外陸資淨買,
+        #   外資自營商買, 外資自營商賣, 外資自營商淨買, 投信買, 投信賣, 投信淨買,
+        #   自營商淨買賣, 自營商(自行)買, 自營商(自行)賣, 自營商(自行)淨買賣,
+        #   自營商(避險)買, 自營商(避險)賣, 自營商(避險)淨買賣, 三大法人淨買超
+        try:
+            result[code] = {
+                "foreign_buy": parse_volume(row[2]),
+                "foreign_sell": parse_volume(row[3]),
+                "foreign_net": parse_volume(row[4]),
+                "trust_buy": parse_volume(row[8]),
+                "trust_sell": parse_volume(row[9]),
+                "trust_net": parse_volume(row[10]),
+                "dealer_net": parse_volume(row[11]),
+                "institutional_net": parse_volume(row[18]) if len(row) > 18 else parse_volume(row[11]),
+            }
+        except (IndexError, TypeError):
+            continue
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -205,7 +250,39 @@ def main():
 
             time.sleep(API_DELAY_SECONDS)
 
-    print(f"\n=== Done. Total rows upserted: {total_upserted} ===")
+    # 4. Fetch institutional trading data (三大法人) for recent trading days
+    print("\n=== Fetching institutional data (三大法人) ===")
+    # Fetch last 5 trading days
+    for days_ago in range(5):
+        d = today - timedelta(days=days_ago)
+        if d.weekday() >= 5:  # skip weekends
+            continue
+        date_str = d.strftime("%Y%m%d")
+        print(f"  Fetching T86 for {date_str} ...", end=" ", flush=True)
+        inst_data = fetch_institutional_data(date_str, stock_codes)
+        if not inst_data:
+            print("(no data)")
+            time.sleep(API_DELAY_SECONDS)
+            continue
+
+        trade_date = d.strftime("%Y-%m-%d")
+        updated = 0
+        for code, vals in inst_data.items():
+            supabase.table("tw_stock_history").update({
+                "foreign_buy": vals.get("foreign_buy", 0),
+                "foreign_sell": vals.get("foreign_sell", 0),
+                "foreign_net": vals.get("foreign_net", 0),
+                "trust_buy": vals.get("trust_buy", 0),
+                "trust_sell": vals.get("trust_sell", 0),
+                "trust_net": vals.get("trust_net", 0),
+                "dealer_net": vals.get("dealer_net", 0),
+                "institutional_net": vals.get("institutional_net", 0),
+            }).eq("stock_code", code).eq("trade_date", trade_date).execute()
+            updated += 1
+        print(f"updated {updated} stocks")
+        time.sleep(API_DELAY_SECONDS)
+
+    print(f"\n=== Done. Total price rows upserted: {total_upserted} ===")
 
 
 if __name__ == "__main__":
