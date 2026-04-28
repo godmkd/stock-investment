@@ -454,6 +454,8 @@
   
   <div id="overviewSummary"></div>
 
+  <div id="overviewTrendSection" style="margin-top:16px"></div>
+
   <div id="overviewAccountsSection" style="margin-top: 16px;"></div>
 
   <div id="overviewChartsSection"></div>
@@ -3385,6 +3387,8 @@ function renderOverviewTab() {
   // Charts
   renderOverviewCharts();
   renderMergedPortfolio();
+  // Trend charts in overview
+  renderOverviewTrends();
 }
 
 function renderAccountCards(accs, morts) {
@@ -3591,17 +3595,6 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
       <canvas id="${pieCanvasId}"></canvas>
     </div>` : ''}
 
-    ${mergedList.length > 0 ? `
-    <div style="margin:0 auto 20px;max-width:700px">
-      <h3 style="text-align:center;font-size:0.9em;color:#aaa;margin-bottom:8px">${flag} 淨值趨勢</h3>
-      <div style="display:flex;justify-content:center;gap:8px;margin-bottom:10px">
-        <button class="btn" style="padding:3px 10px;font-size:0.78em;background:rgba(255,255,255,0.08);color:#aaa;border:1px solid rgba(255,255,255,0.15)" onclick="loadNetWorthTrend('${market}','1M')" id="trendBtn_${market}_1M">1M</button>
-        <button class="btn" style="padding:3px 10px;font-size:0.78em;background:rgba(255,255,255,0.08);color:#aaa;border:1px solid rgba(255,255,255,0.15)" onclick="loadNetWorthTrend('${market}','3M')" id="trendBtn_${market}_3M">3M</button>
-        <button class="btn" style="padding:3px 10px;font-size:0.78em;background:rgba(255,255,255,0.08);color:#aaa;border:1px solid rgba(255,255,255,0.15)" onclick="loadNetWorthTrend('${market}','6M')" id="trendBtn_${market}_6M">6M</button>
-      </div>
-      <canvas id="trendChart_${market}"></canvas>
-      <div id="trendStatus_${market}" style="text-align:center;font-size:0.75em;color:#555;margin-top:4px"></div>
-    </div>` : ''}
 
     <div class="table-container" style="margin-top:16px;overflow-x:auto">
       <div class="table-header"><h3>${flag} 各帳戶摘要</h3></div>
@@ -3642,13 +3635,11 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
     chartInstances[`mktOvwPie_${market}`] = createDoughnutChart(pieCanvasId, pieLabels, pieData, pieColors);
   }
 
-  // Auto-load 3M trend chart if we have holdings
+  // Store holdings for trend chart (rendered in overview tab)
   if (mergedList.length > 0) {
-    // Store merged holdings for trend calculation
     window[`_trendHoldings_${market}`] = mergedList.map(s => ({ ticker: s.ticker, shares: s.shares }));
     window[`_trendCash_${market}`] = totalCash;
     window[`_trendFmtMkt_${market}`] = fmtMkt;
-    loadNetWorthTrend(market, '3M');
   }
 
 }
@@ -6498,6 +6489,152 @@ async function loadNetWorthTrend(market, range) {
     console.error('loadNetWorthTrend error:', err);
     if (statusEl) statusEl.textContent = '載入失敗';
   }
+}
+
+// ===== Overview Trend Charts =====
+function renderOverviewTrends() {
+  const section = document.getElementById('overviewTrendSection');
+  if (!section) return;
+  const btnStyle = 'padding:3px 10px;font-size:0.78em;background:rgba(255,255,255,0.08);color:#aaa;border:1px solid rgba(255,255,255,0.15);border-radius:6px;cursor:pointer';
+  section.innerHTML = `
+    <div class="table-container" style="padding:16px">
+      <h3 style="color:#a78bfa;margin-bottom:12px">📈 淨值趨勢</h3>
+      <div style="display:flex;justify-content:center;gap:8px;margin-bottom:16px">
+        <button style="${btnStyle}" onclick="loadOverviewTrends('1M')">1M</button>
+        <button style="${btnStyle}" onclick="loadOverviewTrends('3M')">3M</button>
+        <button style="${btnStyle}" onclick="loadOverviewTrends('6M')">6M</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr;gap:16px">
+        <div>
+          <h4 style="font-size:0.85em;color:#3b82f6;margin-bottom:6px;text-align:center">🇺🇸 美股淨值</h4>
+          <canvas id="ovTrend_us"></canvas>
+          <div id="ovTrendStatus_us" style="text-align:center;font-size:0.72em;color:#555;margin-top:2px"></div>
+        </div>
+        <div>
+          <h4 style="font-size:0.85em;color:#f97316;margin-bottom:6px;text-align:center">🇹🇼 台股淨值</h4>
+          <canvas id="ovTrend_tw"></canvas>
+          <div id="ovTrendStatus_tw" style="text-align:center;font-size:0.72em;color:#555;margin-top:2px"></div>
+        </div>
+        <div>
+          <h4 style="font-size:0.85em;color:#a78bfa;margin-bottom:6px;text-align:center">💰 合計淨值 (TWD)</h4>
+          <canvas id="ovTrend_combined"></canvas>
+          <div id="ovTrendStatus_combined" style="text-align:center;font-size:0.72em;color:#555;margin-top:2px"></div>
+        </div>
+      </div>
+    </div>`;
+  loadOverviewTrends('3M');
+}
+
+async function loadOverviewTrends(range) {
+  // Load US and TW trends, then combine
+  const rangeMap = { '1M': 30, '3M': 90, '6M': 180 };
+  const days = rangeMap[range] || 90;
+  const startDate = new Date(Date.now() - days * 86400000);
+  const startStr = startDate.toISOString().slice(0, 10);
+
+  // Fetch US data
+  const usHoldings = window._trendHoldings_us || [];
+  const usCash = window._trendCash_us || 0;
+  const usTickers = usHoldings.map(h => h.ticker);
+
+  // Fetch TW data
+  const twHoldings = window._trendHoldings_tw || [];
+  const twCash = window._trendCash_tw || 0;
+  const twTickers = twHoldings.map(h => h.ticker);
+
+  try {
+    const [usHistory, twHistory] = await Promise.all([
+      usTickers.length > 0 ? fetchStockHistory('us', usTickers, startStr) : [],
+      twTickers.length > 0 ? fetchStockHistory('tw', twTickers, startStr) : []
+    ]);
+
+    // Build daily net worth for US (USD)
+    const usDaily = buildDailyNetWorth(usHistory, usHoldings, usCash, 'ticker');
+    // Build daily net worth for TW (TWD)
+    const twDaily = buildDailyNetWorth(twHistory, twHoldings, twCash, 'stock_code');
+
+    // Render US chart
+    renderTrendLine('ovTrend_us', usDaily, '#3b82f6', fmt, 'ovTrendStatus_us');
+    // Render TW chart
+    renderTrendLine('ovTrend_tw', twDaily, '#f97316', fmtTWD, 'ovTrendStatus_tw');
+
+    // Build combined (TWD) — merge US*rate + TW
+    const allDates = new Set([...usDaily.map(d => d.date), ...twDaily.map(d => d.date)]);
+    const sortedDates = [...allDates].sort();
+    const usMap = {}; usDaily.forEach(d => usMap[d.date] = d.value);
+    const twMap = {}; twDaily.forEach(d => twMap[d.date] = d.value);
+    let lastUs = 0, lastTw = 0;
+    const combinedDaily = sortedDates.map(date => {
+      if (usMap[date] !== undefined) lastUs = usMap[date];
+      if (twMap[date] !== undefined) lastTw = twMap[date];
+      return { date, value: lastUs * usdTwdRate + lastTw };
+    });
+    renderTrendLine('ovTrend_combined', combinedDaily, '#a78bfa', fmtTWD, 'ovTrendStatus_combined');
+
+  } catch (err) {
+    console.error('loadOverviewTrends error:', err);
+  }
+}
+
+function buildDailyNetWorth(history, holdings, cash, tickerField) {
+  if (!history || history.length === 0) return [];
+  // Group by date
+  const byDate = {};
+  history.forEach(row => {
+    const d = row.trade_date;
+    if (!byDate[d]) byDate[d] = {};
+    byDate[d][row[tickerField]] = row.close_price;
+  });
+  const dates = Object.keys(byDate).sort();
+  const lastPrices = {};
+  return dates.map(date => {
+    const prices = byDate[date];
+    // Update last known prices
+    Object.assign(lastPrices, prices);
+    let mv = 0;
+    holdings.forEach(h => {
+      const p = lastPrices[h.ticker] || 0;
+      mv += h.shares * p;
+    });
+    return { date, value: mv + cash };
+  });
+}
+
+function renderTrendLine(canvasId, data, color, fmtFn, statusElId) {
+  destroyChart(canvasId);
+  const statusEl = document.getElementById(statusElId);
+  if (!data || data.length === 0) {
+    if (statusEl) statusEl.textContent = '無歷史資料';
+    return;
+  }
+  if (statusEl) statusEl.textContent = `${data.length} 個交易日`;
+  const ctx = document.getElementById(canvasId);
+  if (!ctx) return;
+  chartInstances[canvasId] = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: data.map(d => d.date),
+      datasets: [{
+        label: '',
+        data: data.map(d => d.value),
+        borderColor: color,
+        backgroundColor: color + '18',
+        fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2
+      }]
+    },
+    options: {
+      responsive: true,
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        x: { ticks: { color: '#888', maxTicksLimit: 6, font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.05)' } },
+        y: { ticks: { color: '#888', font: { size: 10 }, callback: v => fmtFn(v) }, grid: { color: 'rgba(255,255,255,0.05)' } }
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: c => fmtFn(c.raw) } }
+      }
+    }
+  });
 }
 
 // ===== Charts =====
