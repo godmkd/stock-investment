@@ -1219,6 +1219,10 @@ async function loadAllDataFromSupabase() {
       pledges = settings.settings.pledges;
       localStorage.setItem('stock_pledges', JSON.stringify(pledges));
     }
+    if (settings.settings?.debt_snapshots) {
+      debtSnapshots = settings.settings.debt_snapshots;
+      localStorage.setItem('debt_snapshots', JSON.stringify(debtSnapshots));
+    }
   }
 
   // Load DCA templates
@@ -1829,6 +1833,7 @@ async function savePricesToCloud() {
   s.tw_prices = twPrices;
   s.monthly_snapshots = monthlySnapshots;
   s.pledges = pledges;
+  s.debt_snapshots = debtSnapshots;
   await sb.from('inv_user_settings').upsert({ user_id: uid, finnhub_key: localStorage.getItem('us_finnhub_key') || '', settings: s }, { onConflict: 'user_id' });
 }
 
@@ -5354,6 +5359,7 @@ function savePledgeFromModal(editId) {
     pledges.push({ id: Date.now().toString(), market, ticker, shares, pledgePrice, pledgeRatio, loanAmount, interestRate, startDate, owner, broker, marginCallRate, liquidationRate, repayMonths, notes });
   }
   savePledges();
+  saveDebtSnapshot();
   // Close modal
   const overlay = document.querySelector('div[style*="position:fixed"][style*="z-index:9999"]');
   if (overlay) overlay.remove();
@@ -5364,6 +5370,7 @@ function deletePledge(id) {
   if (!confirm('確定刪除此質押紀錄？')) return;
   pledges = pledges.filter(p => p.id !== id);
   savePledges();
+  saveDebtSnapshot();
   renderPledgeTab();
 }
 
@@ -5412,6 +5419,7 @@ function saveMortgageField(id) {
   // 總價或工程款%改變時，重算最後兩筆
   recalcLastTwoStages(m, -1, null);
   saveMortgages();
+  saveDebtSnapshot();
 }
 
 // 最後兩筆聯動：填入其中任一個欄位（% 或金額），自動算出另外三格
@@ -6555,6 +6563,11 @@ function renderOverviewTrends() {
           <canvas id="ovTrend_combined"></canvas>
           <div id="ovTrendStatus_combined" style="text-align:center;font-size:0.72em;color:#555;margin-top:2px"></div>
         </div>
+        <div>
+          <h4 style="font-size:0.85em;color:#f87171;margin-bottom:6px;text-align:center">🔴 負債趨勢 (TWD)</h4>
+          <canvas id="ovTrend_debt"></canvas>
+          <div id="ovTrendStatus_debt" style="text-align:center;font-size:0.72em;color:#555;margin-top:2px"></div>
+        </div>
       </div>
     </div>`;
   loadOverviewTrends('3M');
@@ -6605,6 +6618,17 @@ async function loadOverviewTrends(range) {
       return { date, value: lastUs * usdTwdRate + lastTw };
     });
     renderTrendLine('ovTrend_combined', combinedDaily, '#a78bfa', fmtTWD, 'ovTrendStatus_combined');
+
+    // Render debt trend from snapshots
+    const debtData = (debtSnapshots.total || [])
+      .filter(s => s.date >= startStr)
+      .map(s => ({ date: s.date, value: s.amount }));
+    if (debtData.length > 0) {
+      renderTrendLine('ovTrend_debt', debtData, '#f87171', fmtTWD, 'ovTrendStatus_debt');
+    } else {
+      const statusEl = document.getElementById('ovTrendStatus_debt');
+      if (statusEl) statusEl.textContent = '修改貸款或質押後會自動記錄';
+    }
 
   } catch (err) {
     console.error('loadOverviewTrends error:', err);
@@ -6726,6 +6750,42 @@ function saveMonthlySnapshot(market, netWorth, owner) {
     monthlySnapshots[ownerKey][monthKey] = Math.round(netWorth * 100) / 100;
   }
   localStorage.setItem('monthly_snapshots', JSON.stringify(monthlySnapshots));
+}
+
+// ===== Debt Snapshots =====
+// Records debt amount whenever mortgage or pledge is modified
+let debtSnapshots = JSON.parse(localStorage.getItem('debt_snapshots') || '{}');
+// Format: { "mortgage_ID": [ {date, amount}, ... ], "pledge_ID": [ {date, amount}, ... ], "total": [ {date, amount}, ... ] }
+
+function saveDebtSnapshot() {
+  const today = todayStr();
+  // Calculate total mortgage debt (TWD, 萬→元)
+  const mortgageDebt = mortgages.reduce((s, m) => s + getMortgageDebt(m), 0);
+  // Calculate total pledge debt (convert to TWD)
+  const pledgeDebt = pledges.reduce((s, p) => {
+    const rate = (p.market || 'us') === 'us' ? usdTwdRate : 1;
+    return s + (p.loanAmount || 0) * rate;
+  }, 0);
+  const totalDebt = mortgageDebt + pledgeDebt;
+
+  // Save total debt snapshot
+  if (!debtSnapshots.total) debtSnapshots.total = [];
+  // Replace today's entry or add new
+  const existing = debtSnapshots.total.findIndex(s => s.date === today);
+  if (existing >= 0) {
+    debtSnapshots.total[existing].amount = Math.round(totalDebt);
+    debtSnapshots.total[existing].mortgage = Math.round(mortgageDebt);
+    debtSnapshots.total[existing].pledge = Math.round(pledgeDebt);
+  } else {
+    debtSnapshots.total.push({ date: today, amount: Math.round(totalDebt), mortgage: Math.round(mortgageDebt), pledge: Math.round(pledgeDebt) });
+  }
+  // Keep max 500 entries, sorted by date
+  debtSnapshots.total.sort((a, b) => a.date.localeCompare(b.date));
+  if (debtSnapshots.total.length > 500) debtSnapshots.total = debtSnapshots.total.slice(-500);
+
+  localStorage.setItem('debt_snapshots', JSON.stringify(debtSnapshots));
+  // Also sync to cloud
+  savePricesToCloud().catch(() => {});
 }
 
 function renderMonthlySnapshotTable(snapshotKey, fmtFn, title) {
