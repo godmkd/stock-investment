@@ -6590,6 +6590,12 @@ async function loadOverviewTrends(range) {
   const twCash = window._trendCash_tw || 0;
   const twTickers = twHoldings.map(h => h.ticker);
 
+  // Show loading status
+  ['us', 'tw', 'combined', 'debt'].forEach(k => {
+    const el = document.getElementById(`ovTrendStatus_${k}`);
+    if (el) el.textContent = '載入中...';
+  });
+
   try {
     const [usHistory, twHistory] = await Promise.all([
       usTickers.length > 0 ? fetchStockHistory('us', usTickers, startStr) : [],
@@ -6602,9 +6608,19 @@ async function loadOverviewTrends(range) {
     const twDaily = buildDailyNetWorth(twHistory, twHoldings, twCash, 'stock_code');
 
     // Render US chart
-    renderTrendLine('ovTrend_us', usDaily, '#3b82f6', fmt, 'ovTrendStatus_us');
+    if (usTickers.length === 0) {
+      document.getElementById('ovTrendStatus_us').textContent = '無美股持股';
+    } else {
+      renderTrendLine('ovTrend_us', usDaily, '#3b82f6', fmt, 'ovTrendStatus_us');
+      if (usDaily.length === 0) document.getElementById('ovTrendStatus_us').textContent = `無歷史資料 (${usTickers.join(',')})`;
+    }
     // Render TW chart
-    renderTrendLine('ovTrend_tw', twDaily, '#f97316', fmtTWD, 'ovTrendStatus_tw');
+    if (twTickers.length === 0) {
+      document.getElementById('ovTrendStatus_tw').textContent = '無台股持股';
+    } else {
+      renderTrendLine('ovTrend_tw', twDaily, '#f97316', fmtTWD, 'ovTrendStatus_tw');
+      if (twDaily.length === 0) document.getElementById('ovTrendStatus_tw').textContent = `無歷史資料 (${twTickers.join(',')})`;
+    }
 
     // Build combined (TWD) — merge US*rate + TW
     const allDates = new Set([...usDaily.map(d => d.date), ...twDaily.map(d => d.date)]);
