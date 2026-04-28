@@ -3350,6 +3350,7 @@ function renderOverviewTab() {
     }
     summaryEl.innerHTML = html;
     accSection.innerHTML = '';
+    document.getElementById('overviewTrendSection').innerHTML = '';
     // 趨勢圖放在 chartsSection（共用）
     renderOverviewCharts(ownerGroups);
     renderMergedPortfolio();
@@ -3387,8 +3388,15 @@ function renderOverviewTab() {
   // Charts
   renderOverviewCharts();
   renderMergedPortfolio();
-  // Trend charts in overview
-  renderOverviewTrends();
+  // Trend charts: show for 全部合計 and specific owner, skip for 按戶名分開
+  const trendSection = document.getElementById('overviewTrendSection');
+  if (currentOwnerFilter === '__by_owner__') {
+    if (trendSection) trendSection.innerHTML = '';
+  } else {
+    // Compute holdings for filtered accounts only
+    computeTrendHoldings(filteredAccounts);
+    renderOverviewTrends();
+  }
 }
 
 function renderAccountCards(accs, morts) {
@@ -6492,6 +6500,33 @@ async function loadNetWorthTrend(market, range) {
 }
 
 // ===== Overview Trend Charts =====
+function computeTrendHoldings(filteredAccounts) {
+  // Calculate US and TW holdings for the given accounts
+  for (const market of ['us', 'tw']) {
+    const merged = {};
+    let totalCash = 0;
+    for (const acc of filteredAccounts) {
+      const ownPct = (acc.ownership_pct ?? 100) / 100;
+      const trades = getAccountData(acc.id, market, 'trades');
+      const funds = getAccountData(acc.id, market, 'funds');
+      const income = getAccountData(acc.id, market, 'income');
+      const analysis = analyzeStocks(trades, market, income);
+      let cash = 0;
+      for (const f of funds) cash += fundCashImpact(f);
+      for (const t of trades) cash += calcTradeCashImpact(t, market);
+      cash += income.reduce((s, i) => s + i.amount, 0);
+      totalCash += cash * ownPct;
+      for (const s of analysis) {
+        if (s.isClosed || s.shares < 0.0001) continue;
+        if (!merged[s.ticker]) merged[s.ticker] = { ticker: s.ticker, shares: 0 };
+        merged[s.ticker].shares += s.shares * ownPct;
+      }
+    }
+    window[`_trendHoldings_${market}`] = Object.values(merged);
+    window[`_trendCash_${market}`] = totalCash;
+  }
+}
+
 function renderOverviewTrends() {
   const section = document.getElementById('overviewTrendSection');
   if (!section) return;
