@@ -1,0 +1,27 @@
+name: Fetch Stock Data
+on:
+  schedule:
+    - cron: '30 6 * * 1-5'  # 14:30 UTC+8, Mon-Fri (after TW market close)
+    - cron: '0 22 * * 1-5'  # 06:00 UTC+8 next day (after US market close)
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install requests supabase python-dateutil
+      - name: Fetch TW stocks
+        run: python scripts/fetch_tw_stocks.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      - name: Fetch US stocks
+        run: python scripts/fetch_us_stocks.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          FINNHUB_KEY: ${{ secrets.FINNHUB_KEY }}

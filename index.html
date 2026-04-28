@@ -3591,6 +3591,18 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
       <canvas id="${pieCanvasId}"></canvas>
     </div>` : ''}
 
+    ${mergedList.length > 0 ? `
+    <div style="margin:0 auto 20px;max-width:700px">
+      <h3 style="text-align:center;font-size:0.9em;color:#aaa;margin-bottom:8px">${flag} 淨值趨勢</h3>
+      <div style="display:flex;justify-content:center;gap:8px;margin-bottom:10px">
+        <button class="btn" style="padding:3px 10px;font-size:0.78em;background:rgba(255,255,255,0.08);color:#aaa;border:1px solid rgba(255,255,255,0.15)" onclick="loadNetWorthTrend('${market}','1M')" id="trendBtn_${market}_1M">1M</button>
+        <button class="btn" style="padding:3px 10px;font-size:0.78em;background:rgba(255,255,255,0.08);color:#aaa;border:1px solid rgba(255,255,255,0.15)" onclick="loadNetWorthTrend('${market}','3M')" id="trendBtn_${market}_3M">3M</button>
+        <button class="btn" style="padding:3px 10px;font-size:0.78em;background:rgba(255,255,255,0.08);color:#aaa;border:1px solid rgba(255,255,255,0.15)" onclick="loadNetWorthTrend('${market}','6M')" id="trendBtn_${market}_6M">6M</button>
+      </div>
+      <canvas id="trendChart_${market}"></canvas>
+      <div id="trendStatus_${market}" style="text-align:center;font-size:0.75em;color:#555;margin-top:4px"></div>
+    </div>` : ''}
+
     <div class="table-container" style="margin-top:16px;overflow-x:auto">
       <div class="table-header"><h3>${flag} 各帳戶摘要</h3></div>
       <table style="min-width:max-content"><thead><tr><th>帳戶</th><th>比例</th><th>淨值</th><th>投入</th><th>損益</th><th>投報率</th></tr></thead>
@@ -3628,6 +3640,15 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
   // Render pie chart
   if (pieData.length > 0) {
     chartInstances[`mktOvwPie_${market}`] = createDoughnutChart(pieCanvasId, pieLabels, pieData, pieColors);
+  }
+
+  // Auto-load 3M trend chart if we have holdings
+  if (mergedList.length > 0) {
+    // Store merged holdings for trend calculation
+    window[`_trendHoldings_${market}`] = mergedList.map(s => ({ ticker: s.ticker, shares: s.shares }));
+    window[`_trendCash_${market}`] = totalCash;
+    window[`_trendFmtMkt_${market}`] = fmtMkt;
+    loadNetWorthTrend(market, '3M');
   }
 
 }
@@ -6319,6 +6340,165 @@ window.deleteOwner = function(owner) {
   renderAccountSelectors();
   renderAccountsTab();
 };
+
+// ===== Net Worth Trend Charts =====
+const _trendCache = {}; // cache: `${market}_${range}` -> { dates, values }
+
+async function fetchStockHistory(market, tickers, startDate) {
+  const table = market === 'us' ? 'us_stock_history' : 'tw_stock_history';
+  const tickerCol = market === 'us' ? 'ticker' : 'stock_code';
+  const cacheKey = `${market}_${tickers.sort().join(',')}_${startDate}`;
+  if (_trendCache[cacheKey]) return _trendCache[cacheKey];
+
+  // Fetch all history for these tickers from startDate onwards
+  const { data, error } = await sb
+    .from(table)
+    .select(`${tickerCol}, trade_date, close_price`)
+    .in(tickerCol, tickers)
+    .gte('trade_date', startDate)
+    .order('trade_date', { ascending: true });
+
+  if (error) {
+    console.error('fetchStockHistory error:', error);
+    return [];
+  }
+  _trendCache[cacheKey] = data || [];
+  return data || [];
+}
+
+async function loadNetWorthTrend(market, range) {
+  const statusEl = document.getElementById(`trendStatus_${market}`);
+  const canvasId = `trendChart_${market}`;
+
+  // Highlight active button
+  ['1M','3M','6M'].forEach(r => {
+    const btn = document.getElementById(`trendBtn_${market}_${r}`);
+    if (btn) {
+      btn.style.background = r === range ? 'rgba(52,211,153,0.2)' : 'rgba(255,255,255,0.08)';
+      btn.style.color = r === range ? '#34d399' : '#aaa';
+      btn.style.borderColor = r === range ? '#34d399' : 'rgba(255,255,255,0.15)';
+    }
+  });
+
+  const holdings = window[`_trendHoldings_${market}`];
+  const cash = window[`_trendCash_${market}`] || 0;
+  const fmtMkt = window[`_trendFmtMkt_${market}`] || (v => v.toFixed(2));
+
+  if (!holdings || holdings.length === 0) {
+    if (statusEl) statusEl.textContent = '無持倉資料';
+    return;
+  }
+
+  if (statusEl) statusEl.textContent = '載入中...';
+
+  // Calculate start date
+  const now = new Date();
+  const months = range === '1M' ? 1 : range === '3M' ? 3 : 6;
+  const startDate = new Date(now);
+  startDate.setMonth(startDate.getMonth() - months);
+  const startStr = startDate.toISOString().split('T')[0];
+
+  const tickers = holdings.map(h => h.ticker);
+  const tickerCol = market === 'us' ? 'ticker' : 'stock_code';
+
+  try {
+    const historyData = await fetchStockHistory(market, tickers, startStr);
+
+    if (!historyData.length) {
+      if (statusEl) statusEl.textContent = '無歷史資料（需先執行資料收集）';
+      return;
+    }
+
+    // Group by date -> { ticker -> close_price }
+    const dateMap = {};
+    for (const row of historyData) {
+      const d = row.trade_date;
+      if (!dateMap[d]) dateMap[d] = {};
+      dateMap[d][row[tickerCol]] = parseFloat(row.close_price) || 0;
+    }
+
+    // Sort dates
+    const dates = Object.keys(dateMap).sort();
+
+    // For each date, compute net worth = sum(shares * close_price) + cash
+    // Use last known price if a ticker has no data for a given date
+    const lastKnown = {};
+    const netWorths = [];
+    for (const date of dates) {
+      const dayPrices = dateMap[date];
+      // Update last known prices
+      for (const [t, p] of Object.entries(dayPrices)) {
+        lastKnown[t] = p;
+      }
+      // Calculate total
+      let total = cash;
+      for (const h of holdings) {
+        const price = lastKnown[h.ticker] || 0;
+        total += h.shares * price;
+      }
+      netWorths.push(total);
+    }
+
+    // Render chart
+    destroyChart(`mktTrend_${market}`);
+    const ctx = document.getElementById(canvasId);
+    if (!ctx) return;
+
+    chartInstances[`mktTrend_${market}`] = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: dates.map(d => d.slice(5)), // MM-DD format
+        datasets: [{
+          label: '淨值',
+          data: netWorths,
+          borderColor: '#34d399',
+          backgroundColor: 'rgba(52,211,153,0.08)',
+          borderWidth: 2,
+          pointRadius: 0,
+          pointHitRadius: 8,
+          fill: true,
+          tension: 0.3,
+        }]
+      },
+      options: {
+        responsive: true,
+        interaction: { mode: 'index', intersect: false },
+        scales: {
+          x: {
+            ticks: { color: '#666', font: { size: 10 }, maxTicksLimit: 10 },
+            grid: { color: 'rgba(255,255,255,0.04)' }
+          },
+          y: {
+            ticks: {
+              color: '#666', font: { size: 10 },
+              callback: function(v) { return fmtMkt(v); }
+            },
+            grid: { color: 'rgba(255,255,255,0.04)' }
+          }
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              title: function(items) { return items[0]?.label || ''; },
+              label: function(c) { return '淨值: ' + fmtMkt(c.raw); }
+            }
+          }
+        }
+      }
+    });
+
+    // Show min/max/latest
+    const latest = netWorths[netWorths.length - 1];
+    const min = Math.min(...netWorths);
+    const max = Math.max(...netWorths);
+    if (statusEl) statusEl.textContent = `最新 ${fmtMkt(latest)} | 最低 ${fmtMkt(min)} | 最高 ${fmtMkt(max)}`;
+
+  } catch (err) {
+    console.error('loadNetWorthTrend error:', err);
+    if (statusEl) statusEl.textContent = '載入失敗';
+  }
+}
 
 // ===== Charts =====
 const chartColors = ['#f59e0b','#3b82f6','#ef4444','#8b5cf6','#10b981','#f97316','#06b6d4','#ec4899','#84cc16','#a78bfa','#fbbf24','#14b8a6'];
