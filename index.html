@@ -1078,11 +1078,22 @@ async function updateAccPassword() {
 
 async function doLineLogin() {
   document.getElementById('loginLoading').style.display = 'block';
+  // skipBrowserRedirect lets us navigate explicitly with window.location.href,
+  // which on iOS PWA stays in the standalone window instead of jumping to Safari.
   const { data, error } = await withTimeout(sb.auth.signInWithOAuth({
     provider: 'custom:line',
-    options: { redirectTo: window.location.origin + window.location.pathname, queryParams: { prompt: 'consent' } }
+    options: {
+      redirectTo: window.location.origin + window.location.pathname,
+      queryParams: { prompt: 'consent' },
+      skipBrowserRedirect: true
+    }
   }));
-  if (error) { alert('登入失敗: ' + error.message); document.getElementById('loginLoading').style.display = 'none'; }
+  if (error) {
+    alert('登入失敗: ' + error.message);
+    document.getElementById('loginLoading').style.display = 'none';
+    return;
+  }
+  if (data?.url) window.location.href = data.url;
 }
 
 async function doEmailLogin() {
