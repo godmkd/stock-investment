@@ -1796,8 +1796,17 @@ function saveUSApiKey() {
 }
 
 async function refreshUSPrices() {
+  // Update all status indicators on every page
+  const setStatus = (msg) => {
+    ['usLastUpdate', 'usOvwLastUpdate'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = msg;
+    });
+  };
+
   const key = localStorage.getItem('us_finnhub_key') || localStorage.getItem('finnhub_key');
-  if (!key) { alert('請先設定 Finnhub API Key'); return; }
+  if (!key) { setStatus('請先設定 Finnhub API Key'); alert('請先設定 Finnhub API Key'); return; }
+
   // 更新所有帳戶的美股股票
   const allTickers = new Set();
   for (const acc of accounts) {
@@ -1805,19 +1814,23 @@ async function refreshUSPrices() {
     trades.forEach(t => allTickers.add(t.ticker));
   }
   const tickers = [...allTickers];
-  if (tickers.length === 0) { alert('沒有股票需要更新'); return; }
+  if (tickers.length === 0) { setStatus('沒有股票需要更新'); alert('沒有股票需要更新'); return; }
+
+  let success = 0;
   for (let i = 0; i < tickers.length; i++) {
-    await fetchPrice(tickers[i]);
+    setStatus(`更新中... ${i + 1}/${tickers.length} (${tickers[i]})`);
+    const ok = await fetchPrice(tickers[i]);
+    if (ok) success++;
     if (i < tickers.length - 1) await new Promise(r => setTimeout(r, 300));
   }
-  document.getElementById('usLastUpdate').textContent = '最後更新：' + new Date().toLocaleString('zh-TW');
+  setStatus(`最後更新：${new Date().toLocaleString('zh-TW')} (${success}/${tickers.length} 檔)`);
   renderUSTab();
   renderOverviewTab();
 }
 
 async function fetchPrice(ticker) {
   const key = localStorage.getItem('us_finnhub_key') || localStorage.getItem('finnhub_key');
-  if (!key) return;
+  if (!key) return false;
   try {
     const res = await fetch(`https://finnhub.io/api/v1/quote?symbol=${ticker}&token=${key}`);
     const data = await res.json();
@@ -1825,8 +1838,10 @@ async function fetchPrice(ticker) {
       prices[ticker] = { price: data.c, change: data.dp, time: Date.now() };
       localStorage.setItem('stock_prices', JSON.stringify(prices));
       savePricesToCloud().catch(()=>{});
+      return true;
     }
-  } catch (e) { console.error(`Fetch ${ticker} failed`, e); }
+    return false;
+  } catch (e) { console.error(`Fetch ${ticker} failed`, e); return false; }
 }
 
 // Save prices to Supabase cloud
@@ -2079,8 +2094,14 @@ async function fetchTWYahooClosing(tickers) {
 }
 
 async function refreshTWPrices() {
-  const statusEl = document.getElementById('twLastUpdate');
-  if (statusEl) statusEl.textContent = '更新中...';
+  // Update all status indicators on every page
+  const setStatus = (msg) => {
+    ['twLastUpdate', 'twOvwLastUpdate'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = msg;
+    });
+  };
+  setStatus('更新中...');
 
   const allTickers = new Set();
   for (const acc of accounts) {
@@ -2091,7 +2112,7 @@ async function refreshTWPrices() {
     });
   }
   if (allTickers.size === 0) {
-    if (statusEl) statusEl.textContent = '無台股持倉';
+    setStatus('無台股持倉');
     return;
   }
 
@@ -2183,14 +2204,12 @@ async function refreshTWPrices() {
   if (fetched) {
     localStorage.setItem('tw_stock_prices', JSON.stringify(twPrices));
     savePricesToCloud().catch(()=>{});
-    if (statusEl) {
-      const count = [...allTickers].filter(t => twPrices[t]?.price > 0).length;
-      statusEl.textContent = `最後更新：${new Date().toLocaleString('zh-TW')} (${count}/${allTickers.size} 檔，來源：${method})`;
-    }
+    const count = [...allTickers].filter(t => twPrices[t]?.price > 0).length;
+    setStatus(`最後更新：${new Date().toLocaleString('zh-TW')} (${count}/${allTickers.size} 檔，來源：${method})`);
     renderTWTab();
     renderOverviewTab();
   } else {
-    if (statusEl) statusEl.textContent = `更新失敗，使用快取`;
+    setStatus('更新失敗，使用快取');
     console.log('台股股價無法自動更新，使用 localStorage 快取');
   }
 }
@@ -5723,7 +5742,8 @@ function renderMortgageTab() {
           <input type="number" id="mort-construction-amt-${m.id}" value="${(m.totalPrice * (m.constructionPct||30) / 100).toFixed(1)}" style="width:80px;padding:4px;border:1px solid rgba(255,255,255,0.15);border-radius:4px;background:rgba(255,255,255,0.08);color:#fbbf24;font-size:0.9em;text-align:center" step="0.1" onchange="const _m=mortgages.find(x=>x.id==='${m.id}');const v=parseFloat(this.value)||0;if(_m.totalPrice>0){_m.constructionPct=parseFloat((v/_m.totalPrice*100).toFixed(2));}recalcLastTwoStages(_m,-1,null);saveMortgages();renderMortgageTab()">
           <span style="color:#888;font-size:0.85em">萬</span>
         </div>
-        <table style="width:100%;font-size:0.82em">
+        <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
+        <table style="width:100%;min-width:430px;font-size:0.82em">
           <thead><tr><th>階段</th><th>佔總價%</th><th>金額(萬)</th><th>已付</th><th>日期</th><th></th></tr></thead>
           <!-- 注意：各階段%是佔「總價」的比例，所有階段%加總=工程款佔總價%（constructionPct） -->
           <tbody>
@@ -5753,6 +5773,7 @@ function renderMortgageTab() {
             }).join('')}
           </tbody>
         </table>
+        </div>
         <button class="btn btn-secondary" onclick="addPaymentStage('${m.id}')" style="margin-top:8px;font-size:0.82em;padding:4px 10px">＋ 新增階段</button>
         ${progressBarHtml}
       </div>
