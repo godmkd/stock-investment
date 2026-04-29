@@ -168,16 +168,33 @@ def main():
 
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
-    # 1. Get watchlist
+    # 1. Get watchlist (curated list)
     print("=== Fetching watchlist ===")
     watchlist_resp = supabase.table("tw_stock_watchlist").select("stock_code, stock_name").execute()
-    watchlist = watchlist_resp.data
-    if not watchlist:
-        print("Watchlist is empty. Nothing to do.")
+    watchlist = watchlist_resp.data or []
+    stock_names = {w["stock_code"]: w.get("stock_name", "") for w in watchlist}
+    print(f"  Watchlist: {len(stock_names)} stocks")
+
+    # 1b. Also pull tickers users actually hold (so new buys auto-track)
+    print("=== Pulling tickers from inv_tw_trades ===")
+    user_tickers: set[str] = set()
+    try:
+        # Service key bypasses RLS — sees all users' trades
+        trades_resp = supabase.table("inv_tw_trades").select("ticker").execute()
+        for t in trades_resp.data or []:
+            tk = (t.get("ticker") or "").strip()
+            if tk:
+                user_tickers.add(tk)
+        print(f"  Found {len(user_tickers)} unique tickers in user trades")
+    except Exception as e:
+        print(f"  [WARN] Could not query inv_tw_trades: {e}")
+
+    all_codes = set(stock_names.keys()) | user_tickers
+    if not all_codes:
+        print("No stocks to track. Nothing to do.")
         return
 
-    stock_codes = [w["stock_code"] for w in watchlist]
-    stock_names = {w["stock_code"]: w.get("stock_name", "") for w in watchlist}
+    stock_codes = sorted(all_codes)
     print(f"Tracking {len(stock_codes)} stocks: {', '.join(stock_codes)}")
 
     # 2. Determine months to fetch

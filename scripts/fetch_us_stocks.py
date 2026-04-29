@@ -62,6 +62,16 @@ def get_tracked_tickers(supabase: Client) -> list[str]:
                         tickers.add(key)
     except Exception as e:
         print(f"  [WARN] Could not query inv_user_settings: {e}")
+    # Service key bypasses RLS — pull tickers users actually traded
+    try:
+        resp = supabase.table("inv_us_trades").select("ticker").execute()
+        if resp.data:
+            for row in resp.data:
+                tk = (row.get("ticker") or "").strip().upper()
+                if tk:
+                    tickers.add(tk)
+    except Exception as e:
+        print(f"  [WARN] Could not query inv_us_trades: {e}")
     return sorted(tickers)
 
 
