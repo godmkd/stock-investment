@@ -3398,8 +3398,9 @@ function renderOverviewTab() {
   if (currentOwnerFilter === '__by_owner__') {
     if (trendSection) trendSection.innerHTML = '';
   } else {
-    // Compute holdings for filtered accounts only
-    computeTrendHoldings(filteredAccounts);
+    // Compute holdings for filtered accounts. Mirror calcOwnerSummary's
+    // applyPct: full 100% in 全部合計, ownership_pct only when filtering.
+    computeTrendHoldings(filteredAccounts, !!currentOwnerFilter);
     renderOverviewTrends();
   }
 }
@@ -6508,13 +6509,15 @@ async function loadNetWorthTrend(market, range) {
 }
 
 // ===== Overview Trend Charts =====
-function computeTrendHoldings(filteredAccounts) {
-  // Calculate US and TW holdings for the given accounts
+function computeTrendHoldings(filteredAccounts, applyPct = true) {
+  // Calculate US and TW holdings for the given accounts.
+  // applyPct mirrors calcOwnerSummary: false for 全部合計 (whole-portfolio
+  // view at 100%), true when filtering by a specific owner.
   for (const market of ['us', 'tw']) {
     const merged = {};
     let totalCash = 0;
     for (const acc of filteredAccounts) {
-      const ownPct = (acc.ownership_pct ?? 100) / 100;
+      const ownPct = applyPct ? (acc.ownership_pct ?? 100) / 100 : 1;
       const trades = getAccountData(acc.id, market, 'trades');
       const funds = getAccountData(acc.id, market, 'funds');
       const income = getAccountData(acc.id, market, 'income');
