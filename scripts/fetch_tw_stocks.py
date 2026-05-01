@@ -175,17 +175,44 @@ def main():
     stock_names = {w["stock_code"]: w.get("stock_name", "") for w in watchlist}
     print(f"  Watchlist: {len(stock_names)} stocks")
 
+    # Mirror twTickerMap in index.html — user trades sometimes use Chinese names
+    # which TWSE's stockNo param won't accept. Normalize before fetching.
+    NAME_TO_CODE = {
+        "富邦台五十": "006208", "富邦台50": "006208", "元大台灣50": "0050",
+        "台積電": "2330", "仁寶": "2324", "和碩": "4938", "緯創": "3231",
+        "中菲": "1720", "富邦旗艦五十": "009802", "元大高股息": "0056",
+    }
+
+    def normalize_ticker(raw: str) -> str | None:
+        """Return numeric stock code, or None to skip (logs warning)."""
+        if not raw:
+            return None
+        s = raw.strip()
+        # Already a numeric/alphanumeric code (TW codes can have letter suffixes like 00985B)
+        if s.replace(".", "").isalnum() and any(ch.isdigit() for ch in s):
+            return s
+        # Chinese name lookup
+        if s in NAME_TO_CODE:
+            return NAME_TO_CODE[s]
+        return None
+
     # 1b. Also pull tickers users actually hold (so new buys auto-track)
     print("=== Pulling tickers from inv_tw_trades ===")
     user_tickers: set[str] = set()
+    skipped: list[str] = []
     try:
         # Service key bypasses RLS — sees all users' trades
         trades_resp = supabase.table("inv_tw_trades").select("ticker").execute()
         for t in trades_resp.data or []:
-            tk = (t.get("ticker") or "").strip()
-            if tk:
-                user_tickers.add(tk)
+            raw = (t.get("ticker") or "").strip()
+            code = normalize_ticker(raw)
+            if code:
+                user_tickers.add(code)
+            elif raw and raw not in skipped:
+                skipped.append(raw)
         print(f"  Found {len(user_tickers)} unique tickers in user trades")
+        if skipped:
+            print(f"  [WARN] Skipped (no code mapping): {', '.join(skipped)}")
     except Exception as e:
         print(f"  [WARN] Could not query inv_tw_trades: {e}")
 
