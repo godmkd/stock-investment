@@ -6397,25 +6397,30 @@ async function fetchStockHistory(market, tickers, startDate, endDate) {
   const cacheKey = `${market}_${tickers.sort().join(',')}_${startDate}_${endDate || ''}`;
   if (_trendCache[cacheKey]) return _trendCache[cacheKey];
 
-  // Fetch all history for these tickers within startDate ~ endDate.
-  // Supabase / PostgREST default limit is 1000 rows — bump to 100k for
-  // multi-ticker multi-year queries (e.g. 5 tickers × 7 years ≈ 8k rows).
-  let q = sb
-    .from(table)
-    .select(`${tickerCol}, trade_date, close_price`)
-    .in(tickerCol, tickers)
-    .gte('trade_date', startDate)
-    .order('trade_date', { ascending: true })
-    .limit(100000);
-  if (endDate) q = q.lte('trade_date', endDate);
-  const { data, error } = await q;
-
-  if (error) {
-    console.error('fetchStockHistory error:', error);
-    return [];
+  // Supabase server caps responses at 1000 rows regardless of client
+  // limit(). Page through with .range() until we get a short page.
+  const PAGE = 1000;
+  const all = [];
+  for (let from = 0; ; from += PAGE) {
+    let q = sb
+      .from(table)
+      .select(`${tickerCol}, trade_date, close_price`)
+      .in(tickerCol, tickers)
+      .gte('trade_date', startDate)
+      .order('trade_date', { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (endDate) q = q.lte('trade_date', endDate);
+    const { data, error } = await q;
+    if (error) {
+      console.error('fetchStockHistory error:', error);
+      break;
+    }
+    if (!data || data.length === 0) break;
+    all.push(...data);
+    if (data.length < PAGE) break;
   }
-  _trendCache[cacheKey] = data || [];
-  return data || [];
+  _trendCache[cacheKey] = all;
+  return all;
 }
 
 async function loadNetWorthTrend(market, range) {
