@@ -24,7 +24,7 @@ SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY")
 FINNHUB_KEY = os.environ.get("FINNHUB_KEY")
 
 API_DELAY_SECONDS = 0.5
-BACKFILL_MONTHS = 6
+BACKFILL_MONTHS = 90  # ~7.5 years; covers from 2019 onwards
 
 # ---------------------------------------------------------------------------
 # Helpers

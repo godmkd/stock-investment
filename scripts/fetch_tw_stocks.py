@@ -25,7 +25,7 @@ TWSE_STOCK_DAY_URL = "https://www.twse.com.tw/exchangeReport/STOCK_DAY"
 TWSE_T86_URL = "https://www.twse.com.tw/fund/T86"  # 三大法人買賣超
 TWSE_EPS_URL = "https://mops.twse.com.tw/mops/web/ajax_t163sb04"  # EPS
 API_DELAY_SECONDS = 1.5  # be polite to TWSE
-BACKFILL_MONTHS = 6
+BACKFILL_MONTHS = 90  # ~7.5 years; covers from 2019 onwards
 
 # ---------------------------------------------------------------------------
 # Helpers

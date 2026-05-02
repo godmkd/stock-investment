@@ -6390,19 +6390,21 @@ window.deleteOwner = function(owner) {
 // ===== Net Worth Trend Charts =====
 const _trendCache = {}; // cache: `${market}_${range}` -> { dates, values }
 
-async function fetchStockHistory(market, tickers, startDate) {
+async function fetchStockHistory(market, tickers, startDate, endDate) {
   const table = market === 'us' ? 'us_stock_history' : 'tw_stock_history';
   const tickerCol = market === 'us' ? 'ticker' : 'stock_code';
-  const cacheKey = `${market}_${tickers.sort().join(',')}_${startDate}`;
+  const cacheKey = `${market}_${tickers.sort().join(',')}_${startDate}_${endDate || ''}`;
   if (_trendCache[cacheKey]) return _trendCache[cacheKey];
 
-  // Fetch all history for these tickers from startDate onwards
-  const { data, error } = await sb
+  // Fetch all history for these tickers within startDate ~ endDate
+  let q = sb
     .from(table)
     .select(`${tickerCol}, trade_date, close_price`)
     .in(tickerCol, tickers)
     .gte('trade_date', startDate)
     .order('trade_date', { ascending: true });
+  if (endDate) q = q.lte('trade_date', endDate);
+  const { data, error } = await q;
 
   if (error) {
     console.error('fetchStockHistory error:', error);
@@ -6580,13 +6582,23 @@ function renderOverviewTrends() {
   const section = document.getElementById('overviewTrendSection');
   if (!section) return;
   const btnStyle = 'padding:3px 10px;font-size:0.78em;background:rgba(255,255,255,0.08);color:#aaa;border:1px solid rgba(255,255,255,0.15);border-radius:6px;cursor:pointer';
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const yearAgoStr = new Date(Date.now() - 365 * 86400000).toISOString().slice(0, 10);
   section.innerHTML = `
     <div class="table-container" style="padding:16px">
       <h3 style="color:#a78bfa;margin-bottom:12px">📈 淨值趨勢</h3>
-      <div style="display:flex;justify-content:center;gap:8px;margin-bottom:16px">
+      <div style="display:flex;justify-content:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
         <button style="${btnStyle}" onclick="loadOverviewTrends('1M')">1M</button>
         <button style="${btnStyle}" onclick="loadOverviewTrends('3M')">3M</button>
         <button style="${btnStyle}" onclick="loadOverviewTrends('6M')">6M</button>
+        <button style="${btnStyle}" onclick="loadOverviewTrends('1Y')">1Y</button>
+        <button style="${btnStyle}" onclick="toggleCustomRange()">📅 自訂</button>
+      </div>
+      <div id="customRangeInputs" style="display:none;justify-content:center;gap:8px;align-items:center;margin-bottom:16px;flex-wrap:wrap;font-size:0.85em;color:#aaa">
+        <input type="date" id="trendStartDate" value="${yearAgoStr}" style="background:rgba(255,255,255,0.08);color:#fff;border:1px solid rgba(255,255,255,0.15);border-radius:4px;padding:3px 6px">
+        <span>~</span>
+        <input type="date" id="trendEndDate" value="${todayStr}" style="background:rgba(255,255,255,0.08);color:#fff;border:1px solid rgba(255,255,255,0.15);border-radius:4px;padding:3px 6px">
+        <button style="${btnStyle};background:rgba(167,139,250,0.2);color:#a78bfa" onclick="loadOverviewTrendsCustom()">套用</button>
       </div>
       <div style="display:grid;grid-template-columns:1fr;gap:16px">
         <div>
@@ -6614,12 +6626,32 @@ function renderOverviewTrends() {
   loadOverviewTrends('3M');
 }
 
+function toggleCustomRange() {
+  const el = document.getElementById('customRangeInputs');
+  if (el) el.style.display = el.style.display === 'none' ? 'flex' : 'none';
+}
+function loadOverviewTrendsCustom() {
+  const start = document.getElementById('trendStartDate').value;
+  const end = document.getElementById('trendEndDate').value;
+  if (!start || !end) { alert('請選擇起訖日期'); return; }
+  if (start > end) { alert('起始日不能晚於結束日'); return; }
+  loadOverviewTrends({ start, end });
+}
+
 async function loadOverviewTrends(range) {
-  // Load US and TW trends, then combine
-  const rangeMap = { '1M': 30, '3M': 90, '6M': 180 };
-  const days = rangeMap[range] || 90;
-  const startDate = new Date(Date.now() - days * 86400000);
-  const startStr = startDate.toISOString().slice(0, 10);
+  // Load US and TW trends, then combine.
+  // range is either a string ('1M'/'3M'/'6M'/'1Y') or { start, end } for custom
+  const rangeMap = { '1M': 30, '3M': 90, '6M': 180, '1Y': 365 };
+  let startStr, endStr;
+  if (typeof range === 'object' && range.start) {
+    startStr = range.start;
+    endStr = range.end;
+  } else {
+    const days = rangeMap[range] || 90;
+    const startDate = new Date(Date.now() - days * 86400000);
+    startStr = startDate.toISOString().slice(0, 10);
+    endStr = new Date().toISOString().slice(0, 10);
+  }
 
   // Fetch US data
   const usHoldings = window._trendHoldings_us || [];
@@ -6639,8 +6671,8 @@ async function loadOverviewTrends(range) {
 
   try {
     const [usHistory, twHistory] = await Promise.all([
-      usTickers.length > 0 ? fetchStockHistory('us', usTickers, startStr) : [],
-      twTickers.length > 0 ? fetchStockHistory('tw', twTickers, startStr) : []
+      usTickers.length > 0 ? fetchStockHistory('us', usTickers, startStr, endStr) : [],
+      twTickers.length > 0 ? fetchStockHistory('tw', twTickers, startStr, endStr) : []
     ]);
 
     // Build daily net worth for US (USD)
@@ -6678,7 +6710,7 @@ async function loadOverviewTrends(range) {
 
     // Render debt trend from snapshots
     const debtData = (debtSnapshots.total || [])
-      .filter(s => s.date >= startStr)
+      .filter(s => s.date >= startStr && s.date <= endStr)
       .map(s => ({ date: s.date, value: s.amount }));
     if (debtData.length > 0) {
       renderTrendLine('ovTrend_debt', debtData, '#f87171', fmtTWD, 'ovTrendStatus_debt');
