@@ -3420,10 +3420,11 @@ function renderOverviewTab() {
   const ovwOwner = currentOwnerFilter || null;
   if (summary.usNetWorth > 0) saveMonthlySnapshot('us', summary.usNetWorth, ovwOwner);
   if (summary.twNetWorth > 0) saveMonthlySnapshot('tw', summary.twNetWorth, ovwOwner);
+  saveMonthlyExtras(summary, ovwOwner);
   // Render summary + monthly snapshot table
   const usSnapKey = ovwOwner ? 'us_' + ovwOwner : 'us';
   const twSnapKey = ovwOwner ? 'tw_' + ovwOwner : 'tw';
-  summaryEl.innerHTML = renderOwnerBlock(titleText, summary, filteredMortgages) + renderCombinedMonthlySnapshotTable(usSnapKey, twSnapKey, '📊 每月淨值紀錄');
+  summaryEl.innerHTML = renderOwnerBlock(titleText, summary, filteredMortgages) + renderDetailedMonthlySnapshotTable(usSnapKey, twSnapKey, ovwOwner);
   accSection.innerHTML = renderAccountCards(filteredAccounts, filteredMortgages);
 
   // Charts
@@ -6828,15 +6829,34 @@ let monthlySnapshots = JSON.parse(localStorage.getItem('monthly_snapshots') || '
 function saveMonthlySnapshot(market, netWorth, owner) {
   const now = new Date();
   const monthKey = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
-  // Always update current month's value (latest value wins)
-  // Global snapshot (market = 'us' or 'tw')
   if (!monthlySnapshots[market]) monthlySnapshots[market] = {};
   monthlySnapshots[market][monthKey] = Math.round(netWorth * 100) / 100;
-  // Per-owner snapshot (key = 'us_ownerName' or 'tw_ownerName')
   if (owner) {
     const ownerKey = market + '_' + owner;
     if (!monthlySnapshots[ownerKey]) monthlySnapshots[ownerKey] = {};
     monthlySnapshots[ownerKey][monthKey] = Math.round(netWorth * 100) / 100;
+  }
+  localStorage.setItem('monthly_snapshots', JSON.stringify(monthlySnapshots));
+}
+
+// Store extra per-month fields keyed under known names so the detailed
+// monthly table can compute investment / P/L / rate / debt.
+function saveMonthlyExtras(summary, owner) {
+  const now = new Date();
+  const monthKey = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  const set = (key, val) => {
+    if (val == null || isNaN(val)) return;
+    if (!monthlySnapshots[key]) monthlySnapshots[key] = {};
+    monthlySnapshots[key][monthKey] = Math.round(val * 100) / 100;
+  };
+  set('us_invested', summary.usNetFunded);
+  set('tw_invested', summary.twNetFunded);
+  set('rate', usdTwdRate);
+  set('total_debt', summary.totalDebt);
+  if (owner) {
+    set('us_invested_' + owner, summary.usNetFunded);
+    set('tw_invested_' + owner, summary.twNetFunded);
+    set('total_debt_' + owner, summary.totalDebt);
   }
   localStorage.setItem('monthly_snapshots', JSON.stringify(monthlySnapshots));
 }
@@ -6890,6 +6910,138 @@ function renderMonthlySnapshotTable(snapshotKey, fmtFn, title) {
       <div class="table-header"><h3>${title || '📊 每月淨值紀錄'}</h3></div>
       <table style="min-width:200px"><thead><tr><th>月份</th><th style="text-align:right">淨值</th></tr></thead>
       <tbody>${rows}</tbody></table>
+    </div>`;
+}
+
+// ===== Detailed monthly table — 4 sections =====
+function renderDetailedMonthlySnapshotTable(usKey, twKey, owner) {
+  const usData = monthlySnapshots[usKey] || {};
+  const twData = monthlySnapshots[twKey] || {};
+  const usInv = monthlySnapshots[owner ? 'us_invested_' + owner : 'us_invested'] || {};
+  const twInv = monthlySnapshots[owner ? 'tw_invested_' + owner : 'tw_invested'] || {};
+  const rateMap = monthlySnapshots.rate || {};
+  const debtMap = monthlySnapshots[owner ? 'total_debt_' + owner : 'total_debt'] || {};
+
+  const months = [...new Set([
+    ...Object.keys(usData), ...Object.keys(twData),
+    ...Object.keys(usInv), ...Object.keys(twInv),
+    ...Object.keys(debtMap),
+  ])].sort().reverse();
+  if (months.length === 0) return '';
+
+  const fmtPct = v => v == null || isNaN(v) ? '--' : (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
+  const plClass = v => v == null || isNaN(v) ? '' : (v >= 0 ? 'style="color:#34d399"' : 'style="color:#f87171"');
+  const dash = '<span style="color:#666">--</span>';
+  const td = (s, cls) => `<td style="text-align:right;${cls || ''}">${s}</td>`;
+  const wrap = (title, header, rows) => `
+    <details open style="margin-top:14px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.08);border-radius:8px">
+      <summary style="cursor:pointer;padding:8px 12px;font-weight:600;color:#a78bfa">${title}</summary>
+      <div style="overflow-x:auto;padding:0 12px 12px">
+        <table style="width:100%;font-size:0.85em;min-width:600px"><thead><tr>${header}</tr></thead>
+        <tbody>${rows}</tbody></table>
+      </div>
+    </details>`;
+
+  // Helper to compute month-over-month diff and pct
+  function diffPct(arr, idx) {
+    if (idx + 1 >= arr.length) return [null, null];
+    const cur = arr[idx], prev = arr[idx + 1];
+    if (cur == null || prev == null || prev === 0) return [null, null];
+    return [cur - prev, (cur - prev) / Math.abs(prev) * 100];
+  }
+
+  // ===== US section =====
+  const usRows = months.map((m, i) => {
+    const nw = usData[m];
+    const inv = usInv[m];
+    const rate = rateMap[m];
+    const profit = (nw != null && inv != null) ? (nw - inv) : null;
+    const roi = (profit != null && inv > 0) ? profit / inv * 100 : null;
+    const allNW = months.map(mm => usData[mm]);
+    const [diff, diffPctVal] = diffPct(allNW, i);
+    return `<tr>
+      <td>${m}</td>
+      ${td(inv != null ? fmt(inv) : dash)}
+      ${td(profit != null ? fmt(profit) : dash, plClass(profit).replace('style="', '').replace('"',''))}
+      ${td(roi != null ? fmtPct(roi) : dash, plClass(roi).replace('style="', '').replace('"',''))}
+      ${td(rate != null ? rate.toFixed(3) : dash)}
+      ${td(diff != null ? fmt(diff) : dash, plClass(diff).replace('style="', '').replace('"',''))}
+      ${td(diffPctVal != null ? fmtPct(diffPctVal) : dash, plClass(diffPctVal).replace('style="', '').replace('"',''))}
+    </tr>`;
+  }).join('');
+  const usHdr = '<th>月份</th><th style="text-align:right">投資金額(USD)</th><th style="text-align:right">獲利(USD)</th><th style="text-align:right">投報率</th><th style="text-align:right">USD/TWD</th><th style="text-align:right">月差額</th><th style="text-align:right">月損益率</th>';
+
+  // ===== TW section =====
+  const twRows = months.map((m, i) => {
+    const nw = twData[m];
+    const inv = twInv[m];
+    const profit = (nw != null && inv != null) ? (nw - inv) : null;
+    const roi = (profit != null && inv > 0) ? profit / inv * 100 : null;
+    const allNW = months.map(mm => twData[mm]);
+    const [diff, diffPctVal] = diffPct(allNW, i);
+    return `<tr>
+      <td>${m}</td>
+      ${td(inv != null ? fmtTWD(inv) : dash)}
+      ${td(profit != null ? fmtTWD(profit) : dash, plClass(profit).replace('style="', '').replace('"',''))}
+      ${td(roi != null ? fmtPct(roi) : dash, plClass(roi).replace('style="', '').replace('"',''))}
+      ${td(diff != null ? fmtTWD(diff) : dash, plClass(diff).replace('style="', '').replace('"',''))}
+      ${td(diffPctVal != null ? fmtPct(diffPctVal) : dash, plClass(diffPctVal).replace('style="', '').replace('"',''))}
+    </tr>`;
+  }).join('');
+  const twHdr = '<th>月份</th><th style="text-align:right">投資金額(TWD)</th><th style="text-align:right">獲利(TWD)</th><th style="text-align:right">投報率</th><th style="text-align:right">月差額</th><th style="text-align:right">月損益率</th>';
+
+  // ===== Total section (in TWD) =====
+  const totalNW = months.map(m => {
+    const us = usData[m], tw = twData[m], r = rateMap[m] || usdTwdRate;
+    if (us == null && tw == null) return null;
+    return (us != null ? us * r : 0) + (tw != null ? tw : 0);
+  });
+  const totalInv = months.map(m => {
+    const us = usInv[m], tw = twInv[m], r = rateMap[m] || usdTwdRate;
+    if (us == null && tw == null) return null;
+    return (us != null ? us * r : 0) + (tw != null ? tw : 0);
+  });
+  const totalRows = months.map((m, i) => {
+    const nw = totalNW[i];
+    const inv = totalInv[i];
+    const profit = (nw != null && inv != null) ? (nw - inv) : null;
+    const roi = (profit != null && inv > 0) ? profit / inv * 100 : null;
+    const [diff, diffPctVal] = diffPct(totalNW, i);
+    return `<tr>
+      <td>${m}</td>
+      ${td(inv != null ? fmtTWD(inv) : dash)}
+      ${td(profit != null ? fmtTWD(profit) : dash, plClass(profit).replace('style="', '').replace('"',''))}
+      ${td(nw != null ? fmtTWD(nw) : dash)}
+      ${td(roi != null ? fmtPct(roi) : dash, plClass(roi).replace('style="', '').replace('"',''))}
+      ${td(diff != null ? fmtTWD(diff) : dash, plClass(diff).replace('style="', '').replace('"',''))}
+      ${td(diffPctVal != null ? fmtPct(diffPctVal) : dash, plClass(diffPctVal).replace('style="', '').replace('"',''))}
+    </tr>`;
+  }).join('');
+  const totalHdr = '<th>月份</th><th style="text-align:right">總投資</th><th style="text-align:right">總獲利</th><th style="text-align:right">總金額</th><th style="text-align:right">投報率</th><th style="text-align:right">月差額</th><th style="text-align:right">月損益率</th>';
+
+  // ===== Debt section =====
+  const debtVals = months.map(m => debtMap[m]);
+  const debtRows = months.map((m, i) => {
+    const d = debtVals[i];
+    const [diff, diffPctVal] = diffPct(debtVals, i);
+    // For debt, increase is bad (red), decrease is good (green) — inverted
+    const debtCls = v => v == null || isNaN(v) ? '' : (v >= 0 ? 'color:#f87171' : 'color:#34d399');
+    return `<tr>
+      <td>${m}</td>
+      ${td(d != null ? fmtTWD(d) : dash)}
+      ${td(diff != null ? fmtTWD(diff) : dash, debtCls(diff))}
+      ${td(diffPctVal != null ? fmtPct(diffPctVal) : dash, debtCls(diffPctVal))}
+    </tr>`;
+  }).join('');
+  const debtHdr = '<th>月份</th><th style="text-align:right">總負債</th><th style="text-align:right">月差額</th><th style="text-align:right">月差額%</th>';
+
+  return `
+    <div style="margin-top:16px">
+      <h3 style="color:#a78bfa;margin-bottom:4px">📊 每月詳細紀錄</h3>
+      ${wrap('🇺🇸 美股', usHdr, usRows)}
+      ${wrap('🇹🇼 台股', twHdr, twRows)}
+      ${wrap('💰 總計 (TWD)', totalHdr, totalRows)}
+      ${wrap('🔴 負債', debtHdr, debtRows)}
     </div>`;
 }
 
