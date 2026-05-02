@@ -3420,7 +3420,7 @@ function renderOverviewTab() {
   const ovwOwner = currentOwnerFilter || null;
   if (summary.usNetWorth > 0) saveMonthlySnapshot('us', summary.usNetWorth, ovwOwner);
   if (summary.twNetWorth > 0) saveMonthlySnapshot('tw', summary.twNetWorth, ovwOwner);
-  saveMonthlyExtras(summary, ovwOwner, filteredAccounts);
+  saveMonthlyExtras(summary, ovwOwner, filteredAccounts, !!currentOwnerFilter);
   // Render summary + monthly snapshot table
   const usSnapKey = ovwOwner ? 'us_' + ovwOwner : 'us';
   const twSnapKey = ovwOwner ? 'tw_' + ovwOwner : 'tw';
@@ -6843,9 +6843,10 @@ function saveMonthlySnapshot(market, netWorth, owner) {
 // monthly snapshot reflects what the user actually paid in NTD — not
 // USD × today's rate (which would distort historical rows whenever the
 // rate moves).
-function calcUSInvestedTWD(accountList) {
+function calcUSInvestedTWD(accountList, applyPct = true) {
   let total = 0;
   for (const acc of accountList) {
+    const pct = applyPct ? (acc.ownership_pct ?? 100) / 100 : 1;
     const funds = getAccountData(acc.id, 'us', 'funds');
     for (const f of funds) {
       const sign = (f.type === 'deposit' || f.type === 'transfer_in') ? 1
@@ -6853,7 +6854,7 @@ function calcUSInvestedTWD(accountList) {
       if (!sign) continue;
       // twdAmount is captured at deposit; fall back to amount × rate if missing
       const twd = f.twdAmount || (f.amount * (f.rate || usdTwdRate));
-      total += sign * twd * ((acc.ownership_pct ?? 100) / 100);
+      total += sign * twd * pct;
     }
   }
   return total;
@@ -6861,7 +6862,9 @@ function calcUSInvestedTWD(accountList) {
 
 // Store extra per-month fields keyed under known names so the detailed
 // monthly table can compute investment / P/L / rate / debt.
-function saveMonthlyExtras(summary, owner, accountList) {
+// applyPct mirrors calcOwnerSummary: false in 全部合計 (whole portfolio
+// counts at 100%), true when filtering by a specific owner.
+function saveMonthlyExtras(summary, owner, accountList, applyPct = true) {
   const now = new Date();
   const monthKey = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
   const set = (key, val) => {
@@ -6870,13 +6873,13 @@ function saveMonthlyExtras(summary, owner, accountList) {
     monthlySnapshots[key][monthKey] = Math.round(val * 100) / 100;
   };
   set('us_invested', summary.usNetFunded);  // USD
-  set('us_invested_twd', accountList ? calcUSInvestedTWD(accountList) : null);  // actual TWD paid in
+  set('us_invested_twd', accountList ? calcUSInvestedTWD(accountList, applyPct) : null);
   set('tw_invested', summary.twNetFunded);
   set('rate', usdTwdRate);
   set('total_debt', summary.totalDebt);
   if (owner) {
     set('us_invested_' + owner, summary.usNetFunded);
-    set('us_invested_twd_' + owner, accountList ? calcUSInvestedTWD(accountList) : null);
+    set('us_invested_twd_' + owner, accountList ? calcUSInvestedTWD(accountList, applyPct) : null);
     set('tw_invested_' + owner, summary.twNetFunded);
     set('total_debt_' + owner, summary.totalDebt);
   }
