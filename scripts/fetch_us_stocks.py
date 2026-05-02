@@ -181,11 +181,13 @@ def main():
     today = datetime.utcnow()
     total_upserted = 0
 
+    target_start = today - relativedelta(months=BACKFILL_MONTHS)
+
     for ticker in tickers:
         print(f"\n--- {ticker} ---")
 
-        # Check existing data
-        existing_resp = (
+        # Check existing range (earliest + latest)
+        latest_resp = (
             supabase.table("us_stock_history")
             .select("trade_date")
             .eq("ticker", ticker)
@@ -193,22 +195,38 @@ def main():
             .limit(1)
             .execute()
         )
+        earliest_resp = (
+            supabase.table("us_stock_history")
+            .select("trade_date")
+            .eq("ticker", ticker)
+            .order("trade_date", desc=False)
+            .limit(1)
+            .execute()
+        )
 
-        latest_existing = None
-        if existing_resp.data:
-            latest_existing = existing_resp.data[0]["trade_date"]
-            print(f"  Latest existing: {latest_existing}")
-
-        # Determine range to fetch
+        latest_existing = latest_resp.data[0]["trade_date"] if latest_resp.data else None
+        earliest_existing = earliest_resp.data[0]["trade_date"] if earliest_resp.data else None
         if latest_existing:
-            latest_date = datetime.strptime(latest_existing, "%Y-%m-%d")
-            days_since = (today - latest_date).days
-            if days_since <= 1:
-                print(f"  Already up to date, skipping")
-                continue
-            from_date = latest_date - timedelta(days=1)
+            print(f"  Existing range: {earliest_existing} ~ {latest_existing}")
+
+        # Decide fetch range
+        if not latest_existing:
+            # No data — full backfill
+            from_date = target_start
         else:
-            from_date = today - relativedelta(months=BACKFILL_MONTHS)
+            latest_date = datetime.strptime(latest_existing, "%Y-%m-%d")
+            earliest_date = datetime.strptime(earliest_existing, "%Y-%m-%d")
+            need_backfill = earliest_date > target_start
+            need_update = (today - latest_date).days > 1
+            if need_backfill:
+                # Pull full range to fill gap before earliest
+                from_date = target_start
+                print(f"  Backfilling: earliest {earliest_existing} > target {target_start.strftime('%Y-%m-%d')}")
+            elif need_update:
+                from_date = latest_date - timedelta(days=1)
+            else:
+                print(f"  Already up to date and fully backfilled, skipping")
+                continue
 
         from_ts = int(from_date.timestamp())
         to_ts = int(today.timestamp())
