@@ -6959,18 +6959,26 @@ function renderDetailedMonthlySnapshotTable(usKey, twKey, owner) {
     const roi = (profit != null && inv > 0) ? profit / inv * 100 : null;
     const allNW = months.map(mm => usData[mm]);
     const [diff, diffPctVal] = diffPct(allNW, i);
+    const r = rate || usdTwdRate;
+    // Render USD value with TWD equivalent on a second line
+    const dual = (usd, color) => {
+      if (usd == null) return td(dash);
+      const twd = r ? usd * r : null;
+      const inner = `<div>${fmt(usd)}</div>${twd != null ? `<div style="font-size:0.78em;color:#888">${fmtTWD(twd)}</div>` : ''}`;
+      return td(inner, color || '');
+    };
     return `<tr>
       <td>${m}</td>
-      ${td(nw != null ? fmt(nw) : dash)}
-      ${td(inv != null ? fmt(inv) : dash)}
-      ${td(profit != null ? fmt(profit) : dash, plClass(profit).replace('style="', '').replace('"',''))}
+      ${dual(nw)}
+      ${dual(inv)}
+      ${dual(profit, plClass(profit).replace('style="', '').replace('"',''))}
       ${td(roi != null ? fmtPct(roi) : dash, plClass(roi).replace('style="', '').replace('"',''))}
       ${td(rate != null ? rate.toFixed(3) : dash)}
-      ${td(diff != null ? fmt(diff) : dash, plClass(diff).replace('style="', '').replace('"',''))}
+      ${dual(diff, plClass(diff).replace('style="', '').replace('"',''))}
       ${td(diffPctVal != null ? fmtPct(diffPctVal) : dash, plClass(diffPctVal).replace('style="', '').replace('"',''))}
     </tr>`;
   }).join('');
-  const usHdr = '<th>月份</th><th style="text-align:right">淨值(USD)</th><th style="text-align:right">投資金額(USD)</th><th style="text-align:right">獲利(USD)</th><th style="text-align:right">投報率</th><th style="text-align:right">USD/TWD</th><th style="text-align:right">月差額</th><th style="text-align:right">月損益率</th>';
+  const usHdr = '<th>月份</th><th style="text-align:right">淨值<br><span style="font-size:0.78em;color:#888">(USD/TWD)</span></th><th style="text-align:right">投資金額<br><span style="font-size:0.78em;color:#888">(USD/TWD)</span></th><th style="text-align:right">獲利<br><span style="font-size:0.78em;color:#888">(USD/TWD)</span></th><th style="text-align:right">投報率</th><th style="text-align:right">USD/TWD</th><th style="text-align:right">月差額<br><span style="font-size:0.78em;color:#888">(USD/TWD)</span></th><th style="text-align:right">月損益率</th>';
 
   // ===== TW section =====
   const twRows = months.map((m, i) => {
