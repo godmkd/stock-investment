@@ -3420,7 +3420,7 @@ function renderOverviewTab() {
   const ovwOwner = currentOwnerFilter || null;
   if (summary.usNetWorth > 0) saveMonthlySnapshot('us', summary.usNetWorth, ovwOwner);
   if (summary.twNetWorth > 0) saveMonthlySnapshot('tw', summary.twNetWorth, ovwOwner);
-  saveMonthlyExtras(summary, ovwOwner);
+  saveMonthlyExtras(summary, ovwOwner, filteredAccounts);
   // Render summary + monthly snapshot table
   const usSnapKey = ovwOwner ? 'us_' + ovwOwner : 'us';
   const twSnapKey = ovwOwner ? 'tw_' + ovwOwner : 'tw';
@@ -6839,9 +6839,29 @@ function saveMonthlySnapshot(market, netWorth, owner) {
   localStorage.setItem('monthly_snapshots', JSON.stringify(monthlySnapshots));
 }
 
+// Sum the *actual TWD value at deposit time* for US accounts, so the
+// monthly snapshot reflects what the user actually paid in NTD — not
+// USD × today's rate (which would distort historical rows whenever the
+// rate moves).
+function calcUSInvestedTWD(accountList) {
+  let total = 0;
+  for (const acc of accountList) {
+    const funds = getAccountData(acc.id, 'us', 'funds');
+    for (const f of funds) {
+      const sign = (f.type === 'deposit' || f.type === 'transfer_in') ? 1
+                 : (f.type === 'withdraw' || f.type === 'transfer_out') ? -1 : 0;
+      if (!sign) continue;
+      // twdAmount is captured at deposit; fall back to amount × rate if missing
+      const twd = f.twdAmount || (f.amount * (f.rate || usdTwdRate));
+      total += sign * twd * ((acc.ownership_pct ?? 100) / 100);
+    }
+  }
+  return total;
+}
+
 // Store extra per-month fields keyed under known names so the detailed
 // monthly table can compute investment / P/L / rate / debt.
-function saveMonthlyExtras(summary, owner) {
+function saveMonthlyExtras(summary, owner, accountList) {
   const now = new Date();
   const monthKey = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
   const set = (key, val) => {
@@ -6849,12 +6869,14 @@ function saveMonthlyExtras(summary, owner) {
     if (!monthlySnapshots[key]) monthlySnapshots[key] = {};
     monthlySnapshots[key][monthKey] = Math.round(val * 100) / 100;
   };
-  set('us_invested', summary.usNetFunded);
+  set('us_invested', summary.usNetFunded);  // USD
+  set('us_invested_twd', accountList ? calcUSInvestedTWD(accountList) : null);  // actual TWD paid in
   set('tw_invested', summary.twNetFunded);
   set('rate', usdTwdRate);
   set('total_debt', summary.totalDebt);
   if (owner) {
     set('us_invested_' + owner, summary.usNetFunded);
+    set('us_invested_twd_' + owner, accountList ? calcUSInvestedTWD(accountList) : null);
     set('tw_invested_' + owner, summary.twNetFunded);
     set('total_debt_' + owner, summary.totalDebt);
   }
@@ -6918,6 +6940,7 @@ function renderDetailedMonthlySnapshotTable(usKey, twKey, owner) {
   const usData = monthlySnapshots[usKey] || {};
   const twData = monthlySnapshots[twKey] || {};
   const usInv = monthlySnapshots[owner ? 'us_invested_' + owner : 'us_invested'] || {};
+  const usInvTWD = monthlySnapshots[owner ? 'us_invested_twd_' + owner : 'us_invested_twd'] || {};
   const twInv = monthlySnapshots[owner ? 'tw_invested_' + owner : 'tw_invested'] || {};
   const rateMap = monthlySnapshots.rate || {};
   const debtMap = monthlySnapshots[owner ? 'total_debt_' + owner : 'total_debt'] || {};
@@ -6960,18 +6983,27 @@ function renderDetailedMonthlySnapshotTable(usKey, twKey, owner) {
     const allNW = months.map(mm => usData[mm]);
     const [diff, diffPctVal] = diffPct(allNW, i);
     const r = rate || usdTwdRate;
-    // Render USD value with TWD equivalent on a second line
+    // Render USD value with TWD equivalent on a second line (rate-converted)
     const dual = (usd, color) => {
       if (usd == null) return td(dash);
       const twd = r ? usd * r : null;
       const inner = `<div>${fmt(usd)}</div>${twd != null ? `<div style="font-size:0.78em;color:#888">${fmtTWD(twd)}</div>` : ''}`;
       return td(inner, color || '');
     };
+    // Investment cell uses the actual TWD paid in (not USD × today's rate)
+    const invTwdActual = usInvTWD[m];
+    const investedCell = inv == null ? td(dash) :
+      td(`<div>${fmt(inv)}</div>${invTwdActual != null ? `<div style="font-size:0.78em;color:#888">${fmtTWD(invTwdActual)}</div>` : (r ? `<div style="font-size:0.78em;color:#888">${fmtTWD(inv * r)}</div>` : '')}`);
+    // Profit TWD = netWorth × rate − actual TWD invested (only if both known)
+    const profitCellTwd = (nw != null && invTwdActual != null && r) ? (nw * r - invTwdActual) : null;
+    const profitCell = profit == null ? td(dash) :
+      td(`<div>${fmt(profit)}</div>${profitCellTwd != null ? `<div style="font-size:0.78em;color:#888">${fmtTWD(profitCellTwd)}</div>` : ''}`,
+         plClass(profit).replace('style="', '').replace('"',''));
     return `<tr>
       <td>${m}</td>
       ${dual(nw)}
-      ${dual(inv)}
-      ${dual(profit, plClass(profit).replace('style="', '').replace('"',''))}
+      ${investedCell}
+      ${profitCell}
       ${td(roi != null ? fmtPct(roi) : dash, plClass(roi).replace('style="', '').replace('"',''))}
       ${td(rate != null ? rate.toFixed(3) : dash)}
       ${dual(diff, plClass(diff).replace('style="', '').replace('"',''))}
