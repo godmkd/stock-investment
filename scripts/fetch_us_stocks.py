@@ -75,6 +75,43 @@ def get_tracked_tickers(supabase: Client) -> list[str]:
     return sorted(tickers)
 
 
+def fetch_yahoo_splits_only(ticker: str) -> list[dict]:
+    """Fetch ALL split events for a ticker (period1=0 = since IPO).
+    Returns split rows ready for stock_splits upsert."""
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
+    params = {
+        "period1": 0,
+        "period2": int(datetime.utcnow().timestamp()),
+        "interval": "1mo",   # monthly is enough — we only care about the events
+        "events": "split",
+    }
+    headers = {"User-Agent": "Mozilla/5.0"}
+    try:
+        resp = requests.get(url, params=params, headers=headers, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+    except (requests.RequestException, ValueError) as exc:
+        print(f"  [WARN] Yahoo split fetch error for {ticker}: {exc}")
+        return []
+    result = data.get("chart", {}).get("result", [])
+    if not result:
+        return []
+    splits_data = (result[0].get("events") or {}).get("splits") or {}
+    rows = []
+    for k, ev in splits_data.items():
+        try:
+            sd = datetime.utcfromtimestamp(int(ev["date"])).strftime("%Y-%m-%d")
+            rows.append({
+                "market": "us", "ticker": ticker, "split_date": sd,
+                "numerator": float(ev.get("numerator", 1)),
+                "denominator": float(ev.get("denominator", 1)),
+                "ratio_text": ev.get("splitRatio") or "",
+            })
+        except (KeyError, ValueError, TypeError):
+            continue
+    return rows
+
+
 def fetch_yahoo_history(ticker: str, period1: int, period2: int) -> tuple[list[dict], list[dict]]:
     """Fetch daily OHLCV + split events from Yahoo Finance (no API key needed).
     Returns (price_rows, split_rows)."""
@@ -204,6 +241,20 @@ def main():
 
     for ticker in tickers:
         print(f"\n--- {ticker} ---")
+
+        # Always pull full split history (cheap monthly call). Tickers that
+        # are otherwise "up to date" still need this so we never miss a
+        # historical split event.
+        all_splits = fetch_yahoo_splits_only(ticker)
+        if all_splits:
+            try:
+                supabase.table("stock_splits").upsert(
+                    all_splits, on_conflict="market,ticker,split_date"
+                ).execute()
+                print(f"  Splits (full history): {len(all_splits)} → {[s['split_date'] + ' ' + s['ratio_text'] for s in all_splits]}")
+            except Exception as e:
+                print(f"  [WARN] Split upsert failed: {e}")
+        time.sleep(API_DELAY_SECONDS)
 
         # Check existing range (earliest + latest)
         latest_resp = (
