@@ -7557,8 +7557,13 @@ function renderMergedPortfolio() {
           <thead><tr><th>帳戶</th><th>銀行/券商</th><th>持有比例</th><th>美股市值 USD</th><th>台股市值 TWD</th><th>加權合計 TWD</th></tr></thead>
           <tbody>`;
 
+  // 全部合計 mode: don't weight (each account counts at 100%, matching
+  // calcOwnerSummary / computeTrendHoldings). Filter mode: respect each
+  // account's ownership_pct.
+  const showFullPct = !currentOwnerFilter;
   for (const acc of filteredAccounts) {
-    const pct = acc.ownership_pct ?? 100;
+    const realPct = acc.ownership_pct ?? 100;
+    const pct = showFullPct ? 100 : realPct;
     const usTrades = getAccountData(acc.id, 'us', 'trades');
     const usIncome = getAccountData(acc.id, 'us', 'income');
     const usAnalysis = analyzeStocks(usTrades, 'us', usIncome);
@@ -7570,11 +7575,16 @@ function renderMergedPortfolio() {
     let twMV = 0; for (const s of twAnalysis) if (!s.isClosed) twMV += s.marketValue;
 
     const weightedTWD = (usMV * usdTwdRate + twMV) * pct / 100;
+    // Show real % faintly when overriding to 100% so the user still sees
+    // the underlying figure
+    const pctCell = (showFullPct && realPct !== 100)
+      ? `100%<span style="color:#666;font-size:0.78em"> (實 ${realPct}%)</span>`
+      : `${pct}%`;
 
     html += `<tr>
       <td style="font-weight:600">${acc.name}</td>
       <td style="color:#888">${acc.bank || '-'}</td>
-      <td style="color:#a78bfa;font-weight:600">${pct}%</td>
+      <td style="color:#a78bfa;font-weight:600">${pctCell}</td>
       <td>${usMV > 0 ? fmt(usMV) : '-'}</td>
       <td>${twMV > 0 ? fmtTWD(twMV) : '-'}</td>
       <td style="color:#fbbf24;font-weight:600">${fmtTWD(weightedTWD)}</td>
