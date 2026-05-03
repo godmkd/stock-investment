@@ -7575,16 +7575,11 @@ function renderMergedPortfolio() {
     let twMV = 0; for (const s of twAnalysis) if (!s.isClosed) twMV += s.marketValue;
 
     const weightedTWD = (usMV * usdTwdRate + twMV) * pct / 100;
-    // Show real % faintly when overriding to 100% so the user still sees
-    // the underlying figure
-    const pctCell = (showFullPct && realPct !== 100)
-      ? `100%<span style="color:#666;font-size:0.78em"> (實 ${realPct}%)</span>`
-      : `${pct}%`;
 
     html += `<tr>
       <td style="font-weight:600">${acc.name}</td>
       <td style="color:#888">${acc.bank || '-'}</td>
-      <td style="color:#a78bfa;font-weight:600">${pctCell}</td>
+      <td style="color:#a78bfa;font-weight:600">${pct}%</td>
       <td>${usMV > 0 ? fmt(usMV) : '-'}</td>
       <td>${twMV > 0 ? fmtTWD(twMV) : '-'}</td>
       <td style="color:#fbbf24;font-weight:600">${fmtTWD(weightedTWD)}</td>
