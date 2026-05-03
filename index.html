@@ -6391,6 +6391,33 @@ window.deleteOwner = function(owner) {
 // ===== Net Worth Trend Charts =====
 const _trendCache = {}; // cache: `${market}_${range}` -> { dates, values }
 
+// Fetch USDTWD daily rates from fx_rates table (paginated like history)
+const _fxCache = {};
+async function fetchFXHistory(startDate, endDate) {
+  const cacheKey = `USDTWD_${startDate}_${endDate || ''}`;
+  if (_fxCache[cacheKey]) return _fxCache[cacheKey];
+  const PAGE = 1000;
+  const all = [];
+  for (let from = 0; ; from += PAGE) {
+    let q = sb.from('fx_rates').select('trade_date, close_rate')
+      .eq('pair', 'USDTWD')
+      .gte('trade_date', startDate)
+      .order('trade_date', { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (endDate) q = q.lte('trade_date', endDate);
+    const { data, error } = await q;
+    if (error) { console.warn('fetchFXHistory error:', error); break; }
+    if (!data || data.length === 0) break;
+    all.push(...data);
+    if (data.length < PAGE) break;
+  }
+  // Build date -> rate map for fast lookup
+  const map = {};
+  for (const r of all) map[r.trade_date] = parseFloat(r.close_rate);
+  _fxCache[cacheKey] = map;
+  return map;
+}
+
 async function fetchStockHistory(market, tickers, startDate, endDate) {
   const table = market === 'us' ? 'us_stock_history' : 'tw_stock_history';
   const tickerCol = market === 'us' ? 'ticker' : 'stock_code';
@@ -6703,9 +6730,10 @@ async function loadOverviewTrends(range) {
   });
 
   try {
-    const [usHistory, twHistory] = await Promise.all([
+    const [usHistory, twHistory, fxMap] = await Promise.all([
       usTickers.length > 0 ? fetchStockHistory('us', usTickers, startStr, endStr) : [],
-      twTickers.length > 0 ? fetchStockHistory('tw', twTickers, startStr, endStr) : []
+      twTickers.length > 0 ? fetchStockHistory('tw', twTickers, startStr, endStr) : [],
+      fetchFXHistory(startStr, endStr)
     ]);
 
     // Build daily net worth using historical trade ledger (proper holdings per date)
@@ -6731,20 +6759,21 @@ async function loadOverviewTrends(range) {
       if (twDaily.length === 0) document.getElementById('ovTrendStatus_tw').textContent = `無歷史資料 (${twTickers.join(',')})`;
     }
 
-    // Build combined (TWD) — merge US × historical_rate + TW.
-    // Use the rate captured for that month (monthlySnapshots.rate),
-    // falling back to current usdTwdRate for months we never recorded.
-    const rateMap = monthlySnapshots.rate || {};
-    const rateForDate = d => rateMap[d.slice(0, 7)] || usdTwdRate;
+    // Build combined (TWD) — merge US × historical_daily_rate + TW.
+    // Daily rate from fx_rates table (carry forward last known rate to
+    // weekend/holiday dates that aren't in fx data).
+    const monthRateMap = monthlySnapshots.rate || {};
     const allDates = new Set([...usDaily.map(d => d.date), ...twDaily.map(d => d.date)]);
     const sortedDates = [...allDates].sort();
     const usMap = {}; usDaily.forEach(d => usMap[d.date] = d.value);
     const twMap = {}; twDaily.forEach(d => twMap[d.date] = d.value);
-    let lastUs = 0, lastTw = 0;
+    let lastUs = 0, lastTw = 0, lastRate = null;
     const combinedDaily = sortedDates.map(date => {
       if (usMap[date] !== undefined) lastUs = usMap[date];
       if (twMap[date] !== undefined) lastTw = twMap[date];
-      return { date, value: lastUs * rateForDate(date) + lastTw };
+      if (fxMap[date] != null) lastRate = fxMap[date];
+      const r = lastRate ?? monthRateMap[date.slice(0,7)] ?? usdTwdRate;
+      return { date, value: lastUs * r + lastTw };
     });
     renderTrendLine('ovTrend_combined', combinedDaily, '#a78bfa', fmtTWD, 'ovTrendStatus_combined');
 
