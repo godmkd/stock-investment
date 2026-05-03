@@ -6691,9 +6691,12 @@ function renderOverviewTrends() {
         </div>
       </div>
     </div>`;
-  loadOverviewTrends('3M');
+  loadOverviewTrends(_lastTrendRange || '3M');
 }
 
+// Last trend range chosen by user — survives re-renders so we don't
+// snap back to 3M whenever renderOverviewTrends() repaints the section.
+let _lastTrendRange = '3M';
 function toggleCustomRange() {
   const el = document.getElementById('customRangeInputs');
   if (el) el.style.display = el.style.display === 'none' ? 'flex' : 'none';
@@ -6709,6 +6712,7 @@ function loadOverviewTrendsCustom() {
 async function loadOverviewTrends(range) {
   // Load US and TW trends, then combine.
   // range is either a string ('1M'/'3M'/'6M'/'1Y') or { start, end } for custom
+  _lastTrendRange = range;
   const rangeMap = { '1M': 30, '3M': 90, '6M': 180, '1Y': 365 };
   let startStr, endStr;
   if (typeof range === 'object' && range.start) {
