@@ -75,14 +75,16 @@ def get_tracked_tickers(supabase: Client) -> list[str]:
     return sorted(tickers)
 
 
-def fetch_yahoo_history(ticker: str, period1: int, period2: int) -> list[dict]:
-    """Fetch daily OHLCV from Yahoo Finance (no API key needed)."""
+def fetch_yahoo_history(ticker: str, period1: int, period2: int) -> tuple[list[dict], list[dict]]:
+    """Fetch daily OHLCV + split events from Yahoo Finance (no API key needed).
+    Returns (price_rows, split_rows)."""
     url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
     params = {
         "period1": period1,
         "period2": period2,
         "interval": "1d",
         "includePrePost": "false",
+        "events": "split",
     }
     headers = {"User-Agent": "Mozilla/5.0"}
     try:
@@ -91,12 +93,12 @@ def fetch_yahoo_history(ticker: str, period1: int, period2: int) -> list[dict]:
         data = resp.json()
     except (requests.RequestException, ValueError) as exc:
         print(f"  [WARN] Yahoo fetch error for {ticker}: {exc}")
-        return []
+        return [], []
 
     result = data.get("chart", {}).get("result", [])
     if not result:
         print(f"  [INFO] No Yahoo data for {ticker}")
-        return []
+        return [], []
 
     r = result[0]
     timestamps = r.get("timestamp", [])
@@ -106,6 +108,23 @@ def fetch_yahoo_history(ticker: str, period1: int, period2: int) -> list[dict]:
     lows = quote.get("low", [])
     closes = quote.get("close", [])
     volumes = quote.get("volume", [])
+
+    # Parse split events for this ticker
+    splits_data = (r.get("events") or {}).get("splits") or {}
+    split_rows = []
+    for k, ev in splits_data.items():
+        try:
+            sd = datetime.utcfromtimestamp(int(ev["date"])).strftime("%Y-%m-%d")
+            split_rows.append({
+                "market": "us",
+                "ticker": ticker,
+                "split_date": sd,
+                "numerator": float(ev.get("numerator", 1)),
+                "denominator": float(ev.get("denominator", 1)),
+                "ratio_text": ev.get("splitRatio") or "",
+            })
+        except (KeyError, ValueError, TypeError):
+            continue
 
     rows = []
     for i in range(len(timestamps)):
@@ -121,7 +140,7 @@ def fetch_yahoo_history(ticker: str, period1: int, period2: int) -> list[dict]:
             "close_price": round(closes[i], 2) if closes[i] else None,
             "volume": int(volumes[i]) if volumes[i] else None,
         })
-    return rows
+    return rows, split_rows
 
 
 def fetch_finnhub_quote(ticker: str, api_key: str) -> dict | None:
@@ -232,9 +251,18 @@ def main():
         to_ts = int(today.timestamp())
         print(f"  Fetching {from_date.strftime('%Y-%m-%d')} to {today.strftime('%Y-%m-%d')} ...")
 
-        # Try Yahoo Finance first
-        rows = fetch_yahoo_history(ticker, from_ts, to_ts)
+        # Try Yahoo Finance first (returns prices + split events)
+        rows, splits = fetch_yahoo_history(ticker, from_ts, to_ts)
         time.sleep(API_DELAY_SECONDS)
+
+        if splits:
+            try:
+                supabase.table("stock_splits").upsert(
+                    splits, on_conflict="market,ticker,split_date"
+                ).execute()
+                print(f"  Splits: {len(splits)} → {[s['split_date'] + ' ' + s['ratio_text'] for s in splits]}")
+            except Exception as e:
+                print(f"  [WARN] Split upsert failed: {e}")
 
         # Fallback to Finnhub quote if Yahoo fails
         if not rows and api_key:

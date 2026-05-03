@@ -6391,6 +6391,34 @@ window.deleteOwner = function(owner) {
 // ===== Net Worth Trend Charts =====
 const _trendCache = {}; // cache: `${market}_${range}` -> { dates, values }
 
+// Fetch stock splits from stock_splits table (per market). Returns
+// { ticker: [{date, ratio}] } where ratio = numerator/denominator.
+const _splitsCache = {};
+async function fetchSplits(market) {
+  if (_splitsCache[market]) return _splitsCache[market];
+  const PAGE = 1000;
+  const all = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await sb.from('stock_splits')
+      .select('ticker, split_date, numerator, denominator')
+      .eq('market', market)
+      .order('split_date', { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) { console.warn('fetchSplits error:', error); break; }
+    if (!data || data.length === 0) break;
+    all.push(...data);
+    if (data.length < PAGE) break;
+  }
+  const map = {};
+  for (const r of all) {
+    const ratio = r.denominator ? Number(r.numerator) / Number(r.denominator) : 1;
+    if (!map[r.ticker]) map[r.ticker] = [];
+    map[r.ticker].push({ date: r.split_date, ratio });
+  }
+  _splitsCache[market] = map;
+  return map;
+}
+
 // Fetch USDTWD daily rates from fx_rates table (paginated like history)
 const _fxCache = {};
 async function fetchFXHistory(startDate, endDate) {
@@ -6730,18 +6758,22 @@ async function loadOverviewTrends(range) {
   });
 
   try {
-    const [usHistory, twHistory, fxMap] = await Promise.all([
+    const [usHistory, twHistory, fxMap, usSplits, twSplits] = await Promise.all([
       usTickers.length > 0 ? fetchStockHistory('us', usTickers, startStr, endStr) : [],
       twTickers.length > 0 ? fetchStockHistory('tw', twTickers, startStr, endStr) : [],
-      fetchFXHistory(startStr, endStr)
+      fetchFXHistory(startStr, endStr),
+      fetchSplits('us'),
+      fetchSplits('tw'),
     ]);
 
-    // Build daily net worth using historical trade ledger (proper holdings per date)
+    // Build daily net worth using historical trade ledger (proper holdings per date),
+    // adjusting share counts for any splits that happened AFTER each trade so
+    // the resulting shares match Yahoo's split-adjusted historical prices.
     const accs = window._trendAccounts || [];
     const applyPct = window._trendApplyPct ?? true;
-    const usDaily = accs.length ? buildHistoricalNetWorth(accs, 'us', usHistory, 'ticker', applyPct)
+    const usDaily = accs.length ? buildHistoricalNetWorth(accs, 'us', usHistory, 'ticker', applyPct, usSplits)
                                 : buildDailyNetWorth(usHistory, usHoldings, usCash, 'ticker');
-    const twDaily = accs.length ? buildHistoricalNetWorth(accs, 'tw', twHistory, 'stock_code', applyPct)
+    const twDaily = accs.length ? buildHistoricalNetWorth(accs, 'tw', twHistory, 'stock_code', applyPct, twSplits)
                                 : buildDailyNetWorth(twHistory, twHoldings, twCash, 'stock_code');
 
     // Render US chart
@@ -6796,20 +6828,43 @@ async function loadOverviewTrends(range) {
 // Reconstruct net worth per day from the actual trade ledger, so the
 // chart reflects what you held BACK THEN — not today's holdings priced
 // at past prices.
-function buildHistoricalNetWorth(filteredAccounts, market, history, tickerField, applyPct) {
+function buildHistoricalNetWorth(filteredAccounts, market, history, tickerField, applyPct, splitsMap) {
   if (!history || history.length === 0) return [];
+  splitsMap = splitsMap || {};
   const normalize = market === 'tw'
     ? (t => (typeof resolveTWTicker === 'function' ? resolveTWTicker(t) : t))
     : (t => t);
+
+  // Yahoo prices are split-adjusted (as if all splits had happened before
+  // the earliest date). User trades record raw shares at the trade time.
+  // Multiply trade shares by Π (split.ratio) for splits AFTER the trade
+  // so they sit in the same "post-all-splits" units as the prices.
+  function adjustedShares(originalShares, ticker, tradeDate) {
+    const splits = splitsMap[ticker];
+    if (!splits || splits.length === 0) return originalShares;
+    let factor = 1;
+    for (const s of splits) {
+      if (s.date > tradeDate) factor *= s.ratio;
+    }
+    return originalShares * factor;
+  }
+
   // Collect all trades / funds / income with per-account ownership pct.
-  // Drop entries without a date — they would otherwise sort to the front
-  // and break the early-exit in applyXxxUpTo because '' || '9999' = '9999'.
   const trades = [], funds = [], income = [];
   for (const acc of filteredAccounts) {
     const pct = applyPct ? (acc.ownership_pct ?? 100) / 100 : 1;
     for (const t of getAccountData(acc.id, market, 'trades')) {
       if (!t.date) continue;
-      trades.push({ ...t, _pct: pct, _ticker: normalize(t.ticker), _shares: Number(t.shares) || 0, _type: String(t.type || '').toLowerCase() });
+      const tk = normalize(t.ticker);
+      const rawShares = Number(t.shares) || 0;
+      trades.push({
+        ...t,
+        _pct: pct,
+        _ticker: tk,
+        _shares: rawShares,
+        _adjShares: adjustedShares(rawShares, tk, t.date),
+        _type: String(t.type || '').toLowerCase(),
+      });
     }
     for (const f of getAccountData(acc.id, market, 'funds')) {
       if (!f.date) continue;
@@ -6846,8 +6901,10 @@ function buildHistoricalNetWorth(filteredAccounts, market, history, tickerField,
       const t = trades[ti];
       const tk = t._ticker;
       if (!holdings[tk]) holdings[tk] = 0;
-      const sharesEffect = t._type === 'buy' ? t._shares : -t._shares;
+      // Use split-adjusted shares so they line up with Yahoo prices
+      const sharesEffect = t._type === 'buy' ? t._adjShares : -t._adjShares;
       holdings[tk] += sharesEffect * t._pct;
+      // Cash uses ORIGINAL shares × original price (real $ flowed)
       cash += calcTradeCashImpact(t, market) * t._pct;
       ti++;
     }
