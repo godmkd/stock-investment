@@ -6801,17 +6801,28 @@ function buildHistoricalNetWorth(filteredAccounts, market, history, tickerField,
   const normalize = market === 'tw'
     ? (t => (typeof resolveTWTicker === 'function' ? resolveTWTicker(t) : t))
     : (t => t);
-  // Collect all trades / funds / income with per-account ownership pct
+  // Collect all trades / funds / income with per-account ownership pct.
+  // Drop entries without a date — they would otherwise sort to the front
+  // and break the early-exit in applyXxxUpTo because '' || '9999' = '9999'.
   const trades = [], funds = [], income = [];
   for (const acc of filteredAccounts) {
     const pct = applyPct ? (acc.ownership_pct ?? 100) / 100 : 1;
-    for (const t of getAccountData(acc.id, market, 'trades')) trades.push({ ...t, _pct: pct, _ticker: normalize(t.ticker) });
-    for (const f of getAccountData(acc.id, market, 'funds')) funds.push({ ...f, _pct: pct });
-    for (const i of getAccountData(acc.id, market, 'income')) income.push({ ...i, _pct: pct });
+    for (const t of getAccountData(acc.id, market, 'trades')) {
+      if (!t.date) continue;
+      trades.push({ ...t, _pct: pct, _ticker: normalize(t.ticker), _shares: Number(t.shares) || 0, _type: String(t.type || '').toLowerCase() });
+    }
+    for (const f of getAccountData(acc.id, market, 'funds')) {
+      if (!f.date) continue;
+      funds.push({ ...f, _pct: pct });
+    }
+    for (const i of getAccountData(acc.id, market, 'income')) {
+      if (!i.date) continue;
+      income.push({ ...i, _pct: pct });
+    }
   }
-  trades.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
-  funds.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
-  income.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+  trades.sort((a, b) => a.date.localeCompare(b.date));
+  funds.sort((a, b) => a.date.localeCompare(b.date));
+  income.sort((a, b) => a.date.localeCompare(b.date));
 
   // Group history by date
   const byDate = {};
@@ -6831,25 +6842,25 @@ function buildHistoricalNetWorth(filteredAccounts, market, history, tickerField,
   let ti = 0, fi = 0, ii = 0;
 
   function applyTradesUpTo(date) {
-    while (ti < trades.length && (trades[ti].date || '9999') <= date) {
+    while (ti < trades.length && trades[ti].date <= date) {
       const t = trades[ti];
       const tk = t._ticker;
       if (!holdings[tk]) holdings[tk] = 0;
-      const sharesEffect = t.type === 'buy' ? t.shares : -t.shares;
-      holdings[tk] += (sharesEffect || 0) * t._pct;
+      const sharesEffect = t._type === 'buy' ? t._shares : -t._shares;
+      holdings[tk] += sharesEffect * t._pct;
       cash += calcTradeCashImpact(t, market) * t._pct;
       ti++;
     }
   }
   function applyFundsUpTo(date) {
-    while (fi < funds.length && (funds[fi].date || '9999') <= date) {
+    while (fi < funds.length && funds[fi].date <= date) {
       cash += fundCashImpact(funds[fi]) * funds[fi]._pct;
       fi++;
     }
   }
   function applyIncomeUpTo(date) {
-    while (ii < income.length && (income[ii].date || '9999') <= date) {
-      cash += (income[ii].amount || 0) * income[ii]._pct;
+    while (ii < income.length && income[ii].date <= date) {
+      cash += (Number(income[ii].amount) || 0) * income[ii]._pct;
       ii++;
     }
   }
