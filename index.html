@@ -6839,34 +6839,37 @@ function buildHistoricalNetWorth(filteredAccounts, market, history, tickerField,
     ? (t => (typeof resolveTWTicker === 'function' ? resolveTWTicker(t) : t))
     : (t => t);
 
-  // Yahoo prices are split-adjusted (as if all splits had happened before
-  // the earliest date). User trades record raw shares at the trade time.
-  // Multiply trade shares by Π (split.ratio) for splits AFTER the trade
-  // so they sit in the same "post-all-splits" units as the prices.
-  function adjustedShares(originalShares, ticker, tradeDate) {
+  // Yahoo prices are split-adjusted as if all splits had happened back to
+  // day one. To match the user's RAW recorded shares (which track what the
+  // broker actually showed at trade time), un-adjust the price by the
+  // product of split ratios for splits that happened AFTER the date.
+  // Example: GOCO 1-for-15 split on 2022-11-18.
+  //   Yahoo close 2021-12-31 = $56.85 (adjusted = real × 15)
+  //   Effective price 2021-12-31 = 56.85 × (1/15) = $3.79 (real)
+  //   Then 1500 (raw shares) × 3.79 = $5,685 ✓
+  function priceFactor(ticker, date) {
     const splits = splitsMap[ticker];
-    if (!splits || splits.length === 0) return originalShares;
+    if (!splits || splits.length === 0) return 1;
     let factor = 1;
     for (const s of splits) {
-      if (s.date > tradeDate) factor *= s.ratio;
+      if (s.date > date) factor *= s.ratio;
     }
-    return originalShares * factor;
+    return factor;
   }
 
   // Collect all trades / funds / income with per-account ownership pct.
+  // No share adjustment — keep raw counts exactly as user recorded.
   const trades = [], funds = [], income = [];
   for (const acc of filteredAccounts) {
     const pct = applyPct ? (acc.ownership_pct ?? 100) / 100 : 1;
     for (const t of getAccountData(acc.id, market, 'trades')) {
       if (!t.date) continue;
       const tk = normalize(t.ticker);
-      const rawShares = Number(t.shares) || 0;
       trades.push({
         ...t,
         _pct: pct,
         _ticker: tk,
-        _shares: rawShares,
-        _adjShares: adjustedShares(rawShares, tk, t.date),
+        _shares: Number(t.shares) || 0,
         _type: String(t.type || '').toLowerCase(),
       });
     }
@@ -6905,10 +6908,9 @@ function buildHistoricalNetWorth(filteredAccounts, market, history, tickerField,
       const t = trades[ti];
       const tk = t._ticker;
       if (!holdings[tk]) holdings[tk] = 0;
-      // Use split-adjusted shares so they line up with Yahoo prices
-      const sharesEffect = t._type === 'buy' ? t._adjShares : -t._adjShares;
+      // Raw shares — price will be un-adjusted to match
+      const sharesEffect = t._type === 'buy' ? t._shares : -t._shares;
       holdings[tk] += sharesEffect * t._pct;
-      // Cash uses ORIGINAL shares × original price (real $ flowed)
       cash += calcTradeCashImpact(t, market) * t._pct;
       ti++;
     }
@@ -6944,7 +6946,9 @@ function buildHistoricalNetWorth(filteredAccounts, market, history, tickerField,
     let mv = 0;
     for (const [ticker, shares] of Object.entries(holdings)) {
       if (Math.abs(shares) < 0.0001) continue;
-      const price = lastPrices[ticker] || 0;
+      // Un-adjust Yahoo's split-adjusted price back to the price as it
+      // really was on this date, so it matches the user's raw shares.
+      const price = (lastPrices[ticker] || 0) * priceFactor(ticker, date);
       mv += shares * price;
     }
     out.push({ date, value: mv + cash });
