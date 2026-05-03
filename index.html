@@ -6562,6 +6562,10 @@ function computeTrendHoldings(filteredAccounts, applyPct = true) {
   // Calculate US and TW holdings for the given accounts.
   // applyPct mirrors calcOwnerSummary: false for 全部合計 (whole-portfolio
   // view at 100%), true when filtering by a specific owner.
+  // Also stash account list + flag so loadOverviewTrends can rebuild
+  // historical holdings per date instead of using today's holdings.
+  window._trendAccounts = filteredAccounts;
+  window._trendApplyPct = applyPct;
   for (const market of ['us', 'tw']) {
     const merged = {};
     let totalCash = 0;
@@ -6665,12 +6669,32 @@ async function loadOverviewTrends(range) {
   // Fetch US data
   const usHoldings = window._trendHoldings_us || [];
   const usCash = window._trendCash_us || 0;
-  const usTickers = usHoldings.map(h => h.ticker);
-
   // Fetch TW data
   const twHoldings = window._trendHoldings_tw || [];
   const twCash = window._trendCash_tw || 0;
-  const twTickers = twHoldings.map(h => h.ticker);
+
+  // Collect ALL tickers ever traded (so closed positions still get prices)
+  const accsForTickers = window._trendAccounts || [];
+  const collectTickers = (market) => {
+    const set = new Set();
+    for (const acc of accsForTickers) {
+      for (const t of getAccountData(acc.id, market, 'trades')) {
+        const raw = (t.ticker || '').trim();
+        if (!raw) continue;
+        const tk = market === 'tw' && typeof resolveTWTicker === 'function'
+                   ? resolveTWTicker(raw) : raw;
+        if (tk) set.add(tk);
+      }
+    }
+    // Fall back to current holdings tickers if no trades
+    if (set.size === 0) {
+      const cur = market === 'us' ? usHoldings : twHoldings;
+      cur.forEach(h => set.add(h.ticker));
+    }
+    return [...set];
+  };
+  const usTickers = collectTickers('us');
+  const twTickers = collectTickers('tw');
 
   // Show loading status
   ['us', 'tw', 'combined', 'debt'].forEach(k => {
@@ -6684,10 +6708,13 @@ async function loadOverviewTrends(range) {
       twTickers.length > 0 ? fetchStockHistory('tw', twTickers, startStr, endStr) : []
     ]);
 
-    // Build daily net worth for US (USD)
-    const usDaily = buildDailyNetWorth(usHistory, usHoldings, usCash, 'ticker');
-    // Build daily net worth for TW (TWD)
-    const twDaily = buildDailyNetWorth(twHistory, twHoldings, twCash, 'stock_code');
+    // Build daily net worth using historical trade ledger (proper holdings per date)
+    const accs = window._trendAccounts || [];
+    const applyPct = window._trendApplyPct ?? true;
+    const usDaily = accs.length ? buildHistoricalNetWorth(accs, 'us', usHistory, 'ticker', applyPct)
+                                : buildDailyNetWorth(usHistory, usHoldings, usCash, 'ticker');
+    const twDaily = accs.length ? buildHistoricalNetWorth(accs, 'tw', twHistory, 'stock_code', applyPct)
+                                : buildDailyNetWorth(twHistory, twHoldings, twCash, 'stock_code');
 
     // Render US chart
     if (usTickers.length === 0) {
@@ -6731,6 +6758,93 @@ async function loadOverviewTrends(range) {
   } catch (err) {
     console.error('loadOverviewTrends error:', err);
   }
+}
+
+// Reconstruct net worth per day from the actual trade ledger, so the
+// chart reflects what you held BACK THEN — not today's holdings priced
+// at past prices.
+function buildHistoricalNetWorth(filteredAccounts, market, history, tickerField, applyPct) {
+  if (!history || history.length === 0) return [];
+  const normalize = market === 'tw'
+    ? (t => (typeof resolveTWTicker === 'function' ? resolveTWTicker(t) : t))
+    : (t => t);
+  // Collect all trades / funds / income with per-account ownership pct
+  const trades = [], funds = [], income = [];
+  for (const acc of filteredAccounts) {
+    const pct = applyPct ? (acc.ownership_pct ?? 100) / 100 : 1;
+    for (const t of getAccountData(acc.id, market, 'trades')) trades.push({ ...t, _pct: pct, _ticker: normalize(t.ticker) });
+    for (const f of getAccountData(acc.id, market, 'funds')) funds.push({ ...f, _pct: pct });
+    for (const i of getAccountData(acc.id, market, 'income')) income.push({ ...i, _pct: pct });
+  }
+  trades.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+  funds.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+  income.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+
+  // Group history by date
+  const byDate = {};
+  for (const row of history) {
+    const d = row.trade_date;
+    if (!byDate[d]) byDate[d] = {};
+    byDate[d][row[tickerField]] = parseFloat(row.close_price) || 0;
+  }
+  const dates = Object.keys(byDate).sort();
+  if (dates.length === 0) return [];
+
+  // We need to seed holdings + cash with everything BEFORE the first
+  // history date, then walk forward applying events as they come.
+  const startDate = dates[0];
+  const holdings = {};
+  let cash = 0;
+  let ti = 0, fi = 0, ii = 0;
+
+  function applyTradesUpTo(date) {
+    while (ti < trades.length && (trades[ti].date || '9999') <= date) {
+      const t = trades[ti];
+      const tk = t._ticker;
+      if (!holdings[tk]) holdings[tk] = 0;
+      const sharesEffect = t.type === 'buy' ? t.shares : -t.shares;
+      holdings[tk] += (sharesEffect || 0) * t._pct;
+      cash += calcTradeCashImpact(t, market) * t._pct;
+      ti++;
+    }
+  }
+  function applyFundsUpTo(date) {
+    while (fi < funds.length && (funds[fi].date || '9999') <= date) {
+      cash += fundCashImpact(funds[fi]) * funds[fi]._pct;
+      fi++;
+    }
+  }
+  function applyIncomeUpTo(date) {
+    while (ii < income.length && (income[ii].date || '9999') <= date) {
+      cash += (income[ii].amount || 0) * income[ii]._pct;
+      ii++;
+    }
+  }
+
+  // Pre-seed everything before the first history date
+  applyTradesUpTo(startDate);
+  applyFundsUpTo(startDate);
+  applyIncomeUpTo(startDate);
+
+  const lastPrices = {};
+  const out = [];
+  for (const date of dates) {
+    // Apply events that happened on this exact date (already covered for startDate by pre-seed)
+    if (date !== startDate) {
+      applyTradesUpTo(date);
+      applyFundsUpTo(date);
+      applyIncomeUpTo(date);
+    }
+    Object.assign(lastPrices, byDate[date]);
+    let mv = 0;
+    for (const [ticker, shares] of Object.entries(holdings)) {
+      if (Math.abs(shares) < 0.0001) continue;
+      const price = lastPrices[ticker] || 0;
+      mv += shares * price;
+    }
+    out.push({ date, value: mv + cash });
+  }
+  return out;
 }
 
 function buildDailyNetWorth(history, holdings, cash, tickerField) {
