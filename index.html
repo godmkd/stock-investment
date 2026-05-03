@@ -6731,7 +6731,11 @@ async function loadOverviewTrends(range) {
       if (twDaily.length === 0) document.getElementById('ovTrendStatus_tw').textContent = `無歷史資料 (${twTickers.join(',')})`;
     }
 
-    // Build combined (TWD) — merge US*rate + TW
+    // Build combined (TWD) — merge US × historical_rate + TW.
+    // Use the rate captured for that month (monthlySnapshots.rate),
+    // falling back to current usdTwdRate for months we never recorded.
+    const rateMap = monthlySnapshots.rate || {};
+    const rateForDate = d => rateMap[d.slice(0, 7)] || usdTwdRate;
     const allDates = new Set([...usDaily.map(d => d.date), ...twDaily.map(d => d.date)]);
     const sortedDates = [...allDates].sort();
     const usMap = {}; usDaily.forEach(d => usMap[d.date] = d.value);
@@ -6740,7 +6744,7 @@ async function loadOverviewTrends(range) {
     const combinedDaily = sortedDates.map(date => {
       if (usMap[date] !== undefined) lastUs = usMap[date];
       if (twMap[date] !== undefined) lastTw = twMap[date];
-      return { date, value: lastUs * usdTwdRate + lastTw };
+      return { date, value: lastUs * rateForDate(date) + lastTw };
     });
     renderTrendLine('ovTrend_combined', combinedDaily, '#a78bfa', fmtTWD, 'ovTrendStatus_combined');
 
