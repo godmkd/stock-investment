@@ -25,3 +25,8 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           FINNHUB_KEY: ${{ secrets.FINNHUB_KEY }}
+      - name: Fetch USDTWD FX
+        run: python scripts/fetch_fx_rates.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
