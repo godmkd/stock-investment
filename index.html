@@ -7208,43 +7208,52 @@ function renderDetailedMonthlySnapshotTable(usKey, twKey, owner) {
   }
 
   // ===== US section =====
+  // Pre-compute parallel arrays so MoM diff for TWD uses each month's
+  // own rate (NOT current month's rate × USD diff — that's the user's
+  // complaint). Each per-month TWD net worth = USD nw × that month's rate.
+  const usdNwArr = months.map(m => usData[m]);
+  const usdInvArr = months.map(m => usInv[m]);
+  const ratePerMonth = months.map(m => rateMap[m] || usdTwdRate);
+  const twdNwArr = months.map((_, i) => usdNwArr[i] != null ? usdNwArr[i] * ratePerMonth[i] : null);
+  // For invested TWD, use the actual NTD paid in (already snapshotted)
+  const twdInvArr = months.map(m => usInvTWD[m]);
+
   const usRows = months.map((m, i) => {
-    const nw = usData[m];
-    const inv = usInv[m];
-    const rate = rateMap[m];
-    const profit = (nw != null && inv != null) ? (nw - inv) : null;
-    const roi = (profit != null && inv > 0) ? profit / inv * 100 : null;
-    const allNW = months.map(mm => usData[mm]);
-    const [diff, diffPctVal] = diffPct(allNW, i);
-    const r = rate || usdTwdRate;
-    // Render USD value with TWD equivalent on a second line (rate-converted)
-    const dual = (usd, color) => {
-      if (usd == null) return td(dash);
-      const twd = r ? usd * r : null;
-      const inner = `<div>${fmt(usd)}</div>${twd != null ? `<div style="font-size:0.78em;color:#888">${fmtTWD(twd)}</div>` : ''}`;
-      return td(inner, color || '');
+    const usdNw = usdNwArr[i], usdInv_ = usdInvArr[i];
+    const twdNw = twdNwArr[i], twdInv_ = twdInvArr[i];
+    const rate = ratePerMonth[i];
+    const usdProfit = (usdNw != null && usdInv_ != null) ? (usdNw - usdInv_) : null;
+    const twdProfit = (twdNw != null && twdInv_ != null) ? (twdNw - twdInv_) : null;
+    const usdRoi = (usdProfit != null && usdInv_ > 0) ? usdProfit / usdInv_ * 100 : null;
+    const twdRoi = (twdProfit != null && twdInv_ > 0) ? twdProfit / twdInv_ * 100 : null;
+    const [usdDiff, usdDiffPct] = diffPct(usdNwArr, i);
+    const [twdDiff, twdDiffPct] = diffPct(twdNwArr, i);
+
+    // Two-line cell helper: USD top, TWD bottom
+    const dual2 = (usd, twd, color, fmtUsd = fmt, fmtTwd = fmtTWD) => {
+      const u = usd != null ? fmtUsd(usd) : dash;
+      const t = twd != null ? `<div style="font-size:0.78em;color:#888">${fmtTwd(twd)}</div>` : '';
+      return td(`<div>${u}</div>${t}`, color || '');
     };
-    // Investment cell uses the actual TWD paid in (not USD × today's rate)
-    const invTwdActual = usInvTWD[m];
-    const investedCell = inv == null ? td(dash) :
-      td(`<div>${fmt(inv)}</div>${invTwdActual != null ? `<div style="font-size:0.78em;color:#888">${fmtTWD(invTwdActual)}</div>` : (r ? `<div style="font-size:0.78em;color:#888">${fmtTWD(inv * r)}</div>` : '')}`);
-    // Profit TWD = netWorth × rate − actual TWD invested (only if both known)
-    const profitCellTwd = (nw != null && invTwdActual != null && r) ? (nw * r - invTwdActual) : null;
-    const profitCell = profit == null ? td(dash) :
-      td(`<div>${fmt(profit)}</div>${profitCellTwd != null ? `<div style="font-size:0.78em;color:#888">${fmtTWD(profitCellTwd)}</div>` : ''}`,
-         plClass(profit).replace('style="', '').replace('"',''));
+    const dualPct = (usdP, twdP, color) => {
+      const u = usdP != null ? fmtPct(usdP) : dash;
+      const t = twdP != null ? `<div style="font-size:0.78em;color:#888">${fmtPct(twdP)}</div>` : '';
+      return td(`<div>${u}</div>${t}`, color || '');
+    };
+    const cls = v => plClass(v).replace('style="', '').replace('"','');
+
     return `<tr>
       <td>${m}</td>
-      ${dual(nw)}
-      ${investedCell}
-      ${profitCell}
-      ${td(roi != null ? fmtPct(roi) : dash, plClass(roi).replace('style="', '').replace('"',''))}
+      ${dual2(usdNw, twdNw)}
+      ${dual2(usdInv_, twdInv_)}
+      ${dual2(usdProfit, twdProfit, cls(usdProfit))}
+      ${dualPct(usdRoi, twdRoi, cls(usdRoi))}
       ${td(rate != null ? rate.toFixed(3) : dash)}
-      ${dual(diff, plClass(diff).replace('style="', '').replace('"',''))}
-      ${td(diffPctVal != null ? fmtPct(diffPctVal) : dash, plClass(diffPctVal).replace('style="', '').replace('"',''))}
+      ${dual2(usdDiff, twdDiff, cls(usdDiff))}
+      ${dualPct(usdDiffPct, twdDiffPct, cls(usdDiffPct))}
     </tr>`;
   }).join('');
-  const usHdr = '<th>月份</th><th style="text-align:right">淨值<br><span style="font-size:0.78em;color:#888">(USD/TWD)</span></th><th style="text-align:right">投資金額<br><span style="font-size:0.78em;color:#888">(USD/TWD)</span></th><th style="text-align:right">獲利<br><span style="font-size:0.78em;color:#888">(USD/TWD)</span></th><th style="text-align:right">投報率</th><th style="text-align:right">USD/TWD</th><th style="text-align:right">月差額<br><span style="font-size:0.78em;color:#888">(USD/TWD)</span></th><th style="text-align:right">月損益率</th>';
+  const usHdr = '<th>月份</th><th style="text-align:right">淨值<br><span style="font-size:0.78em;color:#888">(USD/TWD)</span></th><th style="text-align:right">投資金額<br><span style="font-size:0.78em;color:#888">(USD/TWD)</span></th><th style="text-align:right">獲利<br><span style="font-size:0.78em;color:#888">(USD/TWD)</span></th><th style="text-align:right">投報率<br><span style="font-size:0.78em;color:#888">(USD/TWD)</span></th><th style="text-align:right">USD/TWD</th><th style="text-align:right">月差額<br><span style="font-size:0.78em;color:#888">(USD/TWD)</span></th><th style="text-align:right">月損益率<br><span style="font-size:0.78em;color:#888">(USD/TWD)</span></th>';
 
   // ===== TW section =====
   const twRows = months.map((m, i) => {
