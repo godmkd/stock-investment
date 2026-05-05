@@ -6813,6 +6813,12 @@ async function loadOverviewTrends(range) {
     });
     renderTrendLine('ovTrend_combined', combinedDaily, '#a78bfa', fmtTWD, 'ovTrendStatus_combined');
 
+    // Sync monthly snapshots from trend data so the table matches the chart.
+    // Take each month's LAST data point: current month = today's value
+    // (keeps updating); past months = month-end value (auto frozen).
+    syncMonthlySnapshotsFromTrend(usDaily, 'us');
+    syncMonthlySnapshotsFromTrend(twDaily, 'tw');
+
     // Render debt trend from snapshots
     const debtData = (debtSnapshots.total || [])
       .filter(s => s.date >= startStr && s.date <= endStr)
@@ -6827,6 +6833,26 @@ async function loadOverviewTrends(range) {
   } catch (err) {
     console.error('loadOverviewTrends error:', err);
   }
+}
+
+// Sync monthlySnapshots[market] with last value per month from trend data.
+// Hybrid: current month keeps updating (each call overwrites with the
+// latest data point); past months naturally settle on month-end value
+// because that's the last data point in that month.
+function syncMonthlySnapshotsFromTrend(daily, market) {
+  if (!daily || daily.length === 0) return;
+  // Map filter to snapshot key (mirrors saveMonthlySnapshot logic)
+  const owner = (typeof currentOwnerFilter !== 'undefined' && currentOwnerFilter && currentOwnerFilter !== '__by_owner__') ? currentOwnerFilter : null;
+  const key = owner ? market + '_' + owner : market;
+  const lastByMonth = {};
+  for (const d of daily) {
+    if (!d || !d.date || d.value == null) continue;
+    const ym = d.date.slice(0, 7);
+    lastByMonth[ym] = Math.round(d.value * 100) / 100;
+  }
+  if (!monthlySnapshots[key]) monthlySnapshots[key] = {};
+  Object.assign(monthlySnapshots[key], lastByMonth);
+  try { localStorage.setItem('monthly_snapshots', JSON.stringify(monthlySnapshots)); } catch {}
 }
 
 // Reconstruct net worth per day from the actual trade ledger, so the
