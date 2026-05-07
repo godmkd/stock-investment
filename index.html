@@ -7252,7 +7252,11 @@ function renderDetailedMonthlySnapshotTable(usKey, twKey, owner) {
   // complaint). Each per-month TWD net worth = USD nw × that month's rate.
   const usdNwArr = months.map(m => usData[m]);
   const usdInvArr = months.map(m => usInv[m]);
-  const ratePerMonth = months.map(m => rateMap[m] || usdTwdRate);
+  // Current month always uses live usdTwdRate (matches summary card),
+  // past months use that month's frozen snapshot rate.
+  const _now = new Date();
+  const _curMonth = _now.getFullYear() + '-' + String(_now.getMonth() + 1).padStart(2, '0');
+  const ratePerMonth = months.map(m => m === _curMonth ? usdTwdRate : (rateMap[m] || usdTwdRate));
   const twdNwArr = months.map((_, i) => usdNwArr[i] != null ? usdNwArr[i] * ratePerMonth[i] : null);
   // For invested TWD, use the actual NTD paid in (already snapshotted)
   const twdInvArr = months.map(m => usInvTWD[m]);
