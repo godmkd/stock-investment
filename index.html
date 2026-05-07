@@ -6839,6 +6839,10 @@ async function loadOverviewTrends(range) {
 // Hybrid: current month keeps updating (each call overwrites with the
 // latest data point); past months naturally settle on month-end value
 // because that's the last data point in that month.
+//
+// Also syncs the rate snapshot the SAME way: rate[currentMonth] = today's
+// live usdTwdRate (so it tracks the summary card); rate[pastMonth] is
+// untouched (stays frozen at whatever was stored when that was current).
 function syncMonthlySnapshotsFromTrend(daily, market) {
   if (!daily || daily.length === 0) return;
   // Map filter to snapshot key (mirrors saveMonthlySnapshot logic)
@@ -6852,6 +6856,15 @@ function syncMonthlySnapshotsFromTrend(daily, market) {
   }
   if (!monthlySnapshots[key]) monthlySnapshots[key] = {};
   Object.assign(monthlySnapshots[key], lastByMonth);
+
+  // Refresh current-month rate to live value (option A: 當月即時、過月定格)
+  if (typeof usdTwdRate === 'number' && !isNaN(usdTwdRate)) {
+    const now = new Date();
+    const curMonth = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+    if (!monthlySnapshots.rate) monthlySnapshots.rate = {};
+    monthlySnapshots.rate[curMonth] = Math.round(usdTwdRate * 1000) / 1000;
+  }
+
   try { localStorage.setItem('monthly_snapshots', JSON.stringify(monthlySnapshots)); } catch {}
 }
 
