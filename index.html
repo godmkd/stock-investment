@@ -3669,15 +3669,44 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
 
     ${mergedList.length > 0 ? `
     <div class="table-container" style="margin-top:16px;overflow-x:auto">
-      <div class="table-header"><h3>${flag} 合併持股 <span class="help-tip">!<span class="help-text">各帳戶持股按比例加權後合併顯示。</span></span></h3></div>
-      <table style="min-width:max-content"><thead><tr><th>股票</th><th>股價</th><th>均價</th><th>總股數</th><th>市值</th>${market==='us'?'<th>台幣市值</th>':''}<th>佔比</th></tr></thead>
+      <div class="table-header"><h3>${flag} 合併持股 <span class="help-tip">!<span class="help-text">各帳戶持股按比例加權後合併顯示。損益 = 市值 − 投入成本；投報率 = 損益/成本。</span></span></h3></div>
+      <table style="min-width:max-content"><thead><tr><th>股票</th><th>股價</th><th>均價</th><th>總股數</th><th>市值</th>${market==='us'?'<th>台幣市值</th>':''}<th>損益</th><th>投報率</th><th>佔比</th></tr></thead>
       <tbody>${mergedList.map(s => {
         const pct = totalMV > 0 ? (s.marketValue / totalMV * 100).toFixed(1) : '0.0';
         const priceStr = s.currentPrice ? (market==='tw'?fmtTWD2(s.currentPrice):fmt(s.currentPrice)) : '-';
         const avgStr = s.shares > 0 ? (market==='tw'?fmtTWD2(s.netCost/s.shares):fmt(s.netCost/s.shares)) : '-';
         const twdCol = market==='us' ? `<td>${fmtTWD(s.marketValue * usdTwdRate)}</td>` : '';
-        return `<tr><td><strong>${s.ticker}</strong></td><td>${priceStr}</td><td>${avgStr}</td><td>${s.shares.toFixed(2)}</td><td>${fmtMkt(s.marketValue)}</td>${twdCol}<td>${pct}%</td></tr>`;
-      }).join('')}</tbody></table>
+        const pl = s.marketValue - s.netCost;
+        const ret = s.netCost > 0 ? (pl / s.netCost * 100) : 0;
+        const plClass = pl >= 0 ? 'green' : 'red';
+        const plSign = pl >= 0 ? '+' : '';
+        return `<tr>
+          <td><strong>${s.ticker}</strong></td>
+          <td>${priceStr}</td>
+          <td>${avgStr}</td>
+          <td>${s.shares.toFixed(2)}</td>
+          <td>${fmtMkt(s.marketValue)}</td>
+          ${twdCol}
+          <td class="${plClass}">${plSign}${fmtMkt(pl)}</td>
+          <td class="${plClass}">${plSign}${ret.toFixed(2)}%</td>
+          <td>${pct}%</td>
+        </tr>`;
+      }).join('')}${(() => {
+        // Footer row: totals
+        const totalCost = mergedList.reduce((s, x) => s + x.netCost, 0);
+        const totalPL = totalMV - totalCost;
+        const totalRet = totalCost > 0 ? (totalPL / totalCost * 100) : 0;
+        const cls = totalPL >= 0 ? 'green' : 'red';
+        const sign = totalPL >= 0 ? '+' : '';
+        return `<tr style="font-weight:700;border-top:2px solid rgba(255,255,255,0.15)">
+          <td colspan="4">合計</td>
+          <td>${fmtMkt(totalMV)}</td>
+          ${market==='us'?`<td>${fmtTWD(totalMV * usdTwdRate)}</td>`:''}
+          <td class="${cls}">${sign}${fmtMkt(totalPL)}</td>
+          <td class="${cls}">${sign}${totalRet.toFixed(2)}%</td>
+          <td>100.0%</td>
+        </tr>`;
+      })()}</tbody></table>
     </div>` : ''}
   `;
 
