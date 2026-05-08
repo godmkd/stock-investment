@@ -6818,6 +6818,10 @@ async function loadOverviewTrends(range) {
     // (keeps updating); past months = month-end value (auto frozen).
     syncMonthlySnapshotsFromTrend(usDaily, 'us');
     syncMonthlySnapshotsFromTrend(twDaily, 'tw');
+    // Backfill historical USD/TWD rate per month from fx_rates (Yahoo).
+    // Past months without a stored rate fall back to today's rate
+    // otherwise — making every row look identical.
+    syncMonthlyRatesFromFx(fxMap);
 
     // Render debt trend from snapshots
     const debtData = (debtSnapshots.total || [])
@@ -6833,6 +6837,29 @@ async function loadOverviewTrends(range) {
   } catch (err) {
     console.error('loadOverviewTrends error:', err);
   }
+}
+
+// Backfill monthlySnapshots.rate[YYYY-MM] from the daily Yahoo fx series.
+// For each month present in fxMap, take the last (latest) date's rate
+// and store it as that month's USD/TWD snapshot. Skips current month so
+// renderer's "live usdTwdRate" override still applies.
+function syncMonthlyRatesFromFx(fxMap) {
+  if (!fxMap || typeof fxMap !== 'object') return;
+  const dates = Object.keys(fxMap).sort();
+  if (dates.length === 0) return;
+  const lastByMonth = {};
+  for (const d of dates) {
+    const ym = d.slice(0, 7);
+    lastByMonth[ym] = fxMap[d];   // overwrite — last date in month wins
+  }
+  const now = new Date();
+  const curMonth = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  if (!monthlySnapshots.rate) monthlySnapshots.rate = {};
+  for (const ym in lastByMonth) {
+    if (ym === curMonth) continue;        // current month uses live rate
+    monthlySnapshots.rate[ym] = Math.round(lastByMonth[ym] * 1000) / 1000;
+  }
+  try { localStorage.setItem('monthly_snapshots', JSON.stringify(monthlySnapshots)); } catch {}
 }
 
 // Sync monthlySnapshots[market] with last value per month from trend data.
