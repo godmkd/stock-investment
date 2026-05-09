@@ -1838,18 +1838,27 @@ function updateBuyLabel() {
   el.textContent = priceLabel(getSwapPrice(swapBuy.ticker));
 }
 
+// Debounce the cross-side auto-fill so it only fires after the user
+// stops typing — typing "1" → "10" → "100" no longer makes the other
+// side flicker through partial values.
+let _swapDebounceTimer = null;
+function scheduleRecalc() {
+  if (_swapDebounceTimer) clearTimeout(_swapDebounceTimer);
+  _swapDebounceTimer = setTimeout(() => { _swapDebounceTimer = null; recalcSwap(); }, 450);
+}
+
 function onSwapSellChange(i, field, val) {
   swapSells[i][field] = val;
   swapLastEdited = 'sell';
   updateSellLabel(i);
-  recalcSwap();
+  scheduleRecalc();
 }
 
 function onSwapBuyChange(field, val) {
   swapBuy[field] = val;
   swapLastEdited = 'buy';
   updateBuyLabel();
-  recalcSwap();
+  scheduleRecalc();
 }
 
 function addSwapSellRow() {
