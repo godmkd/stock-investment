@@ -2028,29 +2028,37 @@ async function refreshSwapPrices() {
       await new Promise(r => setTimeout(r, 300));
     }
   } else {
-    // TW: normalize each ticker to numeric code, fetch via TWSE JSONP
+    // TW: normalize each ticker to numeric code, then run the same 5-method
+    // waterfall as refreshTWPrices (jsonp can return empty after-hours).
     const codes = new Set();
     for (const t of tickers) {
       const c = (typeof resolveTWTicker === 'function') ? resolveTWTicker(t) : t;
       if (c) codes.add(c);
     }
-    try {
-      const results = await fetchTWPricesJsonp(codes);
-      Object.assign(twPrices, results);
-      try { localStorage.setItem('tw_stock_prices', JSON.stringify(twPrices)); } catch {}
-      success = Object.keys(results).length / 2;  // results has both code + name keys
-    } catch (e) {
-      console.warn('TW jsonp failed', e);
-    }
-    // Fallback: try Yahoo closing for any still missing
-    const stillMissing = [...codes].filter(c => !twPrices[c] || !twPrices[c].price);
-    if (stillMissing.length > 0) {
+    const remaining = () => [...codes].filter(c => !twPrices[c] || !twPrices[c].price);
+    const tryMethod = async (fn, label) => {
+      const miss = remaining();
+      if (miss.length === 0) return;
       try {
-        const yResults = await fetchTWYahooClosing(new Set(stillMissing));
-        Object.assign(twPrices, yResults);
-        success += Object.keys(yResults).length / 2;
-      } catch (e) { console.warn('Yahoo TW fallback failed', e); }
+        const r = await fn(new Set(miss));
+        if (r && Object.keys(r).length > 0) Object.assign(twPrices, r);
+      } catch (e) { console.warn(`TW ${label} failed`, e); }
+    };
+    const marketOpen = (typeof isTWMarketHours === 'function') && isTWMarketHours();
+    if (marketOpen) {
+      await tryMethod(fetchTWPricesJsonp, 'jsonp(open)');
+    } else {
+      await tryMethod(fetchTWYahooClosing, 'yahoo');
+      await tryMethod(fetchTWPricesJsonp, 'jsonp(closed)');
     }
+    if (typeof fetchTWSEClosingPrices === 'function') {
+      await tryMethod(fetchTWSEClosingPrices, 'twse-proxy');
+    }
+    if (typeof fetchTPEXClosingPrices === 'function') {
+      await tryMethod(fetchTPEXClosingPrices, 'tpex');
+    }
+    try { localStorage.setItem('tw_stock_prices', JSON.stringify(twPrices)); } catch {}
+    success = [...codes].filter(c => twPrices[c]?.price > 0).length;
   }
 
   // Update displayed labels in place (no re-render)
