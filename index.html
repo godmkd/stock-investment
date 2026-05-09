@@ -857,12 +857,33 @@
   </div>
 
   <div style="background:rgba(255,255,255,0.04);border-radius:10px;padding:14px">
-    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px">
+    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:10px">
       <input type="checkbox" id="swapFeeEnabled" checked onchange="recalcSwap()">
-      <span style="font-weight:600">含手續費試算</span>
+      <span style="font-weight:600">含手續費 + 證交稅試算</span>
+      <span style="font-size:0.78em;color:#666;margin-left:auto">空白＝用預設</span>
     </label>
-    <div id="swapFeeDetail" style="font-size:0.83em;color:#888">
-      美股：千分之 1，最少 $15　|　台股：千分之 1.425，無低消
+    <div id="swapFeeUS" style="display:none;margin-top:8px;padding:8px 10px;background:rgba(255,255,255,0.03);border-radius:6px">
+      <div style="font-size:0.85em;color:#3b82f6;font-weight:600;margin-bottom:6px">🇺🇸 美股</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;font-size:0.85em">
+        <span>手續費</span>
+        <input id="swapFeeRateUS" type="number" placeholder="0.1" step="0.001" style="width:70px;padding:4px 6px;border:1px solid rgba(255,255,255,0.15);border-radius:4px;background:rgba(255,255,255,0.08);color:#fff;text-align:right" oninput="recalcSwap()">
+        <span>%　低消 $</span>
+        <input id="swapFeeMinUS" type="number" placeholder="15" step="1" style="width:60px;padding:4px 6px;border:1px solid rgba(255,255,255,0.15);border-radius:4px;background:rgba(255,255,255,0.08);color:#fff;text-align:right" oninput="recalcSwap()">
+        <span style="margin-left:10px">證交稅</span>
+        <input id="swapTaxRateUS" type="number" placeholder="0.003" step="0.0001" style="width:70px;padding:4px 6px;border:1px solid rgba(255,255,255,0.15);border-radius:4px;background:rgba(255,255,255,0.08);color:#fff;text-align:right" oninput="recalcSwap()">
+        <span>%（賣出）</span>
+      </div>
+    </div>
+    <div id="swapFeeTW" style="display:none;margin-top:8px;padding:8px 10px;background:rgba(255,255,255,0.03);border-radius:6px">
+      <div style="font-size:0.85em;color:#f97316;font-weight:600;margin-bottom:6px">🇹🇼 台股</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;font-size:0.85em">
+        <span>手續費</span>
+        <input id="swapFeeRateTW" type="number" placeholder="0.1425" step="0.0001" style="width:80px;padding:4px 6px;border:1px solid rgba(255,255,255,0.15);border-radius:4px;background:rgba(255,255,255,0.08);color:#fff;text-align:right" oninput="recalcSwap()">
+        <span>%（無低消）</span>
+        <span style="margin-left:10px">證交稅</span>
+        <input id="swapTaxRateTW" type="number" placeholder="0.3" step="0.001" style="width:70px;padding:4px 6px;border:1px solid rgba(255,255,255,0.15);border-radius:4px;background:rgba(255,255,255,0.08);color:#fff;text-align:right" oninput="recalcSwap()">
+        <span>%（賣出，ETF 通常 0.1%）</span>
+      </div>
     </div>
   </div>
 </div>
@@ -1714,12 +1735,11 @@ function switchTab(tabName) {
 let swapMarket = 'us';
 let swapSells = [{ ticker: '', shares: '' }];
 let swapBuy = { ticker: '', shares: '' };
-let swapLastEdited = 'sell'; // 'sell' or 'buy' — which side user last touched
+let swapLastEdited = 'sell';
 
 function setSwapMarket(mkt) {
   if (mkt === swapMarket) return;
   swapMarket = mkt;
-  // Reset on market switch (different ticker domain)
   swapSells = [{ ticker: '', shares: '' }];
   swapBuy = { ticker: '', shares: '' };
   renderSwapTab();
@@ -1728,6 +1748,8 @@ function setSwapMarket(mkt) {
 function renderSwapTab() {
   document.getElementById('swapMktUS').classList.toggle('active', swapMarket === 'us');
   document.getElementById('swapMktTW').classList.toggle('active', swapMarket === 'tw');
+  document.getElementById('swapFeeUS').style.display = swapMarket === 'us' ? 'block' : 'none';
+  document.getElementById('swapFeeTW').style.display = swapMarket === 'tw' ? 'block' : 'none';
   renderSwapSellList();
   renderSwapBuyRow();
   recalcSwap();
@@ -1764,6 +1786,17 @@ function tickerOptions() {
   return `<datalist id="swapTickerList">${opts}</datalist>`;
 }
 
+function priceLabel(price) {
+  if (!price || price <= 0) return '股價未抓到';
+  return '@ ' + (swapMarket === 'us' ? fmt(price) : fmtTWD(price));
+}
+function priceLabelWithGross(price, shares) {
+  if (!price || price <= 0) return '股價未抓到';
+  const g = price * shares;
+  const fn = swapMarket === 'us' ? fmt : fmtTWD;
+  return '@ ' + fn(price) + (shares > 0 ? ' = ' + fn(g) : '');
+}
+
 function renderSwapSellList() {
   const list = document.getElementById('swapSellList');
   if (!list) return;
@@ -1771,11 +1804,10 @@ function renderSwapSellList() {
   swapSells.forEach((row, i) => {
     const price = getSwapPrice(row.ticker);
     const sharesNum = parseInt(row.shares) || 0;
-    const gross = price * sharesNum;
     html += `<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;flex-wrap:wrap">
-      <input list="swapTickerList" placeholder="股票代碼" value="${row.ticker || ''}" style="flex:1;min-width:100px;padding:6px 10px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;background:rgba(255,255,255,0.08);color:#fff;font-size:0.9em" oninput="onSwapSellChange(${i},'ticker',this.value)" onchange="onSwapSellChange(${i},'ticker',this.value)">
-      <input type="number" placeholder="股數" value="${row.shares}" min="0" step="1" style="width:90px;padding:6px 10px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;background:rgba(255,255,255,0.08);color:#fff;font-size:0.9em;text-align:right" oninput="onSwapSellChange(${i},'shares',this.value)">
-      <span style="font-size:0.82em;color:#888;min-width:140px;text-align:right">${price > 0 ? '@ ' + (swapMarket==='us'?fmt(price):fmtTWD(price)) + ' = ' + (swapMarket==='us'?fmt(gross):fmtTWD(gross)) : '股價未抓到'}</span>
+      <input id="swapSellTk_${i}" list="swapTickerList" placeholder="股票代碼" value="${row.ticker || ''}" style="flex:1;min-width:100px;padding:6px 10px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;background:rgba(255,255,255,0.08);color:#fff;font-size:0.9em" oninput="onSwapSellChange(${i},'ticker',this.value)">
+      <input id="swapSellSh_${i}" type="number" placeholder="股數" value="${row.shares}" min="0" step="1" style="width:90px;padding:6px 10px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;background:rgba(255,255,255,0.08);color:#fff;font-size:0.9em;text-align:right" oninput="onSwapSellChange(${i},'shares',this.value)">
+      <span id="swapSellLbl_${i}" style="font-size:0.82em;color:#888;min-width:140px;text-align:right">${priceLabelWithGross(price, sharesNum)}</span>
       ${swapSells.length > 1 ? `<button class="btn-danger" style="padding:4px 8px;font-size:0.85em" onclick="removeSwapSellRow(${i})">✕</button>` : ''}
     </div>`;
   });
@@ -1787,23 +1819,36 @@ function renderSwapBuyRow() {
   if (!row) return;
   const price = getSwapPrice(swapBuy.ticker);
   row.innerHTML = `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-    <input list="swapTickerList" placeholder="股票代碼" value="${swapBuy.ticker || ''}" style="flex:1;min-width:100px;padding:6px 10px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;background:rgba(255,255,255,0.08);color:#fff;font-size:0.9em" oninput="onSwapBuyChange('ticker',this.value)" onchange="onSwapBuyChange('ticker',this.value)">
-    <input type="number" placeholder="股數" value="${swapBuy.shares}" min="0" step="1" style="width:90px;padding:6px 10px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;background:rgba(255,255,255,0.08);color:#fff;font-size:0.9em;text-align:right" oninput="onSwapBuyChange('shares',this.value)">
-    <span style="font-size:0.82em;color:#888;min-width:120px;text-align:right">${price > 0 ? '@ ' + (swapMarket==='us'?fmt(price):fmtTWD(price)) : '股價未抓到'}</span>
+    <input id="swapBuyTk" list="swapTickerList" placeholder="股票代碼" value="${swapBuy.ticker || ''}" style="flex:1;min-width:100px;padding:6px 10px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;background:rgba(255,255,255,0.08);color:#fff;font-size:0.9em" oninput="onSwapBuyChange('ticker',this.value)">
+    <input id="swapBuySh" type="number" placeholder="股數" value="${swapBuy.shares}" min="0" step="1" style="width:90px;padding:6px 10px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;background:rgba(255,255,255,0.08);color:#fff;font-size:0.9em;text-align:right" oninput="onSwapBuyChange('shares',this.value)">
+    <span id="swapBuyLbl" style="font-size:0.82em;color:#888;min-width:120px;text-align:right">${priceLabel(price)}</span>
   </div>`;
+}
+
+// In-place price-label updates (don't re-render input — keeps focus)
+function updateSellLabel(i) {
+  const el = document.getElementById('swapSellLbl_' + i);
+  if (!el) return;
+  const price = getSwapPrice(swapSells[i].ticker);
+  el.textContent = priceLabelWithGross(price, parseInt(swapSells[i].shares) || 0);
+}
+function updateBuyLabel() {
+  const el = document.getElementById('swapBuyLbl');
+  if (!el) return;
+  el.textContent = priceLabel(getSwapPrice(swapBuy.ticker));
 }
 
 function onSwapSellChange(i, field, val) {
   swapSells[i][field] = val;
-  if (field === 'ticker') renderSwapSellList(); // refresh price label
   swapLastEdited = 'sell';
+  updateSellLabel(i);
   recalcSwap();
 }
 
 function onSwapBuyChange(field, val) {
   swapBuy[field] = val;
-  if (field === 'ticker') renderSwapBuyRow();
   swapLastEdited = 'buy';
+  updateBuyLabel();
   recalcSwap();
 }
 
@@ -1820,109 +1865,123 @@ function removeSwapSellRow(i) {
   recalcSwap();
 }
 
-// Fee logic per market
-// US: 0.1% (千分之1), min $15
-// TW: 0.1425% (千分之1.425), no minimum
-function swapFeeRate() { return swapMarket === 'us' ? 0.001 : 0.001425; }
-function swapFeeMin() { return swapMarket === 'us' ? 15 : 0; }
-function calcFee(amount) {
-  if (!document.getElementById('swapFeeEnabled')?.checked) return 0;
-  const r = swapFeeRate() * amount;
-  return Math.max(r, amount > 0 ? swapFeeMin() : 0);
+// Fee + tax: read from inputs, blank → use default
+function readNumOrDefault(id, def) {
+  const v = parseFloat(document.getElementById(id)?.value);
+  return (isNaN(v) || v < 0) ? def : v;
+}
+function swapFeeRate() {
+  // Defaults: US 0.001 (0.1%), TW 0.001425 (0.1425%) — inputs are in PERCENT
+  if (swapMarket === 'us') return readNumOrDefault('swapFeeRateUS', 0.1) / 100;
+  return readNumOrDefault('swapFeeRateTW', 0.1425) / 100;
+}
+function swapFeeMin() {
+  if (swapMarket === 'us') return readNumOrDefault('swapFeeMinUS', 15);
+  return 0;
+}
+function swapTaxRate() {
+  // Defaults: US 0.003 (0.003% SEC fee), TW 0.3% (一般股) — inputs in PERCENT
+  if (swapMarket === 'us') return readNumOrDefault('swapTaxRateUS', 0.003) / 100;
+  return readNumOrDefault('swapTaxRateTW', 0.3) / 100;
+}
+function feesEnabled() { return !!document.getElementById('swapFeeEnabled')?.checked; }
+
+// Sell side: cash gained = gross - commission - tax
+function sellCashAfter(gross) {
+  if (gross <= 0 || !feesEnabled()) return gross;
+  const commission = Math.max(swapFeeRate() * gross, swapFeeMin());
+  const tax = swapTaxRate() * gross;
+  return gross - commission - tax;
+}
+// Buy side: cash spent = gross + commission (no tax on buy)
+function buyCostAfter(gross) {
+  if (gross <= 0 || !feesEnabled()) return gross;
+  const commission = Math.max(swapFeeRate() * gross, swapFeeMin());
+  return gross + commission;
 }
 
 function recalcSwap() {
-  // Sell side
+  // Sell side total
   let sellGross = 0;
   for (const s of swapSells) {
-    const price = getSwapPrice(s.ticker);
-    const shares = parseInt(s.shares) || 0;
-    sellGross += price * shares;
+    sellGross += getSwapPrice(s.ticker) * (parseInt(s.shares) || 0);
   }
-  const sellFee = calcFee(sellGross);
-  const cashAvailable = sellGross - sellFee;
+  const cashAvailable = sellCashAfter(sellGross);
   const sellTotalEl = document.getElementById('swapSellTotal');
-  if (sellTotalEl) sellTotalEl.textContent = sellGross > 0 ? (swapMarket==='us'?fmt(cashAvailable):fmtTWD(cashAvailable)) : '—';
+  if (sellTotalEl) sellTotalEl.textContent = sellGross > 0 ? (swapMarket === 'us' ? fmt(cashAvailable) : fmtTWD(cashAvailable)) : '—';
 
   const buyPrice = getSwapPrice(swapBuy.ticker);
 
   if (swapLastEdited === 'sell') {
-    // Forward: sell → buy. Auto-fill buy.shares.
+    // Forward: solve max integer shares such that buyCostAfter(shares*price) <= cashAvailable
     if (cashAvailable > 0 && buyPrice > 0) {
-      // Solve: buyShares × buyPrice + fee(buyShares × buyPrice) <= cashAvailable
-      // Approximation: max shares = floor(cash / (price × (1 + r))), then check fee/min
-      const r = document.getElementById('swapFeeEnabled')?.checked ? swapFeeRate() : 0;
+      const r = feesEnabled() ? swapFeeRate() : 0;
       let maxShares = Math.floor(cashAvailable / (buyPrice * (1 + r)));
-      // Refine: ensure cost+fee actually fits (handles min fee for US)
       while (maxShares > 0) {
-        const cost = maxShares * buyPrice;
-        const fee = calcFee(cost);
-        if (cost + fee <= cashAvailable + 0.001) break;
+        if (buyCostAfter(maxShares * buyPrice) <= cashAvailable + 0.001) break;
         maxShares--;
       }
       swapBuy.shares = maxShares > 0 ? String(maxShares) : '0';
     } else {
       swapBuy.shares = '';
     }
-    renderSwapBuyRow();
+    // In-place update of buy shares input (DON'T re-render row — keep focus)
+    const buyShEl = document.getElementById('swapBuySh');
+    if (buyShEl && document.activeElement !== buyShEl) buyShEl.value = swapBuy.shares;
   } else if (swapLastEdited === 'buy') {
-    // Reverse: buy → sell. User filled buy.shares.
-    // Cascade-fill sell rows in order. Treat each row that user pre-typed as fixed.
-    // Then the FIRST row with empty/0 shares gets the remainder (must have a ticker selected).
+    // Reverse: cascade fill. Find FIRST sell row with ticker but blank shares.
     if (parseInt(swapBuy.shares) > 0 && buyPrice > 0) {
-      const buyShares = parseInt(swapBuy.shares);
-      const buyCost = buyShares * buyPrice;
-      const buyFee = calcFee(buyCost);
-      const cashNeeded = buyCost + buyFee;
-
-      // Sum cash from rows the user already filled (shares > 0, locked)
-      let lockedCash = 0;
-      let firstEmptyIdx = -1;
+      const buyGross = parseInt(swapBuy.shares) * buyPrice;
+      const cashNeeded = buyCostAfter(buyGross);
+      let lockedGross = 0;
+      let fillIdx = -1;
       swapSells.forEach((s, i) => {
         const sh = parseInt(s.shares) || 0;
-        if (sh > 0 && getSwapPrice(s.ticker) > 0) {
-          lockedCash += getSwapPrice(s.ticker) * sh;
-        } else if (firstEmptyIdx < 0 && s.ticker) {
-          firstEmptyIdx = i;
+        const p = getSwapPrice(s.ticker);
+        if (sh > 0 && p > 0) {
+          lockedGross += p * sh;
+        } else if (fillIdx < 0 && s.ticker) {
+          fillIdx = i;
         }
       });
-      // After fee on locked cash, what's the residual still needed?
-      const lockedAfterFee = lockedCash - calcFee(lockedCash);
-      const stillNeeded = cashNeeded - lockedAfterFee;
-      if (stillNeeded > 0 && firstEmptyIdx >= 0) {
-        const fillPrice = getSwapPrice(swapSells[firstEmptyIdx].ticker);
+      const lockedNet = sellCashAfter(lockedGross);
+      const stillNeeded = cashNeeded - lockedNet;
+      if (stillNeeded > 0 && fillIdx >= 0) {
+        const fillPrice = getSwapPrice(swapSells[fillIdx].ticker);
         if (fillPrice > 0) {
-          // Need fillShares × fillPrice (1 - feeRate) to cover stillNeeded (gross including fee added on full sell side)
-          // Approximate with full-sell fee model: cash gain = price × shares × (1 - r)
-          const r = document.getElementById('swapFeeEnabled')?.checked ? swapFeeRate() : 0;
+          const r = feesEnabled() ? swapFeeRate() + swapTaxRate() : 0;
           const fillShares = Math.ceil(stillNeeded / (fillPrice * (1 - r)));
-          swapSells[firstEmptyIdx].shares = String(Math.max(0, fillShares));
+          swapSells[fillIdx].shares = String(Math.max(0, fillShares));
+          const inp = document.getElementById('swapSellSh_' + fillIdx);
+          if (inp && document.activeElement !== inp) inp.value = swapSells[fillIdx].shares;
+          updateSellLabel(fillIdx);
         }
-      } else if (stillNeeded <= 0) {
-        // Locked already covers — set first empty to 0
-        if (firstEmptyIdx >= 0) swapSells[firstEmptyIdx].shares = '0';
+      } else if (stillNeeded <= 0 && fillIdx >= 0) {
+        swapSells[fillIdx].shares = '0';
+        const inp = document.getElementById('swapSellSh_' + fillIdx);
+        if (inp && document.activeElement !== inp) inp.value = '0';
+        updateSellLabel(fillIdx);
       }
-      renderSwapSellList();
     }
   }
 
-  // Display buy cost + remainder using FINAL state
+  // Re-sum sell side (may have changed via cascade)
+  let finalSellGross = 0;
+  for (const s of swapSells) finalSellGross += getSwapPrice(s.ticker) * (parseInt(s.shares) || 0);
+  const finalCash = sellCashAfter(finalSellGross);
+
   const finalBuyShares = parseInt(swapBuy.shares) || 0;
-  const finalBuyCost = finalBuyShares * buyPrice;
-  const finalBuyFee = calcFee(finalBuyCost);
-  const totalBuyOut = finalBuyCost + finalBuyFee;
-  // Recompute sell after-fee with current state
-  let recalcSellGross = 0;
-  for (const s of swapSells) recalcSellGross += getSwapPrice(s.ticker) * (parseInt(s.shares) || 0);
-  const recalcCash = recalcSellGross - calcFee(recalcSellGross);
-  const remainder = recalcCash - totalBuyOut;
+  const finalBuyCost = buyCostAfter(finalBuyShares * buyPrice);
+  const remainder = finalCash - finalBuyCost;
 
   const fmtFn = swapMarket === 'us' ? fmt : fmtTWD;
+  const sellTotal2 = document.getElementById('swapSellTotal');
+  if (sellTotal2) sellTotal2.textContent = finalSellGross > 0 ? fmtFn(finalCash) : '—';
   const buyCostEl = document.getElementById('swapBuyCost');
   const remEl = document.getElementById('swapRemainder');
-  if (buyCostEl) buyCostEl.textContent = totalBuyOut > 0 ? fmtFn(totalBuyOut) : '—';
+  if (buyCostEl) buyCostEl.textContent = finalBuyCost > 0 ? fmtFn(finalBuyCost) : '—';
   if (remEl) {
-    if (recalcSellGross > 0 && totalBuyOut > 0) {
+    if (finalSellGross > 0 && finalBuyCost > 0) {
       remEl.textContent = fmtFn(remainder);
       remEl.style.color = remainder >= 0 ? '#34d399' : '#f87171';
     } else {
@@ -1930,20 +1989,77 @@ function recalcSwap() {
       remEl.style.color = '#aaa';
     }
   }
-  // Last update timestamp
-  const lu = document.getElementById('swapLastUpdate');
-  if (lu) {
-    const stamp = swapMarket === 'us'
-      ? (document.getElementById('usLastUpdate')?.textContent || '')
-      : (document.getElementById('twLastUpdate')?.textContent || '');
-    lu.textContent = stamp || '';
-  }
 }
 
+// Targeted price refresh: only the tickers currently entered on this tab
 async function refreshSwapPrices() {
-  if (swapMarket === 'us') await refreshUSPrices();
-  else await refreshTWPrices();
-  renderSwapTab();
+  const tickers = new Set();
+  for (const s of swapSells) if (s.ticker) tickers.add(s.ticker.trim());
+  if (swapBuy.ticker) tickers.add(swapBuy.ticker.trim());
+  if (tickers.size === 0) {
+    const lu = document.getElementById('swapLastUpdate');
+    if (lu) lu.textContent = '請先輸入股票';
+    return;
+  }
+  const lu = document.getElementById('swapLastUpdate');
+  if (lu) lu.textContent = '更新中...';
+  let success = 0;
+  for (const t of tickers) {
+    if (await fetchSwapPrice(t)) success++;
+    await new Promise(r => setTimeout(r, 300));
+  }
+  // Update displayed labels in place (no re-render)
+  swapSells.forEach((_, i) => updateSellLabel(i));
+  updateBuyLabel();
+  recalcSwap();
+  if (lu) lu.textContent = `已更新 ${success}/${tickers.size}　${new Date().toLocaleTimeString('zh-TW')}`;
+}
+
+// Fetch single ticker via Yahoo Finance (works for both US and TW with .TW suffix)
+async function fetchSwapPrice(ticker) {
+  if (!ticker) return false;
+  try {
+    let sym;
+    if (swapMarket === 'us') {
+      sym = ticker.toUpperCase();
+    } else {
+      const code = (typeof resolveTWTicker === 'function') ? resolveTWTicker(ticker) : ticker;
+      sym = code + '.TW';
+    }
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?range=1d&interval=1d`;
+    const res = await fetch(url);
+    if (!res.ok) {
+      // TW: try .TWO (上櫃) as fallback
+      if (swapMarket === 'tw') {
+        const code = (typeof resolveTWTicker === 'function') ? resolveTWTicker(ticker) : ticker;
+        const r2 = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(code + '.TWO')}?range=1d&interval=1d`);
+        if (r2.ok) {
+          const data = await r2.json();
+          const m = data?.chart?.result?.[0]?.meta;
+          if (m?.regularMarketPrice) {
+            twPrices[code] = { price: m.regularMarketPrice, prevClose: m.previousClose, change: 0 };
+            return true;
+          }
+        }
+      }
+      return false;
+    }
+    const data = await res.json();
+    const m = data?.chart?.result?.[0]?.meta;
+    if (!m?.regularMarketPrice) return false;
+    if (swapMarket === 'us') {
+      prices[ticker.toUpperCase()] = { price: m.regularMarketPrice, change: 0, time: Date.now() };
+      try { localStorage.setItem('stock_prices', JSON.stringify(prices)); } catch {}
+    } else {
+      const code = (typeof resolveTWTicker === 'function') ? resolveTWTicker(ticker) : ticker;
+      twPrices[code] = { price: m.regularMarketPrice, prevClose: m.previousClose, change: 0 };
+      try { localStorage.setItem('tw_stock_prices', JSON.stringify(twPrices)); } catch {}
+    }
+    return true;
+  } catch (e) {
+    console.warn('fetchSwapPrice', ticker, e);
+    return false;
+  }
 }
 
 // ===== Utilities =====
