@@ -1788,13 +1788,15 @@ function tickerOptions() {
 
 function priceLabel(price) {
   if (!price || price <= 0) return '股價未抓到';
-  return '@ ' + (swapMarket === 'us' ? fmt(price) : fmtTWD(price));
+  // TW prices show 2 decimal places (0050 = 138.45, not 138).
+  return '@ ' + (swapMarket === 'us' ? fmt(price) : fmtTWD2(price));
 }
 function priceLabelWithGross(price, shares) {
   if (!price || price <= 0) return '股價未抓到';
   const g = price * shares;
-  const fn = swapMarket === 'us' ? fmt : fmtTWD;
-  return '@ ' + fn(price) + (shares > 0 ? ' = ' + fn(g) : '');
+  const fnPrice = swapMarket === 'us' ? fmt : fmtTWD2;
+  const fnGross = swapMarket === 'us' ? fmt : fmtTWD;
+  return '@ ' + fnPrice(price) + (shares > 0 ? ' = ' + fnGross(g) : '');
 }
 
 function renderSwapSellList() {
@@ -2028,22 +2030,38 @@ async function refreshSwapPrices() {
       await new Promise(r => setTimeout(r, 300));
     }
   } else {
-    // TW: normalize each ticker to numeric code, then run the same 5-method
-    // waterfall as refreshTWPrices (jsonp can return empty after-hours).
+    // TW: normalize each ticker to numeric code, then run the same waterfall
+    // as refreshTWPrices. Track FRESH-this-run separately so stale cached
+    // prices don't make us skip refetching.
     const codes = new Set();
     for (const t of tickers) {
       const c = (typeof resolveTWTicker === 'function') ? resolveTWTicker(t) : t;
       if (c) codes.add(c);
     }
-    const remaining = () => [...codes].filter(c => !twPrices[c] || !twPrices[c].price);
+    const fresh = {};
+    const remaining = () => [...codes].filter(c => !fresh[c]);
     const tryMethod = async (fn, label) => {
       const miss = remaining();
       if (miss.length === 0) return;
       try {
         const r = await fn(new Set(miss));
-        if (r && Object.keys(r).length > 0) Object.assign(twPrices, r);
+        if (!r) return;
+        for (const k of Object.keys(r)) {
+          if (codes.has(k) && r[k]?.price > 0) fresh[k] = r[k];
+          else if (r[k]?.price > 0) fresh[k] = r[k]; // also keep name-keyed entries
+        }
       } catch (e) { console.warn(`TW ${label} failed`, e); }
     };
+    // Method 1: local tw_prices.json (daily-updated by GitHub Action — usually freshest)
+    try {
+      const res = await fetch('tw_prices.json?t=' + Date.now());
+      if (res.ok) {
+        const data = await res.json();
+        for (const k of Object.keys(data)) {
+          if (codes.has(k) && data[k]?.price > 0) fresh[k] = data[k];
+        }
+      }
+    } catch (e) {}
     const marketOpen = (typeof isTWMarketHours === 'function') && isTWMarketHours();
     if (marketOpen) {
       await tryMethod(fetchTWPricesJsonp, 'jsonp(open)');
@@ -2057,8 +2075,9 @@ async function refreshSwapPrices() {
     if (typeof fetchTPEXClosingPrices === 'function') {
       await tryMethod(fetchTPEXClosingPrices, 'tpex');
     }
+    Object.assign(twPrices, fresh);
     try { localStorage.setItem('tw_stock_prices', JSON.stringify(twPrices)); } catch {}
-    success = [...codes].filter(c => twPrices[c]?.price > 0).length;
+    success = [...codes].filter(c => fresh[c]?.price > 0).length;
   }
 
   // Update displayed labels in place (no re-render)
