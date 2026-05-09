@@ -1991,75 +1991,64 @@ function recalcSwap() {
   }
 }
 
-// Targeted price refresh: only the tickers currently entered on this tab
+// Targeted price refresh: only the tickers currently entered on this tab.
+// Reuses the app's existing fetchers (Finnhub for US, TWSE JSONP for TW)
+// because direct Yahoo Finance browser fetches are blocked by CORS.
 async function refreshSwapPrices() {
   const tickers = new Set();
   for (const s of swapSells) if (s.ticker) tickers.add(s.ticker.trim());
   if (swapBuy.ticker) tickers.add(swapBuy.ticker.trim());
+  const lu = document.getElementById('swapLastUpdate');
   if (tickers.size === 0) {
-    const lu = document.getElementById('swapLastUpdate');
     if (lu) lu.textContent = '請先輸入股票';
     return;
   }
-  const lu = document.getElementById('swapLastUpdate');
   if (lu) lu.textContent = '更新中...';
+
   let success = 0;
-  for (const t of tickers) {
-    if (await fetchSwapPrice(t)) success++;
-    await new Promise(r => setTimeout(r, 300));
+  if (swapMarket === 'us') {
+    // Need Finnhub key for US realtime
+    const key = localStorage.getItem('us_finnhub_key') || localStorage.getItem('finnhub_key');
+    if (!key) {
+      if (lu) lu.textContent = '請先在 美股投資 頁設 Finnhub Key';
+      return;
+    }
+    for (const t of tickers) {
+      const ok = await fetchPrice(t.toUpperCase());
+      if (ok) success++;
+      await new Promise(r => setTimeout(r, 300));
+    }
+  } else {
+    // TW: normalize each ticker to numeric code, fetch via TWSE JSONP
+    const codes = new Set();
+    for (const t of tickers) {
+      const c = (typeof resolveTWTicker === 'function') ? resolveTWTicker(t) : t;
+      if (c) codes.add(c);
+    }
+    try {
+      const results = await fetchTWPricesJsonp(codes);
+      Object.assign(twPrices, results);
+      try { localStorage.setItem('tw_stock_prices', JSON.stringify(twPrices)); } catch {}
+      success = Object.keys(results).length / 2;  // results has both code + name keys
+    } catch (e) {
+      console.warn('TW jsonp failed', e);
+    }
+    // Fallback: try Yahoo closing for any still missing
+    const stillMissing = [...codes].filter(c => !twPrices[c] || !twPrices[c].price);
+    if (stillMissing.length > 0) {
+      try {
+        const yResults = await fetchTWYahooClosing(new Set(stillMissing));
+        Object.assign(twPrices, yResults);
+        success += Object.keys(yResults).length / 2;
+      } catch (e) { console.warn('Yahoo TW fallback failed', e); }
+    }
   }
+
   // Update displayed labels in place (no re-render)
   swapSells.forEach((_, i) => updateSellLabel(i));
   updateBuyLabel();
   recalcSwap();
   if (lu) lu.textContent = `已更新 ${success}/${tickers.size}　${new Date().toLocaleTimeString('zh-TW')}`;
-}
-
-// Fetch single ticker via Yahoo Finance (works for both US and TW with .TW suffix)
-async function fetchSwapPrice(ticker) {
-  if (!ticker) return false;
-  try {
-    let sym;
-    if (swapMarket === 'us') {
-      sym = ticker.toUpperCase();
-    } else {
-      const code = (typeof resolveTWTicker === 'function') ? resolveTWTicker(ticker) : ticker;
-      sym = code + '.TW';
-    }
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?range=1d&interval=1d`;
-    const res = await fetch(url);
-    if (!res.ok) {
-      // TW: try .TWO (上櫃) as fallback
-      if (swapMarket === 'tw') {
-        const code = (typeof resolveTWTicker === 'function') ? resolveTWTicker(ticker) : ticker;
-        const r2 = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(code + '.TWO')}?range=1d&interval=1d`);
-        if (r2.ok) {
-          const data = await r2.json();
-          const m = data?.chart?.result?.[0]?.meta;
-          if (m?.regularMarketPrice) {
-            twPrices[code] = { price: m.regularMarketPrice, prevClose: m.previousClose, change: 0 };
-            return true;
-          }
-        }
-      }
-      return false;
-    }
-    const data = await res.json();
-    const m = data?.chart?.result?.[0]?.meta;
-    if (!m?.regularMarketPrice) return false;
-    if (swapMarket === 'us') {
-      prices[ticker.toUpperCase()] = { price: m.regularMarketPrice, change: 0, time: Date.now() };
-      try { localStorage.setItem('stock_prices', JSON.stringify(prices)); } catch {}
-    } else {
-      const code = (typeof resolveTWTicker === 'function') ? resolveTWTicker(ticker) : ticker;
-      twPrices[code] = { price: m.regularMarketPrice, prevClose: m.previousClose, change: 0 };
-      try { localStorage.setItem('tw_stock_prices', JSON.stringify(twPrices)); } catch {}
-    }
-    return true;
-  } catch (e) {
-    console.warn('fetchSwapPrice', ticker, e);
-    return false;
-  }
 }
 
 // ===== Utilities =====
