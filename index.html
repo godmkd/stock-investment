@@ -7248,19 +7248,52 @@ function saveDebtSnapshot() {
   savePricesToCloud().catch(() => {});
 }
 
+// ===== Year-group collapsible state shared across all monthly tables =====
+// First access: include current year so it auto-opens. After that the
+// user's clicks (captured via ontoggle below) are the source of truth.
+window._monthlyOpenYears = window._monthlyOpenYears || new Set([String(new Date().getFullYear())]);
+window._toggleMonthlyYear = function(y, isOpen) {
+  if (isOpen) window._monthlyOpenYears.add(y);
+  else window._monthlyOpenYears.delete(y);
+};
+
+// Group an array of {ym, html} row items by year. Each year becomes its
+// own <details> with header repeated. Open state is shared globally so
+// switching tabs / sections preserves which years the user expanded.
+function _yearGroupedRows(items, headerHtml) {
+  if (!items || items.length === 0) return '';
+  const byYear = {};
+  for (const it of items) {
+    const y = it.ym.slice(0, 4);
+    if (!byYear[y]) byYear[y] = [];
+    byYear[y].push(it.html);
+  }
+  const years = Object.keys(byYear).sort().reverse();
+  return years.map(y => {
+    const open = window._monthlyOpenYears.has(y) ? 'open' : '';
+    return `<details ${open} ontoggle="window._toggleMonthlyYear('${y}', this.open)" style="margin-top:8px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.08);border-radius:6px">
+      <summary style="cursor:pointer;padding:6px 12px;font-weight:600;color:#a78bfa;font-size:0.92em">${y} 年 <span style="color:#888;font-weight:400;font-size:0.88em">(${byYear[y].length} 個月)</span></summary>
+      <div style="overflow-x:auto;padding:0 12px 10px">
+        <table style="width:100%;font-size:0.85em;min-width:600px"><thead><tr>${headerHtml}</tr></thead>
+        <tbody>${byYear[y].join('')}</tbody></table>
+      </div>
+    </details>`;
+  }).join('');
+}
+
 function renderMonthlySnapshotTable(snapshotKey, fmtFn, title) {
   const data = monthlySnapshots[snapshotKey];
   if (!data || Object.keys(data).length === 0) return '';
   const months = Object.keys(data).sort().reverse();
-  const rows = months.map(m => {
-    const val = data[m];
-    return `<tr><td>${m}</td><td style="text-align:right">${fmtFn(val)}</td></tr>`;
-  }).join('');
+  const items = months.map(m => ({
+    ym: m,
+    html: `<tr><td>${m}</td><td style="text-align:right">${fmtFn(data[m])}</td></tr>`,
+  }));
+  const header = '<th>月份</th><th style="text-align:right">淨值</th>';
   return `
-    <div class="table-container" style="margin-top:16px;overflow-x:auto">
+    <div class="table-container" style="margin-top:16px">
       <div class="table-header"><h3>${title || '📊 每月淨值紀錄'}</h3></div>
-      <table style="min-width:200px"><thead><tr><th>月份</th><th style="text-align:right">淨值</th></tr></thead>
-      <tbody>${rows}</tbody></table>
+      ${_yearGroupedRows(items, header)}
     </div>`;
 }
 
@@ -7286,29 +7319,9 @@ function renderDetailedMonthlySnapshotTable(usKey, twKey, owner) {
   const dash = '<span style="color:#666">--</span>';
   const td = (s, cls) => `<td style="text-align:right;${cls || ''}">${s}</td>`;
 
-  // Group an array of {ym, html} row items by year. Most recent year
-  // (current year) auto-expanded, all others collapsed.
-  // Each year becomes a <details> block with its own table+header.
-  const currentYear = String(new Date().getFullYear());
-  function yearGrouped(items, header) {
-    const byYear = {};
-    for (const it of items) {
-      const y = it.ym.slice(0, 4);
-      if (!byYear[y]) byYear[y] = [];
-      byYear[y].push(it.html);
-    }
-    const years = Object.keys(byYear).sort().reverse();
-    return years.map(y => {
-      const open = y === currentYear ? 'open' : '';
-      return `<details ${open} style="margin-top:8px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.08);border-radius:6px">
-        <summary style="cursor:pointer;padding:6px 12px;font-weight:600;color:#a78bfa;font-size:0.92em">${y} 年 <span style="color:#888;font-weight:400;font-size:0.88em">(${byYear[y].length} 個月)</span></summary>
-        <div style="overflow-x:auto;padding:0 12px 10px">
-          <table style="width:100%;font-size:0.85em;min-width:600px"><thead><tr>${header}</tr></thead>
-          <tbody>${byYear[y].join('')}</tbody></table>
-        </div>
-      </details>`;
-    }).join('');
-  }
+  // Reuse the module-level helper so open-year state is shared across
+  // tabs and other monthly tables on the page.
+  const yearGrouped = _yearGroupedRows;
 
   // Helper to compute month-over-month diff and pct
   function diffPct(arr, idx) {
@@ -7479,16 +7492,15 @@ function renderCombinedMonthlySnapshotTable(usKey, twKey, title) {
   const twData = monthlySnapshots[twKey] || {};
   const allMonths = [...new Set([...Object.keys(usData), ...Object.keys(twData)])].sort().reverse();
   if (allMonths.length === 0) return '';
-  const rows = allMonths.map(m => {
-    const usVal = usData[m];
-    const twVal = twData[m];
-    return `<tr><td>${m}</td><td style="text-align:right">${usVal != null ? fmt(usVal) : '--'}</td><td style="text-align:right">${twVal != null ? fmtTWD(twVal) : '--'}</td></tr>`;
-  }).join('');
+  const items = allMonths.map(m => ({
+    ym: m,
+    html: `<tr><td>${m}</td><td style="text-align:right">${usData[m] != null ? fmt(usData[m]) : '--'}</td><td style="text-align:right">${twData[m] != null ? fmtTWD(twData[m]) : '--'}</td></tr>`,
+  }));
+  const header = '<th>月份</th><th style="text-align:right">🇺🇸 美股</th><th style="text-align:right">🇹🇼 台股</th>';
   return `
-    <div class="table-container" style="margin-top:16px;overflow-x:auto">
+    <div class="table-container" style="margin-top:16px">
       <div class="table-header"><h3>${title || '📊 每月淨值紀錄'}</h3></div>
-      <table style="min-width:300px"><thead><tr><th>月份</th><th style="text-align:right">🇺🇸 美股</th><th style="text-align:right">🇹🇼 台股</th></tr></thead>
-      <tbody>${rows}</tbody></table>
+      ${_yearGroupedRows(items, header)}
     </div>`;
 }
 
