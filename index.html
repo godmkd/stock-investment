@@ -904,7 +904,7 @@
     <label style="color:#888;font-size:0.9em">市場：</label>
     <button class="tab-btn" id="themeMktUS" onclick="setThemeMarket('us')">🇺🇸 美股</button>
     <button class="tab-btn" id="themeMktTW" onclick="setThemeMarket('tw')">🇹🇼 台股</button>
-    <button class="btn btn-primary" style="margin-left:auto;padding:6px 14px;font-size:0.85em" onclick="refreshThemeReturns()">🔄 重整報酬率</button>
+    <button class="btn btn-primary" style="margin-left:auto;padding:6px 14px;font-size:0.85em" onclick="refreshThemeReturns()" title="抓最新股價並重算 1日/3日/1週/1月 報酬率">🔄 更新股價</button>
     <span id="themeLastUpdate" style="font-size:0.78em;color:#666"></span>
   </div>
 
@@ -2410,8 +2410,10 @@ async function findPeers() {
 }
 
 // Compute returns for a list of tickers using historical price tables.
-// Returns object keyed by ticker: {d1, d3, w1, m1, latest, latestDate}
-async function computeReturns(tickers) {
+// If livePrices is provided, the live quote replaces the latest historical
+// close — so 1D/3D/1W/1M reflect intraday movement vs prior closes.
+// Returns object keyed by ticker: {d1, d3, w1, m1, latest, latestDate, isLive}
+async function computeReturns(tickers, livePrices) {
   if (!tickers.length) return {};
   const today = new Date();
   // Pull ~45 calendar days of history to cover 1 month of trading days.
@@ -2428,18 +2430,28 @@ async function computeReturns(tickers) {
   const out = {};
   for (const tk of tickers) {
     const series = byTicker[tk] || [];
-    if (series.length === 0) { out[tk] = null; continue; }
+    const live = livePrices?.[tk];
+    if (series.length === 0 && !live) { out[tk] = null; continue; }
     series.sort((a, b) => a.trade_date.localeCompare(b.trade_date));
+    const histLatest = series.length > 0 ? series[series.length - 1].close_price : null;
+    const histDate = series.length > 0 ? series[series.length - 1].trade_date : null;
+    // Use live price if available, else last historical close.
+    const latest = live > 0 ? live : histLatest;
+    // Comparison points: when using live price, all historical closes are
+    // "prior" — so 1D = today vs latest hist close, 3D = today vs 3-back, etc.
+    // When falling back to hist-only: 1D = latest vs prior hist close.
+    const useLive = live > 0;
+    const offsetBase = useLive ? 0 : 1; // 0 = include all hist as "before today"
     const lastIdx = series.length - 1;
-    const latest = series[lastIdx].close_price;
     const pickByOffset = (offset) => {
-      const idx = lastIdx - offset;
-      return idx >= 0 ? series[idx].close_price : null;
+      const idx = lastIdx - (offset - offsetBase);
+      return idx >= 0 && idx < series.length ? series[idx].close_price : null;
     };
-    const pct = (from) => (from > 0 ? ((latest - from) / from * 100) : null);
+    const pct = (from) => (from > 0 && latest > 0 ? ((latest - from) / from * 100) : null);
     out[tk] = {
       latest,
-      latestDate: series[lastIdx].trade_date,
+      latestDate: useLive ? new Date().toISOString().slice(0, 10) : histDate,
+      isLive: useLive,
       d1: pct(pickByOffset(1)),
       d3: pct(pickByOffset(3)),
       w1: pct(pickByOffset(5)),
@@ -2449,8 +2461,64 @@ async function computeReturns(tickers) {
   return out;
 }
 
+// Fetch live prices for theme tickers using existing app fetchers.
+async function fetchThemeLivePrices(tickers) {
+  const out = {};
+  if (themeMarket === 'us') {
+    const key = localStorage.getItem('us_finnhub_key') || localStorage.getItem('finnhub_key');
+    if (!key) return out;
+    for (const tk of tickers) {
+      try {
+        const res = await fetch(`https://finnhub.io/api/v1/quote?symbol=${tk}&token=${key}`);
+        const data = await res.json();
+        if (data.c && data.c > 0) {
+          out[tk] = data.c;
+          prices[tk] = { price: data.c, change: data.dp, time: Date.now() };
+        }
+        await new Promise(r => setTimeout(r, 250));
+      } catch (e) {}
+    }
+    try { localStorage.setItem('stock_prices', JSON.stringify(prices)); } catch {}
+  } else {
+    // TW: same waterfall as swap calc
+    const codes = new Set(tickers);
+    const fresh = {};
+    const remaining = () => [...codes].filter(c => !fresh[c]);
+    const tryMethod = async (fn) => {
+      const miss = remaining();
+      if (miss.length === 0) return;
+      try {
+        const r = await fn(new Set(miss));
+        if (!r) return;
+        for (const k of Object.keys(r)) if (codes.has(k) && r[k]?.price > 0) fresh[k] = r[k];
+      } catch (e) {}
+    };
+    try {
+      const res = await fetch('tw_prices.json?t=' + Date.now());
+      if (res.ok) {
+        const data = await res.json();
+        for (const k of Object.keys(data)) if (codes.has(k) && data[k]?.price > 0) fresh[k] = data[k];
+      }
+    } catch (e) {}
+    const open = (typeof isTWMarketHours === 'function') && isTWMarketHours();
+    if (open) {
+      await tryMethod(fetchTWPricesJsonp);
+    } else {
+      if (typeof fetchTWYahooClosing === 'function') await tryMethod(fetchTWYahooClosing);
+      await tryMethod(fetchTWPricesJsonp);
+    }
+    if (typeof fetchTWSEClosingPrices === 'function') await tryMethod(fetchTWSEClosingPrices);
+    if (typeof fetchTPEXClosingPrices === 'function') await tryMethod(fetchTPEXClosingPrices);
+    Object.assign(twPrices, fresh);
+    try { localStorage.setItem('tw_stock_prices', JSON.stringify(twPrices)); } catch {}
+    for (const k of Object.keys(fresh)) out[k] = fresh[k].price;
+  }
+  return out;
+}
+
 async function fetchOneReturn(tk) {
-  const r = await computeReturns([tk]);
+  const live = await fetchThemeLivePrices([tk]);
+  const r = await computeReturns([tk], live);
   if (r[tk]) _themeReturns[tk] = r[tk];
 }
 
@@ -2458,10 +2526,15 @@ async function refreshThemeReturns() {
   const t = getActiveTheme();
   if (!t || t.tickers.length === 0) return;
   const lu = document.getElementById('themeLastUpdate');
-  if (lu) lu.textContent = '計算中...';
-  const res = await computeReturns(t.tickers);
+  if (lu) lu.textContent = '抓最新股價...';
+  // Step 1: fetch live prices (Finnhub for US, multi-method waterfall for TW)
+  const livePrices = await fetchThemeLivePrices(t.tickers);
+  if (lu) lu.textContent = '計算報酬率...';
+  // Step 2: compute returns using live prices + historical closes
+  const res = await computeReturns(t.tickers, livePrices);
   Object.assign(_themeReturns, res);
-  if (lu) lu.textContent = `已更新　${new Date().toLocaleTimeString('zh-TW')}`;
+  const liveCount = Object.keys(livePrices).length;
+  if (lu) lu.textContent = `已更新（${liveCount}/${t.tickers.length} 即時）　${new Date().toLocaleTimeString('zh-TW')}`;
   renderThemeDetail();
   // For US, lazy-fetch any missing names then re-render once
   if (themeMarket === 'us') {
@@ -2539,7 +2612,8 @@ function renderThemeDetail() {
   for (const { tk, ret } of rows) {
     const heldBadge = heldSet.has(tk) ? '<span style="background:rgba(52,211,153,0.18);color:#34d399;padding:1px 6px;border-radius:4px;font-size:0.72em;margin-left:6px">持有</span>' : '';
     const priceFmt = themeMarket === 'us' ? (v => '$' + Number(v).toFixed(2)) : (v => 'NT$' + Number(v).toFixed(2));
-    const priceCell = ret?.latest > 0 ? priceFmt(ret.latest) : '<span style="color:#666">—</span>';
+    const liveDot = ret?.isLive ? '<span title="即時報價" style="color:#34d399;margin-right:3px">●</span>' : '';
+    const priceCell = ret?.latest > 0 ? `${liveDot}${priceFmt(ret.latest)}` : '<span style="color:#666">—</span>';
     const name = getCompanyName(themeMarket, tk);
     const nameCell = name
       ? `<div style="font-size:0.78em;color:#888;margin-top:2px;line-height:1.2">${name}</div>`
