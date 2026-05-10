@@ -861,8 +861,8 @@
   <div style="background:rgba(255,255,255,0.04);border-radius:10px;padding:14px">
     <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:10px">
       <input type="checkbox" id="swapFeeEnabled" checked onchange="recalcSwap()">
-      <span style="font-weight:600">含手續費 + 證交稅試算</span>
-      <span style="font-size:0.78em;color:#666;margin-left:auto">空白＝用預設</span>
+      <span style="font-weight:600">含手續費試算</span>
+      <span style="font-size:0.78em;color:#666;margin-left:auto">證交稅一律計入；空白＝用預設</span>
     </label>
     <div id="swapFeeUS" style="display:none;margin-top:8px;padding:8px 10px;background:rgba(255,255,255,0.03);border-radius:6px">
       <div style="font-size:0.85em;color:#3b82f6;font-weight:600;margin-bottom:6px">🇺🇸 美股</div>
@@ -1826,7 +1826,7 @@ function renderSwapBuyRow() {
   row.innerHTML = `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
     <input id="swapBuyTk" list="swapTickerList" placeholder="股票代碼" value="${swapBuy.ticker || ''}" style="flex:1;min-width:100px;padding:6px 10px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;background:rgba(255,255,255,0.08);color:#fff;font-size:0.9em" oninput="onSwapBuyChange('ticker',this.value)">
     <input id="swapBuySh" type="number" placeholder="股數" value="${swapBuy.shares}" min="0" step="1" style="width:80px;padding:6px 10px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;background:rgba(255,255,255,0.08);color:#fff;font-size:0.9em;text-align:right" oninput="onSwapBuyChange('shares',this.value)">
-    <input id="swapBuyAmt" type="number" placeholder="金額" value="${swapBuy.amount || ''}" min="0" step="any" style="width:100px;padding:6px 10px;border:1px solid rgba(251,191,36,0.3);border-radius:6px;background:rgba(251,191,36,0.05);color:#fff;font-size:0.9em;text-align:right" oninput="onSwapBuyAmount(this.value)" title="輸入金額自動算最大股數">
+    <input id="swapBuyAmt" type="number" placeholder="額外現金" value="${swapBuy.amount || ''}" min="0" step="any" style="width:100px;padding:6px 10px;border:1px solid rgba(251,191,36,0.3);border-radius:6px;background:rgba(251,191,36,0.05);color:#fff;font-size:0.9em;text-align:right" oninput="onSwapBuyAmount(this.value)" title="輸入額外現金（會與賣出淨收合併計算）">
     <span id="swapBuyLbl" style="font-size:0.82em;color:#888;min-width:140px;text-align:right">${priceLabelWithGross(price, sharesNum)}</span>
   </div>`;
 }
@@ -1865,8 +1865,8 @@ function onSwapSellChange(i, field, val) {
 function onSwapBuyChange(field, val) {
   swapBuy[field] = val;
   swapLastEdited = 'buy';
-  // Manual share/ticker edit clears the amount-driven mode.
-  if (field === 'shares') swapBuy.amount = '';
+  // Amount is now treated as standing extra cash that coexists with shares
+  // and sell-side. Don't clear it on manual share edits.
   updateBuyLabel();
   scheduleRecalc();
 }
@@ -1911,19 +1911,22 @@ function swapTaxRate() {
   if (swapMarket === 'us') return readNumOrDefault('swapTaxRateUS', 0.003) / 100;
   return readNumOrDefault('swapTaxRateTW', 0.3) / 100;
 }
-function feesEnabled() { return !!document.getElementById('swapFeeEnabled')?.checked; }
+// Only the COMMISSION is toggleable. 證交稅 is mandatory by law and
+// always applies to sell side regardless of this checkbox.
+function commissionEnabled() { return !!document.getElementById('swapFeeEnabled')?.checked; }
+function feesEnabled() { return commissionEnabled(); }  // back-compat for older callers
 
-// Sell side: cash gained = gross - commission - tax
+// Sell side: cash gained = gross - commission(opt) - tax(always)
 function sellCashAfter(gross) {
-  if (gross <= 0 || !feesEnabled()) return gross;
-  const commission = Math.max(swapFeeRate() * gross, swapFeeMin());
+  if (gross <= 0) return gross;
+  const commission = commissionEnabled() ? Math.max(swapFeeRate() * gross, swapFeeMin()) : 0;
   const tax = swapTaxRate() * gross;
   return gross - commission - tax;
 }
-// Buy side: cash spent = gross + commission (no tax on buy)
+// Buy side: cash spent = gross + commission(opt). No tax on buy in TW/US.
 function buyCostAfter(gross) {
-  if (gross <= 0 || !feesEnabled()) return gross;
-  const commission = Math.max(swapFeeRate() * gross, swapFeeMin());
+  if (gross <= 0) return gross;
+  const commission = commissionEnabled() ? Math.max(swapFeeRate() * gross, swapFeeMin()) : 0;
   return gross + commission;
 }
 
@@ -1934,45 +1937,32 @@ function recalcSwap() {
     sellGross += getSwapPrice(s.ticker) * (parseInt(s.shares) || 0);
   }
   const cashAvailable = sellCashAfter(sellGross);
+  const extraCash = parseFloat(swapBuy.amount) || 0;
+  // Combined budget: sell-side net cash + user-supplied extra cash.
+  const totalBudget = cashAvailable + extraCash;
   const sellTotalEl = document.getElementById('swapSellTotal');
   if (sellTotalEl) sellTotalEl.textContent = sellGross > 0 ? (swapMarket === 'us' ? fmt(cashAvailable) : fmtTWD(cashAvailable)) : '—';
 
   const buyPrice = getSwapPrice(swapBuy.ticker);
 
-  if (swapLastEdited === 'amount') {
-    // Direct: user typed dollar amount → max integer shares that fit incl. commission.
-    const budget = parseFloat(swapBuy.amount) || 0;
-    if (budget > 0 && buyPrice > 0) {
-      const r = feesEnabled() ? swapFeeRate() : 0;
-      let maxShares = Math.floor(budget / (buyPrice * (1 + r)));
+  if (swapLastEdited === 'amount' || swapLastEdited === 'sell') {
+    // Forward: max integer shares such that buyCostAfter(shares*price) <= totalBudget
+    if (totalBudget > 0 && buyPrice > 0) {
+      const r = commissionEnabled() ? swapFeeRate() : 0;
+      let maxShares = Math.floor(totalBudget / (buyPrice * (1 + r)));
       while (maxShares > 0) {
-        if (buyCostAfter(maxShares * buyPrice) <= budget + 0.001) break;
+        if (buyCostAfter(maxShares * buyPrice) <= totalBudget + 0.001) break;
         maxShares--;
       }
       swapBuy.shares = maxShares > 0 ? String(maxShares) : '0';
     } else {
       swapBuy.shares = '';
     }
-    const buyShEl = document.getElementById('swapBuySh');
-    if (buyShEl && document.activeElement !== buyShEl) buyShEl.value = swapBuy.shares;
-  } else if (swapLastEdited === 'sell') {
-    // Forward: solve max integer shares such that buyCostAfter(shares*price) <= cashAvailable
-    if (cashAvailable > 0 && buyPrice > 0) {
-      const r = feesEnabled() ? swapFeeRate() : 0;
-      let maxShares = Math.floor(cashAvailable / (buyPrice * (1 + r)));
-      while (maxShares > 0) {
-        if (buyCostAfter(maxShares * buyPrice) <= cashAvailable + 0.001) break;
-        maxShares--;
-      }
-      swapBuy.shares = maxShares > 0 ? String(maxShares) : '0';
-    } else {
-      swapBuy.shares = '';
-    }
-    // In-place update of buy shares input (DON'T re-render row — keep focus)
     const buyShEl = document.getElementById('swapBuySh');
     if (buyShEl && document.activeElement !== buyShEl) buyShEl.value = swapBuy.shares;
   } else if (swapLastEdited === 'buy') {
     // Reverse: cascade fill. Find FIRST sell row with ticker but blank shares.
+    // Extra cash counts toward what's needed before sells fill the rest.
     if (parseInt(swapBuy.shares) > 0 && buyPrice > 0) {
       const buyGross = parseInt(swapBuy.shares) * buyPrice;
       const cashNeeded = buyCostAfter(buyGross);
@@ -1988,11 +1978,12 @@ function recalcSwap() {
         }
       });
       const lockedNet = sellCashAfter(lockedGross);
-      const stillNeeded = cashNeeded - lockedNet;
+      const stillNeeded = cashNeeded - lockedNet - extraCash;
       if (stillNeeded > 0 && fillIdx >= 0) {
         const fillPrice = getSwapPrice(swapSells[fillIdx].ticker);
         if (fillPrice > 0) {
-          const r = feesEnabled() ? swapFeeRate() + swapTaxRate() : 0;
+          // Tax always applies; commission only if enabled.
+          const r = (commissionEnabled() ? swapFeeRate() : 0) + swapTaxRate();
           const fillShares = Math.ceil(stillNeeded / (fillPrice * (1 - r)));
           swapSells[fillIdx].shares = String(Math.max(0, fillShares));
           const inp = document.getElementById('swapSellSh_' + fillIdx);
@@ -2012,10 +2003,11 @@ function recalcSwap() {
   let finalSellGross = 0;
   for (const s of swapSells) finalSellGross += getSwapPrice(s.ticker) * (parseInt(s.shares) || 0);
   const finalCash = sellCashAfter(finalSellGross);
+  const finalBudget = finalCash + extraCash;
 
   const finalBuyShares = parseInt(swapBuy.shares) || 0;
   const finalBuyCost = buyCostAfter(finalBuyShares * buyPrice);
-  const remainder = finalCash - finalBuyCost;
+  const remainder = finalBudget - finalBuyCost;
 
   const fmtFn = swapMarket === 'us' ? fmt : fmtTWD;
   const sellTotal2 = document.getElementById('swapSellTotal');
@@ -2024,7 +2016,8 @@ function recalcSwap() {
   const remEl = document.getElementById('swapRemainder');
   if (buyCostEl) buyCostEl.textContent = finalBuyCost > 0 ? fmtFn(finalBuyCost) : '—';
   if (remEl) {
-    if (finalSellGross > 0 && finalBuyCost > 0) {
+    // Show remainder whenever there's any budget (sell cash and/or extra cash)
+    if (finalBudget > 0 && finalBuyCost > 0) {
       remEl.textContent = fmtFn(remainder);
       remEl.style.color = remainder >= 0 ? '#34d399' : '#f87171';
     } else {
@@ -2033,32 +2026,40 @@ function recalcSwap() {
     }
   }
 
-  // Breakdown rows: 原始金額 / 手續費 / 證交稅
+  // Breakdown rows. 證交稅 always counted; 手續費 only when checkbox enabled.
   const sellBd = document.getElementById('swapSellBreakdown');
   const buyBd = document.getElementById('swapBuyBreakdown');
-  const fe = feesEnabled();
+  const ce = commissionEnabled();
   if (sellBd) {
-    if (finalSellGross > 0 && fe) {
-      const sellComm = Math.max(swapFeeRate() * finalSellGross, swapFeeMin());
+    if (finalSellGross > 0) {
+      let html = `<div>原始金額：<span style="color:#ddd">${fmtFn(finalSellGross)}</span></div>`;
+      if (ce) {
+        const sellComm = Math.max(swapFeeRate() * finalSellGross, swapFeeMin());
+        html += `<div>手續費：<span style="color:#f87171">− ${fmtFn(sellComm)}</span></div>`;
+      }
       const sellTax = swapTaxRate() * finalSellGross;
-      sellBd.innerHTML =
-        `<div>原始金額：<span style="color:#ddd">${fmtFn(finalSellGross)}</span></div>` +
-        `<div>手續費：<span style="color:#f87171">− ${fmtFn(sellComm)}</span></div>` +
-        `<div>證交稅：<span style="color:#f87171">− ${fmtFn(sellTax)}</span></div>`;
+      html += `<div>證交稅：<span style="color:#f87171">− ${fmtFn(sellTax)}</span></div>`;
+      sellBd.innerHTML = html;
     } else {
       sellBd.innerHTML = '';
     }
   }
   if (buyBd) {
     const buyGross = finalBuyShares * buyPrice;
-    if (buyGross > 0 && fe) {
-      const buyComm = Math.max(swapFeeRate() * buyGross, swapFeeMin());
-      buyBd.innerHTML =
-        `<div>原始金額：<span style="color:#ddd">${fmtFn(buyGross)}</span></div>` +
-        `<div>手續費：<span style="color:#f87171">+ ${fmtFn(buyComm)}</span></div>`;
-    } else {
-      buyBd.innerHTML = '';
+    let html = '';
+    if (buyGross > 0) {
+      html += `<div>原始金額：<span style="color:#ddd">${fmtFn(buyGross)}</span></div>`;
+      if (ce) {
+        const buyComm = Math.max(swapFeeRate() * buyGross, swapFeeMin());
+        html += `<div>手續費：<span style="color:#f87171">+ ${fmtFn(buyComm)}</span></div>`;
+      }
     }
+    // If user supplied extra cash, show how the budget was assembled.
+    if (extraCash > 0 && (finalSellGross > 0 || buyGross > 0)) {
+      html += `<div style="margin-top:4px;border-top:1px dashed rgba(255,255,255,0.08);padding-top:4px">` +
+              `可動用：賣出淨收 ${fmtFn(finalCash)} + 額外現金 ${fmtFn(extraCash)} = <span style="color:#34d399">${fmtFn(finalBudget)}</span></div>`;
+    }
+    buyBd.innerHTML = html;
   }
 }
 
