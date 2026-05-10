@@ -272,6 +272,12 @@
   @media (max-width: 768px) {
     .stock-buysell-grid { grid-template-columns: 1fr !important; }
     .stock-buysell-grid > div:first-child { border-right: none !important; border-bottom: 1px solid rgba(255,255,255,0.04); }
+    .themes-grid { grid-template-columns: 1fr !important; }
+    .themes-grid > div:first-child { max-height: none; }
+    #themeList { flex-direction: row !important; flex-wrap: wrap; gap: 6px !important; }
+    #themeList > div { flex: 0 0 auto; }
+    .theme-table { font-size: 0.78em; }
+    .theme-table th, .theme-table td { padding: 6px 4px !important; }
   }
   /* 手機橫式：善用寬度，保持橫排 */
   @media (max-height: 500px) and (orientation: landscape) {
@@ -902,7 +908,7 @@
     <span id="themeLastUpdate" style="font-size:0.78em;color:#666"></span>
   </div>
 
-  <div style="display:grid;grid-template-columns:240px 1fr;gap:14px;align-items:start">
+  <div class="themes-grid" style="display:grid;grid-template-columns:240px 1fr;gap:14px;align-items:start">
     <!-- Left: theme list -->
     <div style="background:rgba(255,255,255,0.04);border-radius:10px;padding:12px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
@@ -2482,7 +2488,7 @@ function renderThemeDetail() {
     return bv - av;
   });
 
-  html += `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:0.88em">
+  html += `<div style="overflow-x:auto"><table class="theme-table" style="width:100%;border-collapse:collapse;font-size:0.88em">
     <thead><tr style="border-bottom:1px solid rgba(255,255,255,0.1);color:#888">
       <th style="text-align:left;padding:8px 6px">代碼</th>
       <th style="text-align:right;padding:8px 6px">最新價</th>
