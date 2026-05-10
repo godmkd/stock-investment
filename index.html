@@ -1736,14 +1736,14 @@ function switchTab(tabName) {
 // ===== Swap Calculator =====
 let swapMarket = 'us';
 let swapSells = [{ ticker: '', shares: '' }];
-let swapBuy = { ticker: '', shares: '' };
+let swapBuy = { ticker: '', shares: '', amount: '' };
 let swapLastEdited = 'sell';
 
 function setSwapMarket(mkt) {
   if (mkt === swapMarket) return;
   swapMarket = mkt;
   swapSells = [{ ticker: '', shares: '' }];
-  swapBuy = { ticker: '', shares: '' };
+  swapBuy = { ticker: '', shares: '', amount: '' };
   renderSwapTab();
 }
 
@@ -1825,7 +1825,8 @@ function renderSwapBuyRow() {
   const sharesNum = parseInt(swapBuy.shares) || 0;
   row.innerHTML = `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
     <input id="swapBuyTk" list="swapTickerList" placeholder="股票代碼" value="${swapBuy.ticker || ''}" style="flex:1;min-width:100px;padding:6px 10px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;background:rgba(255,255,255,0.08);color:#fff;font-size:0.9em" oninput="onSwapBuyChange('ticker',this.value)">
-    <input id="swapBuySh" type="number" placeholder="股數" value="${swapBuy.shares}" min="0" step="1" style="width:90px;padding:6px 10px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;background:rgba(255,255,255,0.08);color:#fff;font-size:0.9em;text-align:right" oninput="onSwapBuyChange('shares',this.value)">
+    <input id="swapBuySh" type="number" placeholder="股數" value="${swapBuy.shares}" min="0" step="1" style="width:80px;padding:6px 10px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;background:rgba(255,255,255,0.08);color:#fff;font-size:0.9em;text-align:right" oninput="onSwapBuyChange('shares',this.value)">
+    <input id="swapBuyAmt" type="number" placeholder="金額" value="${swapBuy.amount || ''}" min="0" step="any" style="width:100px;padding:6px 10px;border:1px solid rgba(251,191,36,0.3);border-radius:6px;background:rgba(251,191,36,0.05);color:#fff;font-size:0.9em;text-align:right" oninput="onSwapBuyAmount(this.value)" title="輸入金額自動算最大股數">
     <span id="swapBuyLbl" style="font-size:0.82em;color:#888;min-width:140px;text-align:right">${priceLabelWithGross(price, sharesNum)}</span>
   </div>`;
 }
@@ -1864,7 +1865,17 @@ function onSwapSellChange(i, field, val) {
 function onSwapBuyChange(field, val) {
   swapBuy[field] = val;
   swapLastEdited = 'buy';
+  // Manual share/ticker edit clears the amount-driven mode.
+  if (field === 'shares') swapBuy.amount = '';
   updateBuyLabel();
+  scheduleRecalc();
+}
+
+// Type a dollar amount → compute max integer buy shares that fit (incl. commission).
+// Doesn't cascade to sell side — amount is treated as standalone available cash.
+function onSwapBuyAmount(val) {
+  swapBuy.amount = val;
+  swapLastEdited = 'amount';
   scheduleRecalc();
 }
 
@@ -1928,7 +1939,23 @@ function recalcSwap() {
 
   const buyPrice = getSwapPrice(swapBuy.ticker);
 
-  if (swapLastEdited === 'sell') {
+  if (swapLastEdited === 'amount') {
+    // Direct: user typed dollar amount → max integer shares that fit incl. commission.
+    const budget = parseFloat(swapBuy.amount) || 0;
+    if (budget > 0 && buyPrice > 0) {
+      const r = feesEnabled() ? swapFeeRate() : 0;
+      let maxShares = Math.floor(budget / (buyPrice * (1 + r)));
+      while (maxShares > 0) {
+        if (buyCostAfter(maxShares * buyPrice) <= budget + 0.001) break;
+        maxShares--;
+      }
+      swapBuy.shares = maxShares > 0 ? String(maxShares) : '0';
+    } else {
+      swapBuy.shares = '';
+    }
+    const buyShEl = document.getElementById('swapBuySh');
+    if (buyShEl && document.activeElement !== buyShEl) buyShEl.value = swapBuy.shares;
+  } else if (swapLastEdited === 'sell') {
     // Forward: solve max integer shares such that buyCostAfter(shares*price) <= cashAvailable
     if (cashAvailable > 0 && buyPrice > 0) {
       const r = feesEnabled() ? swapFeeRate() : 0;
