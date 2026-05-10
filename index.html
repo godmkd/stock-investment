@@ -1820,10 +1820,11 @@ function renderSwapBuyRow() {
   const row = document.getElementById('swapBuyRow');
   if (!row) return;
   const price = getSwapPrice(swapBuy.ticker);
+  const sharesNum = parseInt(swapBuy.shares) || 0;
   row.innerHTML = `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
     <input id="swapBuyTk" list="swapTickerList" placeholder="股票代碼" value="${swapBuy.ticker || ''}" style="flex:1;min-width:100px;padding:6px 10px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;background:rgba(255,255,255,0.08);color:#fff;font-size:0.9em" oninput="onSwapBuyChange('ticker',this.value)">
     <input id="swapBuySh" type="number" placeholder="股數" value="${swapBuy.shares}" min="0" step="1" style="width:90px;padding:6px 10px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;background:rgba(255,255,255,0.08);color:#fff;font-size:0.9em;text-align:right" oninput="onSwapBuyChange('shares',this.value)">
-    <span id="swapBuyLbl" style="font-size:0.82em;color:#888;min-width:120px;text-align:right">${priceLabel(price)}</span>
+    <span id="swapBuyLbl" style="font-size:0.82em;color:#888;min-width:140px;text-align:right">${priceLabelWithGross(price, sharesNum)}</span>
   </div>`;
 }
 
@@ -1837,7 +1838,9 @@ function updateSellLabel(i) {
 function updateBuyLabel() {
   const el = document.getElementById('swapBuyLbl');
   if (!el) return;
-  el.textContent = priceLabel(getSwapPrice(swapBuy.ticker));
+  const price = getSwapPrice(swapBuy.ticker);
+  const sharesNum = parseInt(swapBuy.shares) || 0;
+  el.textContent = priceLabelWithGross(price, sharesNum);
 }
 
 // Debounce the cross-side auto-fill so it only fires after the user
