@@ -2188,6 +2188,38 @@ let themeMarket = 'us';
 let activeThemeId = null;
 let _themeReturns = {};         // ticker → {d1, d3, w1, m1, price}
 let _themePeerCache = {};       // ticker → [peers]
+let _usNameCache = {};          // US ticker → company name, persisted in localStorage
+try {
+  const cached = localStorage.getItem('us_stock_names');
+  if (cached) _usNameCache = JSON.parse(cached) || {};
+} catch (e) {}
+
+function getCompanyName(market, ticker) {
+  if (market === 'tw') {
+    return twCodeToName[ticker] || twPrices[ticker]?.name || '';
+  }
+  return _usNameCache[ticker] || '';
+}
+
+// Fetch missing US company names via Finnhub /stock/profile2.
+async function fetchMissingUSNames(tickers) {
+  const key = localStorage.getItem('us_finnhub_key') || localStorage.getItem('finnhub_key');
+  if (!key) return;
+  const missing = tickers.filter(t => !_usNameCache[t]);
+  if (missing.length === 0) return;
+  for (const tk of missing) {
+    try {
+      const res = await fetch(`https://finnhub.io/api/v1/stock/profile2?symbol=${tk}&token=${key}`);
+      if (!res.ok) continue;
+      const data = await res.json();
+      const name = data?.name || data?.ticker || '';
+      if (name) _usNameCache[tk] = name;
+      // Light pacing to stay under Finnhub free tier (60/min)
+      await new Promise(r => setTimeout(r, 1100));
+    } catch (e) {}
+  }
+  try { localStorage.setItem('us_stock_names', JSON.stringify(_usNameCache)); } catch (e) {}
+}
 
 const DEFAULT_THEMES_US = [
   { name: '半導體', tickers: ['NVDA', 'AMD', 'AVGO', 'TSM', 'MU', 'INTC', 'QCOM'] },
@@ -2431,6 +2463,12 @@ async function refreshThemeReturns() {
   Object.assign(_themeReturns, res);
   if (lu) lu.textContent = `已更新　${new Date().toLocaleTimeString('zh-TW')}`;
   renderThemeDetail();
+  // For US, lazy-fetch any missing names then re-render once
+  if (themeMarket === 'us') {
+    fetchMissingUSNames(t.tickers).then(() => {
+      if (getActiveTheme()?.id === t.id) renderThemeDetail();
+    });
+  }
 }
 
 function fmtPctCell(v) {
@@ -2490,7 +2528,7 @@ function renderThemeDetail() {
 
   html += `<div style="overflow-x:auto"><table class="theme-table" style="width:100%;border-collapse:collapse;font-size:0.88em">
     <thead><tr style="border-bottom:1px solid rgba(255,255,255,0.1);color:#888">
-      <th style="text-align:left;padding:8px 6px">代碼</th>
+      <th style="text-align:left;padding:8px 6px">代碼 / 名稱</th>
       <th style="text-align:right;padding:8px 6px">最新價</th>
       <th style="text-align:right;padding:8px 6px">1日</th>
       <th style="text-align:right;padding:8px 6px">3日</th>
@@ -2502,8 +2540,15 @@ function renderThemeDetail() {
     const heldBadge = heldSet.has(tk) ? '<span style="background:rgba(52,211,153,0.18);color:#34d399;padding:1px 6px;border-radius:4px;font-size:0.72em;margin-left:6px">持有</span>' : '';
     const priceFmt = themeMarket === 'us' ? (v => '$' + Number(v).toFixed(2)) : (v => 'NT$' + Number(v).toFixed(2));
     const priceCell = ret?.latest > 0 ? priceFmt(ret.latest) : '<span style="color:#666">—</span>';
+    const name = getCompanyName(themeMarket, tk);
+    const nameCell = name
+      ? `<div style="font-size:0.78em;color:#888;margin-top:2px;line-height:1.2">${name}</div>`
+      : '';
     html += `<tr style="border-bottom:1px solid rgba(255,255,255,0.04)">
-      <td style="padding:8px 6px"><span style="font-weight:600">${tk}</span>${heldBadge}</td>
+      <td style="padding:8px 6px">
+        <div><span style="font-weight:600">${tk}</span>${heldBadge}</div>
+        ${nameCell}
+      </td>
       <td style="text-align:right;padding:8px 6px;color:#ddd">${priceCell}</td>
       <td style="text-align:right;padding:8px 6px">${fmtPctCell(ret?.d1)}</td>
       <td style="text-align:right;padding:8px 6px">${fmtPctCell(ret?.d3)}</td>
