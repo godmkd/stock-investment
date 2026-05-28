@@ -6516,10 +6516,10 @@ function recalcLastTwoStages(m, changedIdx, changedField) {
   const targetTotal = m.totalPrice * (m.constructionPct || 30) / 100;
   let sumAmt = 0;
   for (let i = 0; i < m.payments.length; i++) sumAmt += (m.payments[i].amount || m.totalPrice * m.payments[i].pct / 100);
-  const diff = parseFloat((targetTotal - sumAmt).toFixed(1));
-  if (Math.abs(diff) > 0.01 && m.payments.length > 0) {
+  const diff = parseFloat((targetTotal - sumAmt).toFixed(4));
+  if (Math.abs(diff) > 0.00001 && m.payments.length > 0) {
     // 把差額加到最後一筆
-    last.amount = parseFloat((last.amount + diff).toFixed(1));
+    last.amount = parseFloat((last.amount + diff).toFixed(4));
   }
 }
 
@@ -6584,7 +6584,7 @@ function onRemainingLoanChange(mortId) {
   const totalLoan = getMortgageTotalLoan(m);
   m.paidPrincipal = Math.max(0, totalLoan - rl);
   const ppEl = document.getElementById(`mort-paid-principal-${mortId}`);
-  if (ppEl) ppEl.value = m.paidPrincipal.toFixed(1);
+  if (ppEl) ppEl.value = m.paidPrincipal.toFixed(4);
   saveMortgages();
   renderMortgageTab();
 }
@@ -6596,7 +6596,7 @@ function onPaidPrincipalChange(mortId) {
   const totalLoan = getMortgageTotalLoan(m);
   m.remainingLoan = Math.max(0, totalLoan - pp);
   const rlEl = document.getElementById(`mort-remaining-loan-${mortId}`);
-  if (rlEl) rlEl.value = m.remainingLoan.toFixed(1);
+  if (rlEl) rlEl.value = m.remainingLoan.toFixed(4);
   saveMortgages();
   renderMortgageTab();
 }
@@ -6689,7 +6689,7 @@ function renderMortgageTab() {
           const segBarPct = segOfConstruction * constructionPct; // 在進度條上的寬度%
           const color = stageColors[i % stageColors.length];
           const opacity = p.paid ? 1 : 0.3;
-          segments += `<div title="${p.name} ${amt.toFixed(1)}萬" style="width:${segBarPct}%;height:100%;background:${color};opacity:${opacity};transition:all 0.3s"></div>`;
+          segments += `<div title="${p.name} ${amt.toFixed(4)}萬" style="width:${segBarPct}%;height:100%;background:${color};opacity:${opacity};transition:all 0.3s"></div>`;
           
           cumBarPct += segBarPct;
           if (i < m.payments.length - 1) {
@@ -6714,15 +6714,15 @@ function renderMortgageTab() {
       progressBarHtml = `
         <div style="margin-top:12px;padding:10px;background:rgba(255,255,255,0.04);border-radius:8px">
           <div style="display:flex;justify-content:space-between;font-size:0.85em;margin-bottom:6px">
-            <span style="color:#888">已付: <span style="color:#34d399">${totalPaid.toFixed(1)} 萬</span></span>
-            <span style="color:#888">工程款合計: <span style="color:#fbbf24">${totalPaymentAmount.toFixed(1)} 萬</span> (${constructionPct}%)</span>
-            <span style="color:#888">總價: <span style="color:#67e8f9;font-weight:600">${m.totalPrice} 萬</span></span>
+            <span style="color:#888">已付: <span style="color:#34d399">${totalPaid.toFixed(4)} 萬</span></span>
+            <span style="color:#888">工程款合計: <span style="color:#fbbf24">${totalPaymentAmount.toFixed(4)} 萬</span> (${constructionPct}%)</span>
+            <span style="color:#888">總價: <span style="color:#67e8f9;font-weight:600">${(m.totalPrice || 0).toFixed(4)} 萬</span></span>
           </div>
           <div style="position:relative;height:16px;margin-bottom:2px">
-            <div style="position:absolute;left:${constructionPct}%;transform:translateX(-50%);font-size:0.65em;color:#fbbf24;white-space:nowrap;font-weight:600">▼ ${constructionPct}% (${(m.totalPrice * constructionPct / 100).toFixed(0)}萬)</div>
-            <div style="position:absolute;right:0;font-size:0.65em;color:#9ca3af;white-space:nowrap">總價 ${m.totalPrice}萬 →</div>
+            <div style="position:absolute;left:${constructionPct}%;transform:translateX(-50%);font-size:0.65em;color:#fbbf24;white-space:nowrap;font-weight:600">▼ ${constructionPct}% (${(m.totalPrice * constructionPct / 100).toFixed(4)}萬)</div>
+            <div style="position:absolute;right:0;font-size:0.65em;color:#9ca3af;white-space:nowrap">總價 ${(m.totalPrice || 0).toFixed(4)}萬 →</div>
           </div>
-          <div style="position:relative;background:rgba(255,255,255,0.1);border-radius:6px;height:20px;overflow:hidden;display:flex;cursor:crosshair" title="總價 ${m.totalPrice} 萬 | 工程款 ${totalPaymentAmount.toFixed(1)} 萬 (${constructionPct}%) | 貸款 ${(m.totalPrice * loanPct / 100).toFixed(1)} 萬 (${loanPct}%)">
+          <div style="position:relative;background:rgba(255,255,255,0.1);border-radius:6px;height:20px;overflow:hidden;display:flex;cursor:crosshair" title="總價 ${(m.totalPrice || 0).toFixed(4)} 萬 | 工程款 ${totalPaymentAmount.toFixed(4)} 萬 (${constructionPct}%) | 貸款 ${(m.totalPrice * loanPct / 100).toFixed(4)} 萬 (${loanPct}%)">
             ${boundaryMarkers}
             ${divider}
             ${segments}
@@ -6736,9 +6736,9 @@ function renderMortgageTab() {
             ${loanLabel}
           </div>
           <div style="display:flex;justify-content:space-between;font-size:0.8em;margin-top:4px">
-            <span style="color:#34d399">✓ 已付工程款 ${totalPaid.toFixed(1)} 萬</span>
-            <span style="color:#f87171">未付工程款: ${remainingPayment.toFixed(1)} 萬</span>
-            <span style="color:#9ca3af">貸款部分: ${(m.totalPrice * loanPct / 100).toFixed(1)} 萬 (${loanPct}%)</span>
+            <span style="color:#34d399">✓ 已付工程款 ${totalPaid.toFixed(4)} 萬</span>
+            <span style="color:#f87171">未付工程款: ${remainingPayment.toFixed(4)} 萬</span>
+            <span style="color:#9ca3af">貸款部分: ${(m.totalPrice * loanPct / 100).toFixed(4)} 萬 (${loanPct}%)</span>
           </div>
         </div>
       `;
@@ -6752,10 +6752,10 @@ function renderMortgageTab() {
           <label style="color:#888;font-size:0.85em">工程款佔總價 <span class="help-tip">!<span class="help-text">工程款佔總價的比例，例如 30% 表示需自付 30%，剩餘 70% 為貸款。填 % 或金額，另一個自動算。</span></span></label>
           <input type="number" id="mort-construction-pct-${m.id}" value="${m.constructionPct || 30}" style="width:55px;padding:4px;border:1px solid rgba(255,255,255,0.15);border-radius:4px;background:rgba(255,255,255,0.08);color:#fbbf24;font-size:0.9em;text-align:center" step="1" onchange="const _m=mortgages.find(x=>x.id==='${m.id}');_m.constructionPct=parseFloat(this.value)||0;recalcLastTwoStages(_m,-1,null);saveMortgages();renderMortgageTab()">
           <span style="color:#fbbf24;font-size:0.85em;font-weight:600">%</span>
-          <span style="color:#888;font-size:0.85em">= ${(m.totalPrice * (m.constructionPct||30) / 100).toFixed(1)} 萬</span>
+          <span style="color:#888;font-size:0.85em">= ${(m.totalPrice * (m.constructionPct||30) / 100).toFixed(4)} 萬</span>
           <span style="color:#666;font-size:0.8em;margin-left:8px">｜</span>
           <label style="color:#888;font-size:0.85em">工程款總額</label>
-          <input type="number" id="mort-construction-amt-${m.id}" value="${(m.totalPrice * (m.constructionPct||30) / 100).toFixed(1)}" style="width:80px;padding:4px;border:1px solid rgba(255,255,255,0.15);border-radius:4px;background:rgba(255,255,255,0.08);color:#fbbf24;font-size:0.9em;text-align:center" step="0.1" onchange="const _m=mortgages.find(x=>x.id==='${m.id}');const v=parseFloat(this.value)||0;if(_m.totalPrice>0){_m.constructionPct=parseFloat((v/_m.totalPrice*100).toFixed(2));}recalcLastTwoStages(_m,-1,null);saveMortgages();renderMortgageTab()">
+          <input type="number" id="mort-construction-amt-${m.id}" value="${(m.totalPrice * (m.constructionPct||30) / 100).toFixed(4)}" style="width:80px;padding:4px;border:1px solid rgba(255,255,255,0.15);border-radius:4px;background:rgba(255,255,255,0.08);color:#fbbf24;font-size:0.9em;text-align:center" step="0.0001" onchange="const _m=mortgages.find(x=>x.id==='${m.id}');const v=parseFloat(this.value)||0;if(_m.totalPrice>0){_m.constructionPct=parseFloat((v/_m.totalPrice*100).toFixed(2));}recalcLastTwoStages(_m,-1,null);saveMortgages();renderMortgageTab()">
           <span style="color:#888;font-size:0.85em">萬</span>
         </div>
         <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
@@ -6781,7 +6781,7 @@ function renderMortgageTab() {
                     <input type="number" id="mort-pay-pct-${m.id}-${i}" value="${p.pct}" style="width:55px;padding:4px;border:1px solid rgba(255,255,255,0.15);border-radius:4px;background:rgba(255,255,255,0.08);color:#fff;font-size:0.9em" step="0.1" onchange="onPaymentPctChange('${m.id}',${i})">
                   </div>
                 </td>
-                <td><input type="number" id="mort-pay-amt-${m.id}-${i}" value="${amt.toFixed(1)}" style="width:80px;padding:4px;border:1px solid rgba(255,255,255,0.15);border-radius:4px;background:rgba(255,255,255,0.08);color:#fbbf24;font-size:0.9em" step="0.1" onchange="onPaymentAmtChange('${m.id}',${i})"></td>
+                <td><input type="number" id="mort-pay-amt-${m.id}-${i}" value="${amt.toFixed(4)}" style="width:80px;padding:4px;border:1px solid rgba(255,255,255,0.15);border-radius:4px;background:rgba(255,255,255,0.08);color:#fbbf24;font-size:0.9em" step="0.0001" onchange="onPaymentAmtChange('${m.id}',${i})"></td>
                 <td><input type="checkbox" id="mort-pay-paid-${m.id}-${i}" ${p.paid ? 'checked' : ''} onchange="saveMortgageField('${m.id}');renderMortgageTab()"></td>
                 <td><input id="mort-pay-date-${m.id}-${i}" value="${p.date||''}" placeholder="日期" style="width:90px;padding:4px;border:1px solid rgba(255,255,255,0.15);border-radius:4px;background:rgba(255,255,255,0.08);color:#fff;font-size:0.85em" onchange="saveMortgageField('${m.id}')"></td>
                 <td>${isFixedStage ? '' : `<button class="btn-remove-row" onclick="removePaymentStage('${m.id}',${i})">✕</button>`}</td>
@@ -6819,7 +6819,7 @@ function renderMortgageTab() {
           </div>
           <div class="form-group">
             <label>房屋總價 (萬元)</label>
-            <input type="number" id="mort-price-${m.id}" value="${m.totalPrice || ''}" placeholder="1500" step="1" onchange="saveMortgageField('${m.id}');renderMortgageTab()">
+            <input type="number" id="mort-price-${m.id}" value="${m.totalPrice || ''}" placeholder="1500" step="0.0001" onchange="saveMortgageField('${m.id}');renderMortgageTab()">
           </div>
         </div>
 
@@ -6827,11 +6827,11 @@ function renderMortgageTab() {
 
         <div style="margin-top:16px;padding-top:16px;border-top:1px solid rgba(255,255,255,0.08)">
           <h3 style="color:#a78bfa;font-size:0.95em;margin-bottom:6px">🏦 貸款資訊（本息均攤）</h3>
-          <div style="font-size:0.8em;color:#888;margin-bottom:8px">總貸款額: <span style="color:#a78bfa;font-weight:600">${(isPresale ? m.totalPrice * (100-(m.constructionPct||30))/100 : m.totalPrice).toFixed(1)} 萬</span>${isPresale ? ' (總價' + m.totalPrice + '萬 × ' + (100-(m.constructionPct||30)) + '%)' : ' (總價)'} — 填剩餘貸款或已繳本金，另一個自動算</div>
+          <div style="font-size:0.8em;color:#888;margin-bottom:8px">總貸款額: <span style="color:#a78bfa;font-weight:600">${(isPresale ? m.totalPrice * (100-(m.constructionPct||30))/100 : m.totalPrice).toFixed(4)} 萬</span>${isPresale ? ' (總價' + (m.totalPrice || 0).toFixed(4) + '萬 × ' + (100-(m.constructionPct||30)) + '%)' : ' (總價)'} — 填剩餘貸款或已繳本金，另一個自動算</div>
           <div class="mortgage-input">
             <div class="form-group">
               <label>剩餘貸款金額 (萬元) <span class="help-tip">!<span class="help-text">如果沒有手動填寫，系統會自動帶入「總價 × 貸款比例」作為預設值。</span></span></label>
-              <input type="number" id="mort-remaining-loan-${m.id}" value="${m.remainingLoan || getMortgageTotalLoan(m).toFixed(1)}" placeholder="${getMortgageTotalLoan(m).toFixed(1)}" step="1" onchange="onRemainingLoanChange('${m.id}')">
+              <input type="number" id="mort-remaining-loan-${m.id}" value="${m.remainingLoan || getMortgageTotalLoan(m).toFixed(4)}" placeholder="${getMortgageTotalLoan(m).toFixed(4)}" step="0.0001" onchange="onRemainingLoanChange('${m.id}')">
             </div>
             <div class="form-group">
               <label>剩餘月數</label>
@@ -6843,7 +6843,7 @@ function renderMortgageTab() {
             </div>
             <div class="form-group">
               <label>已繳貸款本金 (萬元)</label>
-              <input type="number" id="mort-paid-principal-${m.id}" value="${m.paidPrincipal || ''}" placeholder="0" step="0.1" onchange="onPaidPrincipalChange('${m.id}')">
+              <input type="number" id="mort-paid-principal-${m.id}" value="${m.paidPrincipal || ''}" placeholder="0" step="0.0001" onchange="onPaidPrincipalChange('${m.id}')">
             </div>
           </div>
 
@@ -6853,7 +6853,7 @@ function renderMortgageTab() {
               <div>
                 <div style="color:#888;font-size:0.85em">每月還款金額</div>
                 <div style="color:#a78bfa;font-size:1.3em;font-weight:700;margin-top:2px">${fmtTWD(monthlyPayment * 10000)}</div>
-                <div style="color:#666;font-size:0.75em;margin-top:2px">${monthlyPayment.toFixed(2)} 萬/月</div>
+                <div style="color:#666;font-size:0.75em;margin-top:2px">${monthlyPayment.toFixed(4)} 萬/月</div>
               </div>
               <div>
                 <div style="color:#888;font-size:0.85em">剩餘貸款</div>
@@ -6872,16 +6872,16 @@ function renderMortgageTab() {
         <div style="margin-top:16px;padding:12px;background:rgba(255,255,255,0.04);border-radius:8px;border-top:1px solid rgba(255,255,255,0.08)">
           <h3 style="color:#888;font-size:0.85em;margin-bottom:8px">💰 房產投入摘要</h3>
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;font-size:0.85em">
-            <div><span style="color:#888">房屋總價:</span> <span style="color:#67e8f9">${m.totalPrice} 萬</span></div>
-            <div><span style="color:#888">已付工程款:</span> <span style="color:#34d399">${totalPaid.toFixed(1)} 萬</span></div>
-            <div><span style="color:#888">已繳貸款本金:</span> <span style="color:#a78bfa">${(m.paidPrincipal || 0).toFixed(1)} 萬</span></div>
+            <div><span style="color:#888">房屋總價:</span> <span style="color:#67e8f9">${(m.totalPrice || 0).toFixed(4)} 萬</span></div>
+            <div><span style="color:#888">已付工程款:</span> <span style="color:#34d399">${totalPaid.toFixed(4)} 萬</span></div>
+            <div><span style="color:#888">已繳貸款本金:</span> <span style="color:#a78bfa">${(m.paidPrincipal || 0).toFixed(4)} 萬</span></div>
           </div>
           <div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.06);font-size:0.9em">
-            <span style="color:#888">已投入房產總計:</span> <span style="color:#fbbf24;font-weight:700">${totalInvested.toFixed(1)} 萬 (${fmtTWD(totalInvested * 10000)})</span>
+            <span style="color:#888">已投入房產總計:</span> <span style="color:#fbbf24;font-weight:700">${totalInvested.toFixed(4)} 萬 (${fmtTWD(totalInvested * 10000)})</span>
           </div>
           <div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.06);font-size:0.9em">
             <span style="color:#888">🔴 負債:</span> <span style="color:#f87171;font-weight:700">${fmtTWD(getMortgageDebt(m))}</span>
-            <span style="color:#666;font-size:0.8em;margin-left:8px">(${isPresale ? '未付工程款 ' + remainingPayment.toFixed(1) + ' 萬 + ' : ''}剩餘貸款 ${(m.remainingLoan || Math.max(0, getMortgageTotalLoan(m) - (m.paidPrincipal||0))).toFixed(1)} 萬)</span>
+            <span style="color:#666;font-size:0.8em;margin-left:8px">(${isPresale ? '未付工程款 ' + remainingPayment.toFixed(4) + ' 萬 + ' : ''}剩餘貸款 ${(m.remainingLoan || Math.max(0, getMortgageTotalLoan(m) - (m.paidPrincipal||0))).toFixed(4)} 萬)</span>
           </div>
         </div>
       </div>
