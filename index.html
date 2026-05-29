@@ -7875,14 +7875,13 @@ function syncMonthlyRatesFromFx(fxMap) {
 }
 
 // Backfill monthlySnapshots.total_debt[YYYY-MM] from debtSnapshots.total
-// (which logs every mortgage/pledge change with a date) AND from the months
-// visible in other monthly snapshots (us/tw/invested), so the 負債 column
-// has the same row coverage as the other tabs. For each month: take the
-// last snapshot in that month if any; otherwise forward-fill from the
-// previous month; otherwise backward-fill from the earliest snapshot
-// (assumption: the debt existed before the user first started recording).
-// Skips current month so saveMonthlyExtras's live computed value stays
-// authoritative.
+// (which logs every mortgage/pledge change with a date). For each month
+// from the earliest snapshot through the current month, take the LAST
+// snapshot amount in that month; forward-fill months without a snapshot
+// (debt persists between changes). Months earlier than the earliest
+// snapshot are NOT filled — user said no need to fabricate history before
+// the first recorded change. Skips current month so saveMonthlyExtras's
+// live computed value stays authoritative.
 function syncMonthlyDebtFromSnapshots() {
   const arr = debtSnapshots.total;
   if (!arr || arr.length === 0) return;
@@ -7893,25 +7892,12 @@ function syncMonthlyDebtFromSnapshots() {
   }
   const snapMonths = Object.keys(lastByMonth).sort();
   if (snapMonths.length === 0) return;
-  const earliestSnapVal = lastByMonth[snapMonths[0]];
-
-  // Collect every month present anywhere in the detailed table — us/tw nw,
-  // us/tw invested, plus the debt months themselves. Walk from earliest of
-  // all to current month so the loop covers everything the user will see.
-  const allMonths = new Set(snapMonths);
-  for (const k of ['us', 'tw', 'us_invested', 'tw_invested', 'us_invested_twd']) {
-    const obj = monthlySnapshots[k];
-    if (obj) for (const m of Object.keys(obj)) allMonths.add(m);
-  }
-  const sortedAll = [...allMonths].sort();
-  const startMonth = sortedAll[0];
 
   const now = new Date();
   const curMonth = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
   if (!monthlySnapshots.total_debt) monthlySnapshots.total_debt = {};
-  let [y, m] = startMonth.split('-').map(Number);
-  // Before any snapshot exists, assume debt was at the earliest snapshot's level.
-  let lastVal = earliestSnapVal;
+  let [y, m] = snapMonths[0].split('-').map(Number);
+  let lastVal = lastByMonth[snapMonths[0]];
   while (true) {
     const ym = y + '-' + String(m).padStart(2, '0');
     if (lastByMonth[ym] != null) lastVal = lastByMonth[ym];
