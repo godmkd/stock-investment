@@ -8478,24 +8478,12 @@ function renderDetailedMonthlySnapshotTable(usKey, twKey, owner) {
   const twHdr = '<th>月份</th><th style="text-align:right">淨值(TWD)</th><th style="text-align:right">投資金額(TWD)</th><th style="text-align:right">獲利(TWD)</th><th style="text-align:right">投報率</th><th style="text-align:right">月差額</th><th style="text-align:right">月損益率</th>';
 
   // ===== Total section (in TWD) =====
-  // 全部合計 blanks out months earlier than the earliest debt month —
-  // user treats this tab as a "complete picture" view and wants rows
-  // before debt tracking started to show "--" (keeps the row visible,
-  // just nulls the values so diffPct doesn't carry stale data forward).
-  // Cutoff comes from debtSnapshots.total directly (not debtMap keys),
-  // because monthlySnapshots may still hold stale pre-snapshot entries
-  // from a legacy backward-fill.
-  const totalDebtCutoff = (debtSnapshots.total && debtSnapshots.total.length > 0)
-    ? debtSnapshots.total.map(s => s.date.slice(0, 7)).sort()[0]
-    : null;
   const totalNW = months.map(m => {
-    if (totalDebtCutoff && m < totalDebtCutoff) return null;
     const us = usData[m], tw = twData[m], r = rateMap[m] || usdTwdRate;
     if (us == null && tw == null) return null;
     return (us != null ? us * r : 0) + (tw != null ? tw : 0);
   });
   const totalInv = months.map(m => {
-    if (totalDebtCutoff && m < totalDebtCutoff) return null;
     const us = usInv[m], tw = twInv[m], r = rateMap[m] || usdTwdRate;
     if (us == null && tw == null) return null;
     return (us != null ? us * r : 0) + (tw != null ? tw : 0);
