@@ -7902,6 +7902,22 @@ function syncMonthlyDebtFromSnapshots() {
 
   const now = new Date();
   const curMonth = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+
+  // Cleanup: an earlier version of this function backward-filled months
+  // before the first snapshot with the earliest snapshot amount. That code
+  // was reverted but the stale entries it wrote can still live in localStorage
+  // / cloud, making pre-snapshot months show debt values they shouldn't.
+  // Strip anything earlier than the earliest snapshot from both the global
+  // total_debt and every per-owner total_debt_<owner> key.
+  const snapEarliestMonth = snapMonths[0];
+  const debtKeys = Object.keys(monthlySnapshots).filter(k => k === 'total_debt' || k.startsWith('total_debt_'));
+  for (const key of debtKeys) {
+    const obj = monthlySnapshots[key];
+    if (!obj) continue;
+    for (const m of Object.keys(obj)) {
+      if (m < snapEarliestMonth) delete obj[m];
+    }
+  }
   if (!monthlySnapshots.total_debt) monthlySnapshots.total_debt = {};
   let [y, m] = snapMonths[0].split('-').map(Number);
   let lastVal = lastByMonth[snapMonths[0]];
@@ -8466,7 +8482,12 @@ function renderDetailedMonthlySnapshotTable(usKey, twKey, owner) {
   // user treats this tab as a "complete picture" view and wants rows
   // before debt tracking started to show "--" (keeps the row visible,
   // just nulls the values so diffPct doesn't carry stale data forward).
-  const totalDebtCutoff = Object.keys(debtMap).filter(k => debtMap[k] != null).sort()[0] || null;
+  // Cutoff comes from debtSnapshots.total directly (not debtMap keys),
+  // because monthlySnapshots may still hold stale pre-snapshot entries
+  // from a legacy backward-fill.
+  const totalDebtCutoff = (debtSnapshots.total && debtSnapshots.total.length > 0)
+    ? debtSnapshots.total.map(s => s.date.slice(0, 7)).sort()[0]
+    : null;
   const totalNW = months.map(m => {
     if (totalDebtCutoff && m < totalDebtCutoff) return null;
     const us = usData[m], tw = twData[m], r = rateMap[m] || usdTwdRate;
