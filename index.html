@@ -7826,6 +7826,10 @@ async function loadOverviewTrends(range) {
     // Past months without a stored rate fall back to today's rate
     // otherwise — making every row look identical.
     syncMonthlyRatesFromFx(fxMap);
+    // Backfill past months' debt from debtSnapshots (which records every
+    // mortgage/pledge change). Without this, 負債 column only shows current
+    // month — past months stay "--" even though the debt existed back then.
+    syncMonthlyDebtFromSnapshots();
 
     // Render debt trend from snapshots
     const debtData = (debtSnapshots.total || [])
@@ -7862,6 +7866,38 @@ function syncMonthlyRatesFromFx(fxMap) {
   for (const ym in lastByMonth) {
     if (ym === curMonth) continue;        // current month uses live rate
     monthlySnapshots.rate[ym] = Math.round(lastByMonth[ym] * 1000) / 1000;
+  }
+  try { localStorage.setItem('monthly_snapshots', JSON.stringify(monthlySnapshots)); } catch {}
+}
+
+// Backfill monthlySnapshots.total_debt[YYYY-MM] from debtSnapshots.total
+// (which logs every mortgage/pledge change with a date). For each month
+// from the earliest snapshot through the current month, take the LAST
+// snapshot amount in that month; forward-fill months that have no snapshot
+// of their own (debt persists between changes). Skips current month so
+// saveMonthlyExtras's live computed value stays authoritative.
+function syncMonthlyDebtFromSnapshots() {
+  const arr = debtSnapshots.total;
+  if (!arr || arr.length === 0) return;
+  const sorted = [...arr].sort((a, b) => a.date.localeCompare(b.date));
+  const lastByMonth = {};
+  for (const s of sorted) {
+    lastByMonth[s.date.slice(0, 7)] = s.amount;
+  }
+  const monthsWithData = Object.keys(lastByMonth).sort();
+  if (monthsWithData.length === 0) return;
+  const now = new Date();
+  const curMonth = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  if (!monthlySnapshots.total_debt) monthlySnapshots.total_debt = {};
+  let [y, m] = monthsWithData[0].split('-').map(Number);
+  let lastVal = lastByMonth[monthsWithData[0]];
+  while (true) {
+    const ym = y + '-' + String(m).padStart(2, '0');
+    if (lastByMonth[ym] != null) lastVal = lastByMonth[ym];
+    if (ym !== curMonth) monthlySnapshots.total_debt[ym] = lastVal;
+    if (ym === curMonth) break;
+    m++; if (m > 12) { y++; m = 1; }
+    if (y > now.getFullYear() + 1) break;
   }
   try { localStorage.setItem('monthly_snapshots', JSON.stringify(monthlySnapshots)); } catch {}
 }
