@@ -1,4 +1,4 @@
-const CACHE_NAME = 'invest-tracker-v37';
+const CACHE_NAME = 'invest-tracker-v38';
 const ASSETS = [
   './',
   './index.html',
