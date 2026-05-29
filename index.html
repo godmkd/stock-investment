@@ -8472,21 +8472,13 @@ function renderDetailedMonthlySnapshotTable(usKey, twKey, owner) {
   });
   const debtHdr = '<th>月份</th><th style="text-align:right">總負債</th><th style="text-align:right">月差額</th><th style="text-align:right">月差額%</th>';
 
-  // Drop pre-debt months from 負債 and 全部合計 tabs — user only wants to
-  // see history from the earliest month with recorded debt onward; earlier
-  // rows are empty/misleading for those two views. 美股/台股 keep all months.
-  const debtMonthKeys = Object.keys(debtMap).filter(k => debtMap[k] != null).sort();
-  const debtCutoff = debtMonthKeys[0] || null;
-  const debtItemsFiltered = debtCutoff ? debtItems.filter(it => it.ym >= debtCutoff) : debtItems;
-  const totalItemsFiltered = debtCutoff ? totalItems.filter(it => it.ym >= debtCutoff) : totalItems;
-
   // Active tab persists across re-renders
   const activeTab = window._monthlyDetailTab || 'us';
   const tabs = [
-    { id: 'us',    label: '🇺🇸 美股',  items: usItems,            header: usHdr },
-    { id: 'tw',    label: '🇹🇼 台股',  items: twItems,            header: twHdr },
-    { id: 'total', label: '💰 總計',   items: totalItemsFiltered, header: totalHdr },
-    { id: 'debt',  label: '🔴 負債',   items: debtItemsFiltered,  header: debtHdr },
+    { id: 'us',    label: '🇺🇸 美股',  items: usItems,    header: usHdr },
+    { id: 'tw',    label: '🇹🇼 台股',  items: twItems,    header: twHdr },
+    { id: 'total', label: '💰 總計',   items: totalItems, header: totalHdr },
+    { id: 'debt',  label: '🔴 負債',   items: debtItems,  header: debtHdr },
   ];
 
   const tabBtns = tabs.map(t => {
