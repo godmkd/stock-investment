@@ -7882,6 +7882,13 @@ function syncMonthlyRatesFromFx(fxMap) {
 // snapshot are NOT filled — user said no need to fabricate history before
 // the first recorded change. Skips current month so saveMonthlyExtras's
 // live computed value stays authoritative.
+//
+// Also backfills per-owner keys (total_debt_<owner>) using the current
+// per-owner share of total debt — debtSnapshots only records globals, so
+// for past months we proportion the global by today's owner split. This is
+// approximate (assumes ownership ratio hasn't changed) but is the best we
+// can do without historical per-owner snapshots; it unblocks the per-owner
+// 負債 tab showing "--" for past months.
 function syncMonthlyDebtFromSnapshots() {
   const arr = debtSnapshots.total;
   if (!arr || arr.length === 0) return;
@@ -7906,6 +7913,33 @@ function syncMonthlyDebtFromSnapshots() {
     m++; if (m > 12) { y++; m = 1; }
     if (y > now.getFullYear() + 1) break;
   }
+
+  // Per-owner backfill — proportion global by today's owner share.
+  const mortDebtNow = mortgages.reduce((s, mm) => s + getMortgageDebt(mm), 0);
+  const pledgeDebtNow = pledges.reduce((s, p) =>
+    s + (p.loanAmount || 0) * (((p.market || 'us') === 'us') ? usdTwdRate : 1), 0);
+  const totalNow = mortDebtNow + pledgeDebtNow;
+  if (totalNow > 0) {
+    const owners = new Set([
+      ...mortgages.map(mm => mm.owner).filter(Boolean),
+      ...pledges.map(p => p.owner).filter(Boolean),
+    ]);
+    for (const owner of owners) {
+      const ownerMortDebt = mortgages.filter(mm => mm.owner === owner)
+        .reduce((s, mm) => s + getMortgageDebt(mm), 0);
+      const ownerPledgeDebt = pledges.filter(p => p.owner === owner)
+        .reduce((s, p) => s + (p.loanAmount || 0) * (((p.market || 'us') === 'us') ? usdTwdRate : 1), 0);
+      const ratio = (ownerMortDebt + ownerPledgeDebt) / totalNow;
+      if (ratio <= 0) continue;
+      const key = 'total_debt_' + owner;
+      if (!monthlySnapshots[key]) monthlySnapshots[key] = {};
+      for (const ym of Object.keys(monthlySnapshots.total_debt)) {
+        if (ym === curMonth) continue; // current month written by saveMonthlyExtras
+        monthlySnapshots[key][ym] = Math.round(monthlySnapshots.total_debt[ym] * ratio);
+      }
+    }
+  }
+
   try { localStorage.setItem('monthly_snapshots', JSON.stringify(monthlySnapshots)); } catch {}
 }
 
