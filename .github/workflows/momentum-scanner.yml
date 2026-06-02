@@ -1,0 +1,79 @@
+name: Momentum Scanner
+
+on:
+  schedule:
+    # TW market closes at 13:30 TW (UTC+8). Run at 15:30 TW = 07:30 UTC
+    # to give TWSE OpenAPI time to settle.
+    - cron: '30 7 * * 1-5'
+    # US market closes at 16:00 ET. Run at 22:30 UTC = 06:30 TW next morning.
+    - cron: '30 22 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      market:
+        description: 'Which market to scan'
+        required: true
+        default: 'tw'
+        type: choice
+        options: [tw, us, both]
+      dry_run:
+        description: 'Print output instead of posting to Discord'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install yfinance pandas requests lxml html5lib
+
+      - name: Decide which markets to scan
+        id: decide
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          MANUAL_MARKET: ${{ inputs.market }}
+          SCHEDULED_CRON: ${{ github.event.schedule }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            MARKETS="$MANUAL_MARKET"
+          elif [ "$SCHEDULED_CRON" = "30 7 * * 1-5" ]; then
+            MARKETS="tw"
+          elif [ "$SCHEDULED_CRON" = "30 22 * * 1-5" ]; then
+            MARKETS="us"
+          else
+            MARKETS="tw"
+          fi
+          echo "markets=$MARKETS" >> "$GITHUB_OUTPUT"
+          echo "Will scan: $MARKETS"
+
+      - name: Run TW scanner
+        if: contains(steps.decide.outputs.markets, 'tw') || steps.decide.outputs.markets == 'both'
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          ARGS="tw --limit 20"
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+          python scripts/momentum_scanner.py $ARGS
+
+      - name: Run US scanner
+        if: contains(steps.decide.outputs.markets, 'us') || steps.decide.outputs.markets == 'both'
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          ARGS="us --limit 20"
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+          python scripts/momentum_scanner.py $ARGS
