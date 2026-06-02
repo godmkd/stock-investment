@@ -120,6 +120,7 @@ class SymbolMetrics:
     avg_vol_20d: float
     vol_ratio: float
     avg_dollar_vol_20d: float
+    last_dollar_vol: float   # 最近一個交易日的成交額
     rel_strength_60d: float  # ret_60d minus benchmark's ret_60d
 
 
@@ -166,6 +167,7 @@ def compute_metrics_for_symbol(
 
     # Dollar volume proxy: use close * volume avg
     avg_dollar_vol_20d = float((close.tail(20) * volume.tail(20)).mean())
+    last_dollar_vol = float(close.iloc[-1] * volume.iloc[-1])
 
     rel_strength_60d = ret_60d - bench_ret_60d if not math.isnan(ret_60d) else float("nan")
 
@@ -190,6 +192,7 @@ def compute_metrics_for_symbol(
         avg_vol_20d=avg_vol_20d,
         vol_ratio=vol_ratio,
         avg_dollar_vol_20d=avg_dollar_vol_20d,
+        last_dollar_vol=last_dollar_vol,
         rel_strength_60d=rel_strength_60d,
     )
 
@@ -410,10 +413,11 @@ def build_discord_payload(market: str, ranked: pd.DataFrame, limit: int) -> dict
         flags = reason_flags(row)
         flag_str = " · ".join(flags) if flags else "綜合動能強"
         mc_str = format_market_cap(row.get("market_cap"), cfg["currency"])
+        turnover_str = format_market_cap(row.get("last_dollar_vol"), cfg["currency"])
         entry = (
             f"**{i:>2}. {sym_disp}** {row['name']}  `[{cat}]`\n"
             f"     收盤 {format_money(row['last_close'], cfg['currency'])} "
-            f"({row['pct_1d']*100:+.2f}%)   市值 {mc_str}   score {row['score']:.1f}\n"
+            f"({row['pct_1d']*100:+.2f}%)   成交額 {turnover_str}   市值 {mc_str}   score {row['score']:.1f}\n"
             f"     ✦ {flag_str}"
         )
         entries.append(entry)
