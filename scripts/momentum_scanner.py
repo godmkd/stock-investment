@@ -50,6 +50,7 @@ MARKET_CONFIG = {
         "tz": timezone(timedelta(hours=8)),
         "min_close": 5.0,           # NTD
         "min_dollar_volume": 20_000_000,  # NTD per day, ~$650k USD
+        "min_market_cap": 50_000_000_000,  # 500 億 TWD
         "chunk_size": 80,           # yfinance chunk size — TWSE is slower
         "currency": "TWD",
     },
@@ -59,10 +60,16 @@ MARKET_CONFIG = {
         "tz": timezone(timedelta(hours=-4)),  # ET (rough — doesn't track DST exactly, OK for stamp)
         "min_close": 5.0,           # USD
         "min_dollar_volume": 5_000_000,  # USD per day
+        "min_market_cap": 5_000_000_000,  # 50 億 USD
         "chunk_size": 150,
         "currency": "USD",
     },
 }
+
+# How many top-ranked candidates to fetch market cap for. Must be large enough
+# that we still have ≥20 names after the market-cap filter, even when many
+# momentum-strong small caps don't meet the cap floor.
+MARKET_CAP_CANDIDATE_POOL = 300
 
 CATEGORY_LABELS = {
     "tw_stock": "個股",
@@ -294,6 +301,58 @@ def download_history(symbols: list[str], chunk_size: int) -> dict[str, pd.DataFr
     return out
 
 
+def fetch_market_cap(symbol: str) -> float | None:
+    """Return market cap in the symbol's quote currency (TWD for .TW, USD for US).
+
+    Uses yfinance's lightweight fast_info first; falls back to shares × price
+    if market_cap isn't reported. Returns None if neither is available.
+    """
+    try:
+        fi = yf.Ticker(symbol).fast_info
+        # fast_info uses camelCase: marketCap, lastPrice, shares
+        mc = fi.get("marketCap") or fi.get("market_cap")
+        if mc and mc > 0:
+            return float(mc)
+        shares = fi.get("shares")
+        price = fi.get("lastPrice") or fi.get("last_price")
+        if shares and price and shares > 0 and price > 0:
+            return float(shares) * float(price)
+    except Exception as e:
+        log.debug("market cap fetch failed for %s: %s", symbol, e)
+    return None
+
+
+def annotate_market_caps(df: pd.DataFrame, max_workers: int = 12) -> pd.DataFrame:
+    """Fetch market caps for every symbol in df in parallel, attach as a new column."""
+    import concurrent.futures
+    symbols = df["symbol"].tolist()
+    log.info("Fetching market cap for %d candidates ...", len(symbols))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
+        caps = list(ex.map(fetch_market_cap, symbols))
+    df = df.copy()
+    df["market_cap"] = caps
+    n_with = sum(1 for c in caps if c is not None)
+    log.info("  → got market cap for %d/%d", n_with, len(symbols))
+    return df
+
+
+def _is_etf_category(category: str) -> bool:
+    return "etf" in category
+
+
+def format_market_cap(mc: float | None, currency: str) -> str:
+    if mc is None or pd.isna(mc):
+        return "—"
+    if currency == "TWD":
+        return f"{mc / 1e8:.0f}億"
+    # USD
+    if mc >= 1e12:
+        return f"{mc / 1e12:.1f}T"
+    if mc >= 1e9:
+        return f"{mc / 1e9:.1f}B"
+    return f"{mc / 1e6:.0f}M"
+
+
 def fetch_benchmark_60d_return(symbol: str) -> float:
     """Return the benchmark's 60-trading-day return."""
     try:
@@ -350,10 +409,11 @@ def build_discord_payload(market: str, ranked: pd.DataFrame, limit: int) -> dict
         cat = CATEGORY_LABELS.get(row["category"], row["category"])
         flags = reason_flags(row)
         flag_str = " · ".join(flags) if flags else "綜合動能強"
+        mc_str = format_market_cap(row.get("market_cap"), cfg["currency"])
         entry = (
             f"**{i:>2}. {sym_disp}** {row['name']}  `[{cat}]`\n"
             f"     收盤 {format_money(row['last_close'], cfg['currency'])} "
-            f"({row['pct_1d']*100:+.2f}%)   score {row['score']:.1f}\n"
+            f"({row['pct_1d']*100:+.2f}%)   市值 {mc_str}   score {row['score']:.1f}\n"
             f"     ✦ {flag_str}"
         )
         entries.append(entry)
@@ -432,14 +492,35 @@ def run(market: str, limit: int, dry_run: bool, test_symbols: list[str] | None) 
             continue
         rows.append(m)
 
-    log.info("After filters: %d symbols qualify", len(rows))
+    log.info("After price/liquidity filters: %d symbols qualify", len(rows))
     ranked = compute_composite_score(rows)
 
     if ranked.empty:
         log.warning("No qualifying symbols; nothing to push.")
         return 0
 
-    payload = build_discord_payload(market, ranked, limit)
+    # Market cap filter — fetch caps for top N momentum candidates, drop those
+    # below the cap floor (ETFs are exempt; user explicitly asked to include them).
+    candidates = ranked.head(MARKET_CAP_CANDIDATE_POOL).copy()
+    candidates = annotate_market_caps(candidates)
+
+    cap_floor = cfg["min_market_cap"]
+    def passes_mcap(row: pd.Series) -> bool:
+        if _is_etf_category(row["category"]):
+            return True
+        mc = row.get("market_cap")
+        return mc is not None and not pd.isna(mc) and mc >= cap_floor
+
+    pre = len(candidates)
+    candidates = candidates[candidates.apply(passes_mcap, axis=1)].reset_index(drop=True)
+    log.info("After market cap filter (≥ %s): %d/%d remain",
+             format_market_cap(cap_floor, cfg["currency"]), len(candidates), pre)
+
+    if candidates.empty:
+        log.warning("All candidates filtered out by market cap; nothing to push.")
+        return 0
+
+    payload = build_discord_payload(market, candidates, limit)
 
     if dry_run:
         log.info("--- DRY RUN ---\n%s", payload["content"])
