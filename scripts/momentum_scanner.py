@@ -344,23 +344,24 @@ def build_discord_payload(market: str, ranked: pd.DataFrame, limit: int) -> dict
         "",
     ]
 
-    lines = []
+    entries = []
     for i, (_, row) in enumerate(top.iterrows(), start=1):
         sym_disp = row["symbol"].replace(".TW", "")
         cat = CATEGORY_LABELS.get(row["category"], row["category"])
         flags = reason_flags(row)
         flag_str = " · ".join(flags) if flags else "綜合動能強"
-        line = (
+        entry = (
             f"**{i:>2}. {sym_disp}** {row['name']}  `[{cat}]`\n"
             f"     收盤 {format_money(row['last_close'], cfg['currency'])} "
             f"({row['pct_1d']*100:+.2f}%)   score {row['score']:.1f}\n"
             f"     ✦ {flag_str}"
         )
-        lines.append(line)
+        entries.append(entry)
 
-    content = "\n".join(header_lines + lines)
+    # Separate header and each entry by blank lines so the splitter in
+    # post_to_discord can pack them into ≤2000-char Discord messages.
+    content = "\n".join(header_lines).rstrip() + "\n\n" + "\n\n".join(entries)
 
-    # Discord caps message content at 2000 chars. Split into multiple messages if needed.
     return {"content": content}
 
 
