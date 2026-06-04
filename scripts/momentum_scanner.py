@@ -531,9 +531,14 @@ def run(market: str, limit: int, dry_run: bool, test_symbols: list[str] | None) 
         f"/tmp/momentum_top_codes_{market}.json",
     )
     top_codes_n = int(os.environ.get("SCANNER_TOP_CODES_N", "50"))
-    top_codes = [
-        s.replace(".TW", "").replace(".TWO", "")
-        for s in candidates.head(top_codes_n)["symbol"].tolist()
+    top_n = candidates.head(top_codes_n)
+    top_entries = [
+        {
+            "code": row["symbol"].replace(".TW", "").replace(".TWO", ""),
+            "name": row["name"],
+            "score": float(row["score"]),
+        }
+        for _, row in top_n.iterrows()
     ]
     try:
         with open(top_codes_path, "w", encoding="utf-8") as f:
@@ -541,11 +546,11 @@ def run(market: str, limit: int, dry_run: bool, test_symbols: list[str] | None) 
             _json.dump({
                 "market": market,
                 "generated_at": datetime.now(cfg["tz"]).isoformat(),
-                "codes": top_codes,
+                "entries": top_entries,
             }, f, ensure_ascii=False, indent=2)
-        log.info("wrote top-%d codes to %s", len(top_codes), top_codes_path)
+        log.info("wrote top-%d entries to %s", len(top_entries), top_codes_path)
     except OSError as e:
-        log.warning("could not persist top codes to %s: %s", top_codes_path, e)
+        log.warning("could not persist top entries to %s: %s", top_codes_path, e)
 
     payload = build_discord_payload(market, candidates, limit)
 

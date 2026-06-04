@@ -182,6 +182,8 @@ def _parse_bsr_text(text: str) -> list[BranchRow]:
 @dataclass
 class ChipMetrics:
     stock_code: str
+    stock_name: str              # display name (e.g. 台積電); empty if unknown
+    momentum_score: float | None # carried from momentum_scanner if input includes it
     total_buy: int
     total_sell: int
     total_volume: int            # buy + sell, in shares
@@ -192,7 +194,12 @@ class ChipMetrics:
     intraday_ratio: float        # share of volume from branches that round-tripped today (當沖)
 
 
-def compute_metrics(stock_code: str, rows: list[BranchRow]) -> ChipMetrics | None:
+def compute_metrics(
+    stock_code: str,
+    rows: list[BranchRow],
+    stock_name: str = "",
+    momentum_score: float | None = None,
+) -> ChipMetrics | None:
     if not rows:
         return None
 
@@ -247,6 +254,8 @@ def compute_metrics(stock_code: str, rows: list[BranchRow]) -> ChipMetrics | Non
 
     return ChipMetrics(
         stock_code=stock_code,
+        stock_name=stock_name,
+        momentum_score=momentum_score,
         total_buy=total_buy,
         total_sell=total_sell,
         total_volume=total_volume,
@@ -301,8 +310,10 @@ def build_discord_content(metrics_list: list[ChipMetrics], limit: int) -> str:
         if not flag_parts:
             flag_parts.append("籌碼結構中性")
         flag_str = " · ".join(flag_parts)
+        name_part = f" {m.stock_name}" if m.stock_name else ""
+        score_part = f"   動能 {m.momentum_score:.0f}" if m.momentum_score is not None else ""
         entry = (
-            f"**{i:>2}. {m.stock_code}**\n"
+            f"**{i:>2}. {m.stock_code}{name_part}**{score_part}\n"
             f"     主力 {_shares_to_lots(m.main_player_net)}   "
             f"集中 {m.concentration*100:.1f}%   "
             f"當沖 {m.intraday_ratio*100:.0f}%   "
@@ -340,27 +351,49 @@ def post_to_discord(webhook_url: str, content: str) -> None:
 # Orchestration
 # ---------------------------------------------------------------------------
 
-def _load_codes(args: argparse.Namespace) -> list[str]:
-    codes: list[str] = []
+def _load_entries(args: argparse.Namespace) -> list[dict]:
+    """Returns list of {code, name, score} dicts. name/score may be empty/None."""
+    entries: list[dict] = []
     if args.from_file:
         with open(args.from_file, encoding="utf-8") as f:
             data = json.load(f)
-            if isinstance(data, list):
-                codes = [str(c).strip() for c in data]
-            elif isinstance(data, dict) and "codes" in data:
-                codes = [str(c).strip() for c in data["codes"]]
+        if isinstance(data, dict):
+            if "entries" in data:
+                for e in data["entries"]:
+                    entries.append({
+                        "code": str(e.get("code", "")).strip(),
+                        "name": str(e.get("name", "")).strip(),
+                        "score": e.get("score"),
+                    })
+            elif "codes" in data:
+                entries.extend({"code": str(c).strip(), "name": "", "score": None}
+                               for c in data["codes"])
             else:
-                raise ValueError(f"{args.from_file}: expected list or {{codes:[...]}}")
-    codes.extend(args.codes)
-    # Strip ".TW" suffix in case caller passed yfinance-style symbols
-    return [c.replace(".TW", "").replace(".TWO", "") for c in codes if c]
+                raise ValueError(f"{args.from_file}: expected entries or codes key")
+        elif isinstance(data, list):
+            entries.extend({"code": str(c).strip(), "name": "", "score": None}
+                           for c in data)
+        else:
+            raise ValueError(f"{args.from_file}: unexpected JSON shape")
+    entries.extend({"code": c.strip(), "name": "", "score": None} for c in args.codes if c)
+    # Strip .TW suffixes and drop empties
+    cleaned = []
+    for e in entries:
+        code = e["code"].replace(".TW", "").replace(".TWO", "")
+        if code:
+            e["code"] = code
+            cleaned.append(e)
+    return cleaned
 
 
-def run(codes: list[str], limit: int, dry_run: bool, request_delay: float) -> int:
-    log.info("=== chip scanner starting on %d stocks ===", len(codes))
+def run(entries: list[dict], limit: int, dry_run: bool, request_delay: float) -> int:
+    log.info("=== chip scanner starting on %d stocks ===", len(entries))
     results: list[ChipMetrics] = []
-    for i, code in enumerate(codes, 1):
-        log.info("[%d/%d] fetching %s ...", i, len(codes), code)
+    for i, entry in enumerate(entries, 1):
+        code = entry["code"]
+        name = entry.get("name", "") or ""
+        score = entry.get("score")
+        log.info("[%d/%d] fetching %s %s ...", i, len(entries), code, name)
         text = _fetch_bsr_text(code)
         if not text:
             continue
@@ -368,12 +401,12 @@ def run(codes: list[str], limit: int, dry_run: bool, request_delay: float) -> in
         if not rows:
             log.info("[%s] no rows parsed; skipping", code)
             continue
-        m = compute_metrics(code, rows)
+        m = compute_metrics(code, rows, stock_name=name, momentum_score=score)
         if m:
             results.append(m)
         time.sleep(request_delay)
 
-    log.info("got metrics for %d/%d stocks", len(results), len(codes))
+    log.info("got metrics for %d/%d stocks", len(results), len(entries))
     if not results:
         log.warning("nothing to post.")
         return 0
@@ -403,11 +436,11 @@ def main() -> int:
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
-    codes = _load_codes(args)
-    if not codes:
+    entries = _load_entries(args)
+    if not entries:
         parser.error("provide at least one code or --from-file")
 
-    return run(codes, args.limit, args.dry_run, args.delay)
+    return run(entries, args.limit, args.dry_run, args.delay)
 
 
 if __name__ == "__main__":
