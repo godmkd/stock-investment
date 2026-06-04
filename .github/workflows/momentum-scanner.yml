@@ -57,16 +57,34 @@ jobs:
           echo "markets=$MARKETS" >> "$GITHUB_OUTPUT"
           echo "Will scan: $MARKETS"
 
-      - name: Run TW scanner
+      - name: Run TW momentum scanner
         if: contains(steps.decide.outputs.markets, 'tw') || steps.decide.outputs.markets == 'both'
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          SCANNER_TOP_CODES_PATH: ${{ runner.temp }}/momentum_top_tw.json
+          SCANNER_TOP_CODES_N: '50'
         run: |
           ARGS="tw --limit 20"
           if [ "${{ inputs.dry_run }}" = "true" ]; then
             ARGS="$ARGS --dry-run"
           fi
           python scripts/momentum_scanner.py $ARGS
+
+      - name: Run TW chip scanner (分點籌碼分析)
+        if: contains(steps.decide.outputs.markets, 'tw') || steps.decide.outputs.markets == 'both'
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          TOP_FILE="${{ runner.temp }}/momentum_top_tw.json"
+          if [ ! -f "$TOP_FILE" ]; then
+            echo "no top codes file at $TOP_FILE, skipping chip scan"
+            exit 0
+          fi
+          ARGS="--from-file $TOP_FILE --limit 20"
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+          python scripts/chip_scanner.py $ARGS
 
       - name: Run US scanner
         if: contains(steps.decide.outputs.markets, 'us') || steps.decide.outputs.markets == 'both'

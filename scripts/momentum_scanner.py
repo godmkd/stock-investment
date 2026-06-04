@@ -524,6 +524,29 @@ def run(market: str, limit: int, dry_run: bool, test_symbols: list[str] | None) 
         log.warning("All candidates filtered out by market cap; nothing to push.")
         return 0
 
+    # Persist top-N codes to JSON so downstream scanners (e.g. chip_scanner)
+    # can pick them up without re-running the momentum pipeline.
+    top_codes_path = os.environ.get(
+        "SCANNER_TOP_CODES_PATH",
+        f"/tmp/momentum_top_codes_{market}.json",
+    )
+    top_codes_n = int(os.environ.get("SCANNER_TOP_CODES_N", "50"))
+    top_codes = [
+        s.replace(".TW", "").replace(".TWO", "")
+        for s in candidates.head(top_codes_n)["symbol"].tolist()
+    ]
+    try:
+        with open(top_codes_path, "w", encoding="utf-8") as f:
+            import json as _json
+            _json.dump({
+                "market": market,
+                "generated_at": datetime.now(cfg["tz"]).isoformat(),
+                "codes": top_codes,
+            }, f, ensure_ascii=False, indent=2)
+        log.info("wrote top-%d codes to %s", len(top_codes), top_codes_path)
+    except OSError as e:
+        log.warning("could not persist top codes to %s: %s", top_codes_path, e)
+
     payload = build_discord_payload(market, candidates, limit)
 
     if dry_run:
