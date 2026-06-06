@@ -5393,30 +5393,38 @@ function renderStockSections(containerId, analysis, trades, market) {
     const buyRows = buys.length > 0
       ? buys.map(t => {
           const fee = t.fee || 0;
+          const noteText = t.note || '';
           return `<tr>
             <td>${t.date}</td>
             <td>${t.shares.toLocaleString('en-US',{maximumFractionDigits:4})}</td>
             <td>${fmtPrice(t.price)}</td>
             <td>${fmtAmt(t.shares * t.price)}</td>
             <td>${fee > 0 ? fmtAmt(fee) : '-'}</td>
+            <td class="muted" title="${noteText.replace(/"/g,'&quot;')}" style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${noteText || '-'}</td>
             <td><button class="btn-danger" onclick="deleteTrade('${market}','${t.id}')" style="padding:2px 6px;font-size:0.8em;border-radius:4px">✕</button></td>
           </tr>`;
         }).join('')
-      : '<tr><td colspan="6" style="text-align:center;color:#555;padding:14px">無</td></tr>';
+      : '<tr><td colspan="7" style="text-align:center;color:#555;padding:14px">無</td></tr>';
 
     const sellRows = sells.length > 0
       ? sells.map(t => {
           const fee = t.fee || 0;
+          const noteText = t.note || '';
           return `<tr>
             <td>${t.date}</td>
             <td>${t.shares.toLocaleString('en-US',{maximumFractionDigits:4})}</td>
             <td>${fmtPrice(t.price)}</td>
             <td>${fmtAmt(t.shares * t.price)}</td>
             <td>${fee > 0 ? fmtAmt(fee) : '-'}</td>
+            <td class="muted" title="${noteText.replace(/"/g,'&quot;')}" style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${noteText || '-'}</td>
             <td><button class="btn-danger" onclick="deleteTrade('${market}','${t.id}')" style="padding:2px 6px;font-size:0.8em;border-radius:4px">✕</button></td>
           </tr>`;
         }).join('')
-      : '<tr><td colspan="6" style="text-align:center;color:#555;padding:14px">無</td></tr>';
+      : '<tr><td colspan="7" style="text-align:center;color:#555;padding:14px">無</td></tr>';
+
+    const splitBtn = !s.isClosed
+      ? `<button onclick="event.stopPropagation();openSplitModal('${market}','${s.ticker}',${s.shares})" style="background:rgba(167,139,250,0.15);color:#a78bfa;border:1px solid rgba(167,139,250,0.3);border-radius:6px;padding:3px 10px;font-size:0.78em;cursor:pointer" title="記錄拆股 / 合股調整">📊 拆股</button>`
+      : '';
 
     return `
       <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:12px;margin-bottom:12px;overflow:hidden">
@@ -5427,18 +5435,18 @@ function renderStockSections(containerId, analysis, trades, market) {
             <span style="font-size:1.1em;font-weight:700;color:#67e8f9">${isTW ? stockName : s.ticker}${codeLabel}</span>
             <span style="font-size:0.8em;color:#aaa">${summaryText}</span>
           </div>
-          ${retBadge}
+          <div style="display:flex;align-items:center;gap:10px">${splitBtn}${retBadge}</div>
         </div>
         <div style="display:none">
           <div class="stock-buysell-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:0">
             <div style="border-right:1px solid rgba(255,255,255,0.04)">
               <h3 style="font-size:0.82em;color:#888;padding:10px 14px;border-bottom:1px solid rgba(255,255,255,0.06)">🟢 買入 (${buys.length} 筆，共 ${fmtAmt(s.totalBought)})</h3>
-              <table style="font-size:0.82em"><thead><tr><th>日期</th><th>股數</th><th>單價</th><th>金額</th><th>手續費</th><th></th></tr></thead>
+              <table style="font-size:0.82em"><thead><tr><th>日期</th><th>股數</th><th>單價</th><th>金額</th><th>手續費</th><th>備註</th><th></th></tr></thead>
               <tbody>${buyRows}</tbody></table>
             </div>
             <div>
               <h3 style="font-size:0.82em;color:#888;padding:10px 14px;border-bottom:1px solid rgba(255,255,255,0.06)">🔴 賣出 (${sells.length} 筆，共 ${fmtAmt(s.totalSold)})</h3>
-              <table style="font-size:0.82em"><thead><tr><th>日期</th><th>股數</th><th>單價</th><th>金額</th><th>手續費</th><th></th></tr></thead>
+              <table style="font-size:0.82em"><thead><tr><th>日期</th><th>股數</th><th>單價</th><th>金額</th><th>手續費</th><th>備註</th><th></th></tr></thead>
               <tbody>${sellRows}</tbody></table>
             </div>
           </div>
@@ -5457,6 +5465,114 @@ function deleteTrade(market, tradeId) {
   let trades = getAccountData(accId, market, 'trades');
   trades = trades.filter(t => String(t.id) !== String(tradeId));
   saveAccountData(accId, market, 'trades', trades);
+  if (market === 'us') renderUSTab();
+  else renderTWTab();
+}
+
+// ===== Stock Split / Reverse-split Adjustment =====
+// Forward split: ratio 4:1 means "1 old share → 4 new shares" (you gain shares).
+// Reverse merge: ratio 1:2 means "2 old shares → 1 new share" (you lose shares).
+// Implementation: insert a single $0 buy/sell trade so avg cost auto-rebases.
+function openSplitModal(market, ticker, currentShares) {
+  const isTW = market === 'tw';
+  const stockName = isTW ? (twCodeToName[ticker] || ticker) : ticker;
+  const today = new Date().toISOString().slice(0, 10);
+  const dialog = document.createElement('div');
+  dialog.id = '_splitDialog';
+  dialog.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:10000;display:flex;align-items:center;justify-content:center';
+  dialog.innerHTML = `
+    <div style="background:#1e1e2e;border:1px solid rgba(167,139,250,0.4);border-radius:12px;padding:24px;max-width:440px;width:90%">
+      <h3 style="color:#a78bfa;margin-bottom:6px">📊 拆股 / 合股調整</h3>
+      <div style="color:#888;font-size:0.85em;margin-bottom:16px">${stockName} · 當前持股 <span style="color:#67e8f9;font-weight:600">${currentShares.toLocaleString('en-US',{maximumFractionDigits:4})}</span> 股</div>
+
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+        <label style="color:#aaa;font-size:0.88em;flex:0 0 auto">拆股比例</label>
+        <input id="_splitNum" type="number" value="4" min="1" step="1" style="width:60px;padding:6px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;background:rgba(255,255,255,0.08);color:#fff;text-align:center" oninput="updateSplitPreview('${market}','${ticker}',${currentShares})">
+        <span style="color:#888">:</span>
+        <input id="_splitDen" type="number" value="1" min="1" step="1" style="width:60px;padding:6px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;background:rgba(255,255,255,0.08);color:#fff;text-align:center" oninput="updateSplitPreview('${market}','${ticker}',${currentShares})">
+        <span style="color:#666;font-size:0.78em">（拆股後 : 拆股前）</span>
+      </div>
+      <div style="color:#666;font-size:0.75em;margin-bottom:12px;padding-left:6px">
+        範例：<span style="color:#aaa">4:1</span> = 正向拆股（1 拆 4）；<span style="color:#aaa">1:2</span> = 反向合股（2 併 1）
+      </div>
+
+      <div style="margin-bottom:12px">
+        <label style="color:#aaa;font-size:0.88em;display:block;margin-bottom:4px">調整日期</label>
+        <input id="_splitDate" type="date" value="${today}" style="padding:6px 10px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;background:rgba(255,255,255,0.08);color:#fff">
+      </div>
+
+      <div id="_splitPreview" style="background:rgba(167,139,250,0.08);border:1px solid rgba(167,139,250,0.2);border-radius:8px;padding:12px;margin-bottom:16px;font-size:0.88em"></div>
+
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-secondary" onclick="document.getElementById('_splitDialog').remove()">取消</button>
+        <button class="btn btn-add" id="_splitConfirm" onclick="executeStockSplit('${market}','${ticker}',${currentShares})">確認執行</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(dialog);
+  updateSplitPreview(market, ticker, currentShares);
+}
+
+function updateSplitPreview(market, ticker, currentShares) {
+  const num = parseFloat(document.getElementById('_splitNum').value) || 0;
+  const den = parseFloat(document.getElementById('_splitDen').value) || 0;
+  const preview = document.getElementById('_splitPreview');
+  const confirmBtn = document.getElementById('_splitConfirm');
+  if (num <= 0 || den <= 0) {
+    preview.innerHTML = '<span style="color:#f87171">比例必須為正整數</span>';
+    confirmBtn.disabled = true;
+    confirmBtn.style.opacity = '0.5';
+    return;
+  }
+  const newShares = currentShares * num / den;
+  const delta = newShares - currentShares;
+  const tradeType = delta > 0 ? '買入' : '賣出';
+  const tradeColor = delta > 0 ? '#34d399' : '#f87171';
+  if (delta === 0) {
+    preview.innerHTML = '<span style="color:#fbbf24">⚠ 比例 1:1，沒有股數變化</span>';
+    confirmBtn.disabled = true;
+    confirmBtn.style.opacity = '0.5';
+    return;
+  }
+  confirmBtn.disabled = false;
+  confirmBtn.style.opacity = '1';
+  preview.innerHTML = `
+    <div style="color:#aaa;margin-bottom:6px">系統將自動 ${tradeType === '買入' ? '增加' : '減少'} 股數：</div>
+    <div style="font-size:0.95em;color:${tradeColor};font-weight:600">
+      → ${tradeType} <span style="font-size:1.1em">${Math.abs(delta).toLocaleString('en-US',{maximumFractionDigits:4})}</span> 股 @ $0
+    </div>
+    <div style="color:#888;font-size:0.82em;margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.08)">
+      持股：${currentShares.toLocaleString('en-US',{maximumFractionDigits:4})} → <span style="color:#67e8f9">${newShares.toLocaleString('en-US',{maximumFractionDigits:4})}</span> 股
+    </div>
+  `;
+}
+
+function executeStockSplit(market, ticker, currentShares) {
+  const num = parseFloat(document.getElementById('_splitNum').value) || 0;
+  const den = parseFloat(document.getElementById('_splitDen').value) || 0;
+  const date = document.getElementById('_splitDate').value;
+  if (num <= 0 || den <= 0 || !date) { alert('資料不完整'); return; }
+  const newShares = currentShares * num / den;
+  const delta = newShares - currentShares;
+  if (delta === 0) { alert('比例 1:1 沒有變化'); return; }
+  const type = delta > 0 ? 'buy' : 'sell';
+  const shares = Math.abs(delta);
+  const accId = market === 'us' ? currentUSAccount : currentTWAccount;
+  const trades = getAccountData(accId, market, 'trades');
+  trades.push({
+    id: Date.now(),
+    date,
+    ticker,
+    type,
+    shares,
+    price: 0,
+    fee: 0,
+    adjust: 0,
+    note: `📊 拆股 ${num}:${den} (自動調整)`,
+  });
+  trades.sort((a, b) => b.date.localeCompare(a.date));
+  saveAccountData(accId, market, 'trades', trades);
+  document.getElementById('_splitDialog').remove();
   if (market === 'us') renderUSTab();
   else renderTWTab();
 }
