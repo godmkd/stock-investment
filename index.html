@@ -3698,7 +3698,7 @@ function submitUSQITrade() {
     const shares = parseFloat(parts[1]);
     const price = parseFloat(parts[2]);
     const fee = parts.length >= 4 ? parseFloat(parts[3]) : (feeRate > 0 ? shares * price * feeRate : 0);
-    if (isNaN(shares) || isNaN(price) || shares <= 0 || price <= 0) { errors.push(`行 ${i+1}: 數值不正確 "${line}"`); return; }
+    if (isNaN(shares) || isNaN(price) || shares <= 0 || price < 0) { errors.push(`行 ${i+1}: 數值不正確 "${line}"`); return; }
     data.push({ id: Date.now() + count, date, ticker, type, shares, price, fee: fee || 0, adjust: 0, note });
     count++;
   });
@@ -3823,7 +3823,7 @@ function submitTWQITrade() {
     const date = parseFlexDate(parts[0]);
     const shares = parseFloat(parts[1]);
     const price = parseFloat(parts[2]);
-    if (isNaN(shares) || isNaN(price) || shares <= 0 || price <= 0) { errors.push(`行 ${i+1}: 數值不正確 "${line}"`); return; }
+    if (isNaN(shares) || isNaN(price) || shares <= 0 || price < 0) { errors.push(`行 ${i+1}: 數值不正確 "${line}"`); return; }
     const fee = parts.length >= 4 ? parseFloat(parts[3]) : Math.max(1, Math.floor(shares * price * feeRate));
     data.push({ id: Date.now() + count, date, ticker: resolved, type, shares, price, fee: fee || 0, adjust: 0, note });
     count++;
