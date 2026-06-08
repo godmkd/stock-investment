@@ -3834,6 +3834,11 @@ function submitTWQITrade() {
   saveAccountData(currentTWAccount, 'tw', 'trades', data);
   document.getElementById('twQiTradeText').value = '';
   renderTWTab();
+  // 新加入的股票如果尚未有報價/名稱，自動觸發一次 TW 報價更新，
+  // 否則畫面會一直顯示代號（例如 8150）而不是中文名（南茂）。
+  if (!twPrices[resolved] || !twPrices[resolved].name) {
+    refreshTWPrices().catch(() => {});
+  }
   let msg = `✅ 已新增 ${count} 筆 ${resolved} ${type === 'buy' ? '買入' : '賣出'}交易`;
   if (errors.length > 0) msg += '\n\n⚠️ 跳過的行:\n' + errors.join('\n');
   alert(msg);
