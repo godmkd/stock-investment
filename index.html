@@ -5383,11 +5383,20 @@ function renderStockSections(containerId, analysis, trades, market) {
     const stockName = isTW ? (twCodeToName[s.ticker] || twPrices[s.ticker]?.name || s.ticker) : s.ticker;
     const codeLabel = isTW && stockName !== s.ticker ? ` <span style="color:#888;font-size:0.8em">(${s.ticker})</span>` : '';
 
-    const summaryText = s.isClosed
+    // Detect "sold without ever buying" — shares ends up negative because
+    // a sell drained an empty buy stack. UI should call this out as an error
+    // (not "已清倉") so the user can find and fix it.
+    const isErrorState = s.shares < -0.0001;
+
+    const summaryText = isErrorState
+      ? `⚠️ 異常：賣出 ${s.shares.toFixed(isTW ? 0 : 4)} 股，無對應買入 | 賣出金額 ${fmtAmt(s.totalSold)}`
+      : s.isClosed
       ? `已清倉 | 投入 ${fmtAmt(s.totalBought)} | 回收 ${fmtAmt(s.totalSold)} | 損益 ${(s.totalPL>=0?'+':'') + fmtAmt(s.totalPL)}`
       : `持有 ${s.shares.toFixed(isTW ? 0 : 2)} 股 | 均價 ${fmtPrice(s.avgPrice)} | 投入 ${fmtAmt(s.totalBought)}`;
 
-    const retBadge = s.totalReturn !== null
+    const retBadge = isErrorState
+      ? `<span class="badge" style="background:rgba(248,113,113,0.2);color:#f87171;border:1px solid rgba(248,113,113,0.4)">異常</span>`
+      : s.totalReturn !== null
       ? `<span class="badge ${plClass(s.totalReturn)}">${fmtPct(s.totalReturn)}</span>` : '';
 
     const buyRows = buys.length > 0
@@ -5426,27 +5435,36 @@ function renderStockSections(containerId, analysis, trades, market) {
       ? `<button onclick="event.stopPropagation();openSplitModal('${market}','${s.ticker}',${s.shares})" style="background:rgba(167,139,250,0.15);color:#a78bfa;border:1px solid rgba(167,139,250,0.3);border-radius:6px;padding:3px 10px;font-size:0.78em;cursor:pointer" title="記錄拆股 / 合股調整">📊 拆股</button>`
       : '';
 
+    // Auto-expand error-state cards so the user immediately sees the bad trade
+    // and the delete button without an extra click.
+    const detailDisplay = isErrorState ? 'block' : 'none';
+    const arrowClass = isErrorState ? 'arrow open' : 'arrow';
+    const warningBanner = isErrorState
+      ? `<div style="background:rgba(248,113,113,0.08);border-bottom:1px solid rgba(248,113,113,0.2);padding:10px 16px;color:#f87171;font-size:0.85em">⚠️ 此股票有賣出但沒有對應的買入記錄。請從下方 🔴 賣出 表格刪除誤輸入的交易（點 ✕ 按鈕）。</div>`
+      : '';
+
     return `
-      <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:12px;margin-bottom:12px;overflow:hidden">
-        <div onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none';this.querySelector('.arrow').classList.toggle('open')"
+      <div style="background:rgba(255,255,255,0.03);border:1px solid ${isErrorState ? 'rgba(248,113,113,0.3)' : 'rgba(255,255,255,0.06)'};border-radius:12px;margin-bottom:12px;overflow:hidden">
+        <div onclick="this.parentElement.querySelector('.stock-detail').style.display=this.parentElement.querySelector('.stock-detail').style.display==='none'?'block':'none';this.querySelector('.arrow').classList.toggle('open')"
              style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;cursor:pointer;background:rgba(255,255,255,0.03);user-select:none">
           <div style="display:flex;align-items:center;gap:12px">
-            <span class="arrow" style="color:#666;transition:transform 0.2s;display:inline-block">▶</span>
+            <span class="${arrowClass}" style="color:#666;transition:transform 0.2s;display:inline-block">▶</span>
             <span style="font-size:1.1em;font-weight:700;color:#67e8f9">${isTW ? stockName : s.ticker}${codeLabel}</span>
             <span style="font-size:0.8em;color:#aaa">${summaryText}</span>
           </div>
           <div style="display:flex;align-items:center;gap:10px">${splitBtn}${retBadge}</div>
         </div>
-        <div style="display:none">
+        <div class="stock-detail" style="display:${detailDisplay}">
+          ${warningBanner}
           <div class="stock-buysell-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:0">
-            <div style="border-right:1px solid rgba(255,255,255,0.04)">
+            <div style="border-right:1px solid rgba(255,255,255,0.04);overflow-x:auto">
               <h3 style="font-size:0.82em;color:#888;padding:10px 14px;border-bottom:1px solid rgba(255,255,255,0.06)">🟢 買入 (${buys.length} 筆，共 ${fmtAmt(s.totalBought)})</h3>
-              <table style="font-size:0.82em"><thead><tr><th>日期</th><th>股數</th><th>單價</th><th>金額</th><th>手續費</th><th>備註</th><th></th></tr></thead>
+              <table style="font-size:0.82em;min-width:100%"><thead><tr><th>日期</th><th>股數</th><th>單價</th><th>金額</th><th>手續費</th><th>備註</th><th></th></tr></thead>
               <tbody>${buyRows}</tbody></table>
             </div>
-            <div>
+            <div style="overflow-x:auto">
               <h3 style="font-size:0.82em;color:#888;padding:10px 14px;border-bottom:1px solid rgba(255,255,255,0.06)">🔴 賣出 (${sells.length} 筆，共 ${fmtAmt(s.totalSold)})</h3>
-              <table style="font-size:0.82em"><thead><tr><th>日期</th><th>股數</th><th>單價</th><th>金額</th><th>手續費</th><th>備註</th><th></th></tr></thead>
+              <table style="font-size:0.82em;min-width:100%"><thead><tr><th>日期</th><th>股數</th><th>單價</th><th>金額</th><th>手續費</th><th>備註</th><th></th></tr></thead>
               <tbody>${sellRows}</tbody></table>
             </div>
           </div>
