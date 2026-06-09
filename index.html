@@ -4131,6 +4131,14 @@ function getAccountTotalIncome(accountId, market) {
   return income.reduce((sum, item) => sum + item.amount, 0);
 }
 
+// "累計配息" labels mean dividend-only. Helper used wherever the UI
+// shows a dividend total — tax/interest/微調 are tracked separately and
+// stay in cash flow calculations, but they don't roll into the dividend
+// display.
+function getDividendTotal(income) {
+  return income.filter(i => i.type === 'dividend').reduce((s, i) => s + i.amount, 0);
+}
+
 // ===== Render: Overview =====
 function calcOwnerSummary(ownerAccounts, ownerMortgages, applyPct = true, owner = null) {
   let usStocksValue = 0, usNetCash = 0, usNetFunded = 0;
@@ -4518,6 +4526,7 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
     for (const f of funds) cash += fundCashImpact(f);
     for (const t of trades) cash += calcTradeCashImpact(t, market);
     const incTotal = income.reduce((s, i) => s + i.amount, 0);
+    const divTotal = getDividendTotal(income);
     cash += incTotal;
     const fundInfo = getAccountFunds(acc.id, market);
 
@@ -4530,12 +4539,12 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
     const wmv = mv * ownPct;
     const wcash = cash * ownPct;
     const wfundIn = fundInfo.netAmount * ownPct;
-    const wIncome = incTotal * ownPct;
+    const wDividend = divTotal * ownPct;
 
     totalMV += wmv;
     totalCash += wcash;
     totalFundIn += wfundIn;
-    totalIncome += wIncome;
+    totalIncome += wDividend;  // 累計配息: dividend only, not tax/interest/adjust
 
     // Weight ALL stock analysis for merged holdings (including closed positions for avgPrice calc)
     const weightedAnalysis = analysis.map(s => ({
@@ -4739,6 +4748,7 @@ function renderUSTab() {
   const analysis = analyzeStocks(trades, 'us', income);
   const fundInfo = getAccountFunds(currentUSAccount, 'us');
   const incomeTotal = income.reduce((s, i) => s + i.amount, 0);
+  const dividendTotal = getDividendTotal(income); // 累計配息顯示用：只計股利
 
   let sumMV = 0;
   for (const s of analysis) if (!s.isClosed) sumMV += s.marketValue;
@@ -4746,7 +4756,7 @@ function renderUSTab() {
   let cash = 0;
   for (const f of funds) cash += fundCashImpact(f);
   for (const t of trades) cash += calcTradeCashImpact(t, 'us');
-  cash += incomeTotal; // 配息/利息也是現金收入
+  cash += incomeTotal; // 現金繼續吃全部收入類型（含稅/利息/微調）
 
   const netWorth = sumMV + cash;
   const pl = netWorth - fundInfo.netAmount;
@@ -4771,7 +4781,7 @@ function renderUSTab() {
     </div>
     <div class="card">
       <div class="label">累計配息</div>
-      <div class="value pos">+${fmt(incomeTotal)}</div>
+      <div class="value pos">+${fmt(dividendTotal)}</div>
     </div>
     <div class="card">
       <div class="label">已實現損益</div>
@@ -4850,6 +4860,8 @@ function renderUSTab() {
               else earned += ci;
             }
             const incomeTotal = income.reduce((s, i) => s + i.amount, 0);
+            const dividendTotal = getDividendTotal(income);
+            const otherIncome = incomeTotal - dividendTotal;
             const accountCash = (deposited - withdrawn + xferIn - xferOut) - spent + earned + incomeTotal;
             cashBreakdown += `
               <div style="background:rgba(255,255,255,0.02);border-left:3px solid #67e8f9;padding:8px 12px;border-radius:6px;font-size:0.8em">
@@ -4861,7 +4873,8 @@ function renderUSTab() {
                   ${xferOut > 0 ? `<div>轉出: <span style="color:#f87171">${fmt(xferOut)}</span></div>` : ''}
                   <div>買股: <span style="color:#f87171">${fmt(spent)}</span></div>
                   <div>賣股: <span style="color:#34d399">${fmt(earned)}</span></div>
-                  <div>配息: <span style="color:#34d399">${fmt(incomeTotal)}</span></div>
+                  <div>配息: <span style="color:#34d399">${fmt(dividendTotal)}</span></div>
+                  ${Math.abs(otherIncome) > 0.001 ? `<div>其他收入: <span style="color:${otherIncome >= 0 ? '#34d399' : '#f87171'}">${fmt(otherIncome)}</span></div>` : ''}
                   <div>結餘: <span style="color:${accountCash >= 0 ? '#67e8f9' : '#f87171'};font-weight:600">${fmt(accountCash)}</span></div>
                 </div>
               </div>
@@ -5108,6 +5121,7 @@ function renderTWTab() {
   const analysis = analyzeStocks(trades, 'tw', income);
   const fundInfo = getAccountFunds(currentTWAccount, 'tw');
   const incomeTotal = income.reduce((s, i) => s + i.amount, 0);
+  const dividendTotal = getDividendTotal(income); // 累計配息顯示用：只計股利
 
   let sumMV = 0;
   for (const s of analysis) if (!s.isClosed) sumMV += s.marketValue;
@@ -5115,7 +5129,7 @@ function renderTWTab() {
   let cash = 0;
   for (const f of funds) cash += fundCashImpact(f);
   for (const t of trades) cash += calcTradeCashImpact(t, 'tw');
-  cash += incomeTotal; // 配息/利息也是現金收入
+  cash += incomeTotal; // 現金繼續吃全部收入類型（含稅/利息/微調）
 
   const netWorth = sumMV + cash;
   const pl = netWorth - fundInfo.netAmount;
@@ -5140,7 +5154,7 @@ function renderTWTab() {
     </div>
     <div class="card">
       <div class="label">累計配息</div>
-      <div class="value pos">+${fmtTWD(incomeTotal)}</div>
+      <div class="value pos">+${fmtTWD(dividendTotal)}</div>
     </div>
     <div class="card">
       <div class="label">已實現損益</div>
@@ -5186,6 +5200,8 @@ function renderTWTab() {
               else earned += ci;
             }
             const incomeTotal = income.reduce((s, i) => s + i.amount, 0);
+            const dividendTotal = getDividendTotal(income);
+            const otherIncome = incomeTotal - dividendTotal;
             const accountCash = (deposited - withdrawn) - spent + earned + incomeTotal;
             cashBreakdown += `
               <div style="background:rgba(255,255,255,0.02);border-left:3px solid #fb923c;padding:8px 12px;border-radius:6px;font-size:0.8em">
@@ -5195,7 +5211,8 @@ function renderTWTab() {
                   <div>出金: <span style="color:#f87171">${fmtTWD(withdrawn)}</span></div>
                   <div>買股: <span style="color:#f87171">${fmtTWD(spent)}</span></div>
                   <div>賣股: <span style="color:#34d399">${fmtTWD(earned)}</span></div>
-                  <div>配息: <span style="color:#34d399">${fmtTWD(incomeTotal)}</span></div>
+                  <div>配息: <span style="color:#34d399">${fmtTWD(dividendTotal)}</span></div>
+                  ${Math.abs(otherIncome) > 0.001 ? `<div>其他收入: <span style="color:${otherIncome >= 0 ? '#34d399' : '#f87171'}">${fmtTWD(otherIncome)}</span></div>` : ''}
                   <div>結餘: <span style="color:${accountCash >= 0 ? '#fb923c' : '#f87171'};font-weight:600">${fmtTWD(accountCash)}</span></div>
                 </div>
               </div>
@@ -9254,14 +9271,18 @@ function renderDividendCalendar(el) {
   }
 
   const sortedYears = Object.entries(years).sort((a, b) => b[0].localeCompare(a[0]));
-  const grandTotal = allIncome.reduce((s, i) => s + i.amountTWD, 0);
+  // 累計配息 = 股利總額（不含利息）。allIncome 仍保留 dividend + interest 兩種項目展示用。
+  const grandTotal = allIncome
+    .filter(i => i.type === 'dividend')
+    .reduce((s, i) => s + i.amountTWD, 0);
+  const dividendCount = allIncome.filter(i => i.type === 'dividend').length;
 
   el.innerHTML = `
     <div class="summary" style="margin-bottom:16px">
       <div class="card"><div class="label">累計配息 (TWD)</div><div class="value pos">${fmtTWD(grandTotal)}</div></div>
       <div class="card"><div class="label">年數</div><div class="value">${sortedYears.length}</div></div>
       <div class="card"><div class="label">年均配息</div><div class="value pos">${fmtTWD(sortedYears.length > 0 ? grandTotal / sortedYears.length : 0)}</div></div>
-      <div class="card"><div class="label">總筆數</div><div class="value">${allIncome.length}</div></div>
+      <div class="card"><div class="label">配息筆數</div><div class="value">${dividendCount}</div></div>
     </div>
     <div style="margin-bottom:16px"><canvas id="divCalendarCanvas" style="max-height:300px"></canvas></div>
     ${sortedYears.map(([year, items]) => {
