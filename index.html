@@ -6648,28 +6648,28 @@ function recalcLastTwoStages(m, changedIdx, changedField) {
     // 改了交屋款 → 倒數第二筆 = 剩餘 - 交屋款
     if (changedField === 'pct') {
       last.amount = m.totalPrice * last.pct / 100;
-      secLast.pct = Math.max(0, parseFloat((remainPct - last.pct).toFixed(2)));
+      secLast.pct = Math.max(0, parseFloat((remainPct - last.pct).toFixed(4)));
       secLast.amount = m.totalPrice * secLast.pct / 100;
     } else {
-      last.pct = parseFloat((last.amount / m.totalPrice * 100).toFixed(2));
-      secLast.pct = Math.max(0, parseFloat((remainPct - last.pct).toFixed(2)));
+      last.pct = parseFloat((last.amount / m.totalPrice * 100).toFixed(4));
+      secLast.pct = Math.max(0, parseFloat((remainPct - last.pct).toFixed(4)));
       secLast.amount = m.totalPrice * secLast.pct / 100;
     }
   } else if (changedIdx === secLastIdx) {
     // 改了倒數第二筆 → 交屋款 = 剩餘 - 倒數第二筆
     if (changedField === 'pct') {
       secLast.amount = m.totalPrice * secLast.pct / 100;
-      last.pct = Math.max(0, parseFloat((remainPct - secLast.pct).toFixed(2)));
+      last.pct = Math.max(0, parseFloat((remainPct - secLast.pct).toFixed(4)));
       last.amount = m.totalPrice * last.pct / 100;
     } else {
-      secLast.pct = parseFloat((secLast.amount / m.totalPrice * 100).toFixed(2));
-      last.pct = Math.max(0, parseFloat((remainPct - secLast.pct).toFixed(2)));
+      secLast.pct = parseFloat((secLast.amount / m.totalPrice * 100).toFixed(4));
+      last.pct = Math.max(0, parseFloat((remainPct - secLast.pct).toFixed(4)));
       last.amount = m.totalPrice * last.pct / 100;
     }
   } else {
     // 外部觸發（前面階段改了、新增/刪除）：保持交屋款%不變，調整倒數第二筆
     last.amount = m.totalPrice * last.pct / 100;
-    secLast.pct = Math.max(0, parseFloat((remainPct - last.pct).toFixed(2)));
+    secLast.pct = Math.max(0, parseFloat((remainPct - last.pct).toFixed(4)));
     secLast.amount = m.totalPrice * secLast.pct / 100;
   }
   // 修正浮點誤差：確保所有階段金額加總 = 工程款總額
@@ -6720,7 +6720,7 @@ function onPaymentAmtChange(mortId, idx) {
     recalcLastTwoStages(m, idx, 'amt');
   } else {
     // 前面的階段：正常算%，然後重算最後兩筆
-    m.payments[idx].pct = parseFloat((amt / m.totalPrice * 100).toFixed(2));
+    m.payments[idx].pct = parseFloat((amt / m.totalPrice * 100).toFixed(4));
     recalcLastTwoStages(m, -1, null);
   }
   saveMortgages();
@@ -6915,7 +6915,7 @@ function renderMortgageTab() {
           <span style="color:#888;font-size:0.85em">= ${(m.totalPrice * (m.constructionPct||30) / 100).toFixed(4)} 萬</span>
           <span style="color:#666;font-size:0.8em;margin-left:8px">｜</span>
           <label style="color:#888;font-size:0.85em">工程款總額</label>
-          <input type="number" id="mort-construction-amt-${m.id}" value="${(m.totalPrice * (m.constructionPct||30) / 100).toFixed(4)}" style="width:80px;padding:4px;border:1px solid rgba(255,255,255,0.15);border-radius:4px;background:rgba(255,255,255,0.08);color:#fbbf24;font-size:0.9em;text-align:center" step="0.0001" onchange="const _m=mortgages.find(x=>x.id==='${m.id}');const v=parseFloat(this.value)||0;if(_m.totalPrice>0){_m.constructionPct=parseFloat((v/_m.totalPrice*100).toFixed(2));}recalcLastTwoStages(_m,-1,null);saveMortgages();renderMortgageTab()">
+          <input type="number" id="mort-construction-amt-${m.id}" value="${(m.totalPrice * (m.constructionPct||30) / 100).toFixed(4)}" style="width:80px;padding:4px;border:1px solid rgba(255,255,255,0.15);border-radius:4px;background:rgba(255,255,255,0.08);color:#fbbf24;font-size:0.9em;text-align:center" step="0.0001" onchange="const _m=mortgages.find(x=>x.id==='${m.id}');const v=parseFloat(this.value)||0;if(_m.totalPrice>0){_m.constructionPct=parseFloat((v/_m.totalPrice*100).toFixed(4));}recalcLastTwoStages(_m,-1,null);saveMortgages();renderMortgageTab()">
           <span style="color:#888;font-size:0.85em">萬</span>
         </div>
         <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
