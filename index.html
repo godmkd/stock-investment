@@ -6672,14 +6672,21 @@ function recalcLastTwoStages(m, changedIdx, changedField) {
     secLast.pct = Math.max(0, parseFloat((remainPct - last.pct).toFixed(4)));
     secLast.amount = m.totalPrice * secLast.pct / 100;
   }
-  // 修正浮點誤差：確保所有階段金額加總 = 工程款總額
+  // 修正浮點誤差：確保所有階段金額加總 = 工程款總額。
+  // 交屋款（last）是「🔒 固定」按使用者輸入的 %，所以誤差吸收到
+  // 「⟵ 聯動」的結構完成（secLast）；同步更新它的 pct 維持 amount/pct 一致。
   const targetTotal = m.totalPrice * (m.constructionPct || 30) / 100;
   let sumAmt = 0;
   for (let i = 0; i < m.payments.length; i++) sumAmt += (m.payments[i].amount || m.totalPrice * m.payments[i].pct / 100);
   const diff = parseFloat((targetTotal - sumAmt).toFixed(4));
   if (Math.abs(diff) > 0.00001 && m.payments.length > 0) {
-    // 把差額加到最後一筆
-    last.amount = parseFloat((last.amount + diff).toFixed(4));
+    if (m.payments.length >= 2) {
+      secLast.amount = parseFloat((secLast.amount + diff).toFixed(4));
+      secLast.pct = parseFloat((secLast.amount / m.totalPrice * 100).toFixed(4));
+    } else {
+      last.amount = parseFloat((last.amount + diff).toFixed(4));
+      last.pct = parseFloat((last.amount / m.totalPrice * 100).toFixed(4));
+    }
   }
 }
 
