@@ -105,13 +105,13 @@ CREATE TABLE IF NOT EXISTS public.inv_mortgages (
   owner TEXT DEFAULT '',
   account_id TEXT,
   property_type TEXT DEFAULT 'existing' CHECK (property_type IN ('presale', 'existing')),
-  total_price DECIMAL(12,2) DEFAULT 0,
-  construction_pct DECIMAL(5,2) DEFAULT 0,
+  total_price DECIMAL(14,4) DEFAULT 0,
+  construction_pct DECIMAL(7,4) DEFAULT 0,
   payments JSONB DEFAULT '[]',
-  remaining_loan DECIMAL(12,2) DEFAULT 0,
+  remaining_loan DECIMAL(14,4) DEFAULT 0,
   remaining_months INT DEFAULT 0,
   loan_rate DECIMAL(5,2) DEFAULT 0,
-  paid_principal DECIMAL(12,2) DEFAULT 0,
+  paid_principal DECIMAL(14,4) DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 

@@ -6945,7 +6945,7 @@ function renderMortgageTab() {
                 <td><input value="${p.name}" ${nameReadonly ? 'readonly' : ''} style="${nameStyle}" onchange="mortgages.find(x=>x.id==='${m.id}').payments[${i}].name=this.value;saveMortgages()">${isLast ? '<div style="font-size:0.65em;color:#666">🔒 固定</div>' : ''}${isSecLast ? '<div style="font-size:0.65em;color:#666">⟵ 聯動</div>' : ''}</td>
                 <td>
                   <div style="display:flex;align-items:center;gap:4px">
-                    <input type="number" id="mort-pay-pct-${m.id}-${i}" value="${p.pct}" style="width:55px;padding:4px;border:1px solid rgba(255,255,255,0.15);border-radius:4px;background:rgba(255,255,255,0.08);color:#fff;font-size:0.9em" step="0.1" onchange="onPaymentPctChange('${m.id}',${i})">
+                    <input type="number" id="mort-pay-pct-${m.id}-${i}" value="${Number(p.pct || 0).toFixed(2)}" style="width:55px;padding:4px;border:1px solid rgba(255,255,255,0.15);border-radius:4px;background:rgba(255,255,255,0.08);color:#fff;font-size:0.9em" step="0.01" onchange="onPaymentPctChange('${m.id}',${i})">
                   </div>
                 </td>
                 <td><input type="number" id="mort-pay-amt-${m.id}-${i}" value="${amt.toFixed(4)}" style="width:80px;padding:4px;border:1px solid rgba(255,255,255,0.15);border-radius:4px;background:rgba(255,255,255,0.08);color:#fbbf24;font-size:0.9em" step="0.0001" onchange="onPaymentAmtChange('${m.id}',${i})"></td>
