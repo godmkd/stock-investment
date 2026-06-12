@@ -468,10 +468,24 @@ def run(market: str, limit: int, dry_run: bool, test_symbols: list[str] | None) 
         universe = [{"symbol": s.strip(), "name": s.strip(), "category": "tw_stock" if market == "tw" else "us_sp500"}
                     for s in test_symbols if s.strip()]
         log.info("Using test universe override: %d symbols", len(universe))
-    elif market == "tw":
-        universe = mu.build_tw_universe()
     else:
-        universe = mu.build_us_universe()
+        try:
+            universe = mu.build_tw_universe() if market == "tw" else mu.build_us_universe()
+        except Exception as e:
+            log.error("universe build failed: %s", e)
+            # Post a brief alert to Discord so the user knows the run was
+            # skipped, then exit 0 — this is an upstream data-source problem
+            # (TWSE / yfinance), not a code bug worth red-flagging in CI.
+            if not dry_run:
+                webhook = os.environ.get("DISCORD_WEBHOOK_URL")
+                if webhook:
+                    try:
+                        requests.post(webhook, json={
+                            "content": f"⚠️ {cfg['display_name']} scanner 跳過：universe 資料源失敗（{type(e).__name__}）— 通常是 TWSE / yfinance 暫時無回應，明天會再試。"
+                        }, timeout=10)
+                    except Exception:
+                        pass
+            return 0
 
     log.info("Universe size: %d", len(universe))
     symbols = [u["symbol"] for u in universe]

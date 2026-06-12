@@ -141,6 +141,33 @@ TW_ETF_ACTIVE = [
 ]
 
 
+def _fetch_json_with_retry(url: str, headers: dict, timeout: int = 30, retries: int = 3,
+                           backoff: float = 2.0) -> list | dict:
+    """GET a JSON endpoint with retries on empty body / decode errors.
+
+    TWSE OpenAPI occasionally returns an empty 200 response (especially on
+    weekends and right at the top of the hour). Wrap json() in retry/backoff
+    so a transient blank doesn't kill the whole scanner run.
+    """
+    import json as _json
+    import time as _time
+    last_err: Exception | None = None
+    for attempt in range(1, retries + 1):
+        try:
+            r = requests.get(url, headers=headers, timeout=timeout)
+            r.raise_for_status()
+            body = r.text.strip()
+            if not body:
+                raise ValueError("empty response body")
+            return _json.loads(body)
+        except (requests.RequestException, ValueError) as e:
+            last_err = e
+            log.warning("[%s] attempt %d/%d failed: %s", url, attempt, retries, e)
+            if attempt < retries:
+                _time.sleep(backoff * attempt)
+    raise RuntimeError(f"failed to fetch {url} after {retries} attempts: {last_err}")
+
+
 def fetch_tw_listed_common_stocks() -> list[dict]:
     """Fetch all TWSE-listed common stocks via STOCK_DAY_ALL (the daily-all endpoint).
 
@@ -148,9 +175,9 @@ def fetch_tw_listed_common_stocks() -> list[dict]:
     Filters out anything whose code is non-4-digit (warrants, beneficiary certs, etc).
     """
     log.info("Fetching TWSE listed common stocks ...")
-    r = requests.get(TWSE_STOCK_DAY_ALL_URL, headers=TWSE_HEADERS, timeout=30)
-    r.raise_for_status()
-    rows = r.json()
+    rows = _fetch_json_with_retry(TWSE_STOCK_DAY_ALL_URL, TWSE_HEADERS)
+    if not isinstance(rows, list):
+        raise RuntimeError(f"unexpected TWSE payload shape: {type(rows).__name__}")
     out = []
     for row in rows:
         code = (row.get("Code") or "").strip()
