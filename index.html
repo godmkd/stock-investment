@@ -1267,7 +1267,9 @@ async function loadAllDataFromSupabase() {
           id: t.id, date: t.date, ticker: t.ticker, type: t.type,
           shares: t.shares, price: t.price, fee: t.fee || 0,
           adjust: t.adjust || 0, investAmount: t.invest_amount || 0,
-          actualCost: t.actual_cost || 0
+          actualCost: t.actual_cost || 0,
+          transfer_id: t.transfer_id || null,
+          transferred_lots: t.transferred_lots || null,
         });
       }
       for (const [accId, arr] of Object.entries(grouped)) {
@@ -1409,7 +1411,9 @@ async function saveAccountDataToSupabase(accId, market, key, data) {
         id: t.id || Date.now() + Math.floor(Math.random()*100000),
         user_id: uid, account_id: accId, date: t.date, ticker: t.ticker,
         type: t.type, shares: t.shares, price: t.price, fee: t.fee || 0,
-        adjust: t.adjust || 0
+        adjust: t.adjust || 0,
+        transfer_id: t.transfer_id || null,
+        transferred_lots: t.transferred_lots || null,
       };
       // US trades have extra columns
       if (market === 'us') { row.invest_amount = t.investAmount || 0; row.actual_cost = t.actualCost || 0; }
@@ -1585,7 +1589,9 @@ async function authInit() {
 // 統一現金計算: 計算單筆交易的現金影響
 // buy: -(shares*price + fee) + adjust
 // sell: +(shares*price - fee) + adjust
+// transfer_in / transfer_out: 0（匯撥沒有現金流，成本基礎跟著股票走）
 function calcTradeCashImpact(t, market) {
+  if (t.type === 'transfer_in' || t.type === 'transfer_out') return 0;
   if (t.actualCost) {
     return (t.type === 'buy' ? -t.actualCost : t.actualCost) + (t.adjust || 0);
   }
@@ -1598,6 +1604,32 @@ function calcTradeCashImpact(t, market) {
   } else {
     return (base - fee) + adj;
   }
+}
+
+// 匯撥成本：transferred_lots 內 (shares × (price + feePerShare)) 加總。
+// 投入金額 (per-account) = 存入 - 提領 + Σ(transfer_in 成本) - Σ(transfer_out 成本)。
+function getTradeTransferCost(t) {
+  const lots = Array.isArray(t.transferred_lots) ? t.transferred_lots : [];
+  return lots.reduce((s, lot) => {
+    const ls = Number(lot.shares) || 0;
+    const lp = Number(lot.price) || 0;
+    const lf = Number(lot.feePerShare) || 0;
+    return s + ls * (lp + lf);
+  }, 0);
+}
+
+function getAccountTransferNet(accountId, market) {
+  const trades = getAccountData(accountId, market, 'trades');
+  let netIn = 0;
+  for (const t of trades) {
+    if (t.type === 'transfer_in') netIn += getTradeTransferCost(t);
+    else if (t.type === 'transfer_out') netIn -= getTradeTransferCost(t);
+  }
+  return netIn;
+}
+
+function getAccountAdjustedFundIn(accountId, market) {
+  return getAccountFunds(accountId, market).netAmount + getAccountTransferNet(accountId, market);
 }
 
 // ===== State & Data =====
@@ -3988,13 +4020,14 @@ function analyzeStocks(trades, market, income) {
     for (const t of tickerTrades) {
       const amt = (market === 'tw') ? Math.floor(t.shares * t.price) : (t.shares * t.price);
       const fee = t.fee || 0;
-      totalFee += fee;
       if (t.type === 'buy') {
+        totalFee += fee;
         totalBought += amt;
         totalBuyFee += fee;
         shares += t.shares;
         buyLots.push({ shares: t.shares, price: t.price, feePerShare: t.shares > 0 ? fee / t.shares : 0 });
-      } else {
+      } else if (t.type === 'sell') {
+        totalFee += fee;
         totalSold += t.shares * t.price;
         totalSellFee += fee;
         shares -= t.shares;
@@ -4012,6 +4045,34 @@ function analyzeStocks(trades, market, income) {
           remaining -= used;
           if (lot.shares < 0.0001) buyLots.shift();
         }
+      } else if (t.type === 'transfer_out') {
+        // 匯撥出：FIFO 從 buyLots 移除股數，把對應成本從 totalBought 扣掉。
+        // 不產生 totalSold、realized PL 或現金流。
+        shares -= t.shares;
+        let remaining = t.shares;
+        let costRemoved = 0;
+        while (remaining > 0 && buyLots.length > 0) {
+          const lot = buyLots[0];
+          const used = Math.min(remaining, lot.shares);
+          costRemoved += used * (lot.price + lot.feePerShare);
+          lot.shares -= used;
+          remaining -= used;
+          if (lot.shares < 0.0001) buyLots.shift();
+        }
+        totalBought -= costRemoved;
+      } else if (t.type === 'transfer_in') {
+        // 匯撥入：從 transferred_lots 還原成本基礎 lots，加進 buyLots 並補回 totalBought。
+        shares += t.shares;
+        const lots = Array.isArray(t.transferred_lots) ? t.transferred_lots : [];
+        let costAdded = 0;
+        for (const lot of lots) {
+          const ls = Number(lot.shares) || 0;
+          const lp = Number(lot.price) || 0;
+          const lf = Number(lot.feePerShare) || 0;
+          buyLots.push({ shares: ls, price: lp, feePerShare: lf });
+          costAdded += ls * (lp + lf);
+        }
+        totalBought += costAdded;
       }
     }
 
@@ -4160,7 +4221,7 @@ function calcOwnerSummary(ownerAccounts, ownerMortgages, applyPct = true, owner 
     for (const t of usTrades) usCash += calcTradeCashImpact(t, 'us');
     usCash += usIncome.reduce((s, i) => s + i.amount, 0);
     usNetCash += usCash * pct;
-    usNetFunded += getAccountFunds(acc.id, 'us').netAmount * pct;
+    usNetFunded += getAccountAdjustedFundIn(acc.id, 'us') * pct;
 
     // TW side
     const twTrades = getAccountData(acc.id, 'tw', 'trades');
@@ -4175,7 +4236,7 @@ function calcOwnerSummary(ownerAccounts, ownerMortgages, applyPct = true, owner 
     for (const t of twTrades) twCash += calcTradeCashImpact(t, 'tw');
     twCash += twIncome.reduce((s, i) => s + i.amount, 0);
     twNetCash += twCash * pct;
-    twNetFunded += getAccountFunds(acc.id, 'tw').netAmount * pct;
+    twNetFunded += getAccountAdjustedFundIn(acc.id, 'tw') * pct;
   }
 
   const usNetWorth = usStocksValue + usNetCash; // USD
@@ -4288,13 +4349,13 @@ function renderOwnerAccountDetails(summary) {
     const analysis = analyzeStocks(trades, 'us', income);
     let mv = 0;
     for (const s of analysis) if (!s.isClosed) mv += s.marketValue;
-    const fundInfo = getAccountFunds(acc.id, 'us');
+    const adjFundIn = getAccountAdjustedFundIn(acc.id, 'us');
     const nw = mv + cash;
-    const pl = nw - fundInfo.netAmount;
-    const ret = fundInfo.netAmount > 0 ? (pl / fundInfo.netAmount * 100) : 0;
+    const pl = nw - adjFundIn;
+    const ret = adjFundIn > 0 ? (pl / adjFundIn * 100) : 0;
     html += `<div class="card" style="border-left:3px solid #67e8f9;margin-bottom:6px;text-align:left;padding:8px 12px">
       <div style="font-weight:600;font-size:0.85em">${acc.name}</div>
-      
+
       <div style="font-size:0.8em;margin-top:4px">淨值: <span class="blue">${fmt(nw)}</span> | 投報: <span class="${plClass(ret)}">${fmtPct(ret)}</span></div>
     </div>`;
   }
@@ -4313,13 +4374,13 @@ function renderOwnerAccountDetails(summary) {
     const analysis = analyzeStocks(trades, 'tw', income);
     let mv = 0;
     for (const s of analysis) if (!s.isClosed) mv += s.marketValue;
-    const fundInfo = getAccountFunds(acc.id, 'tw');
+    const adjFundIn = getAccountAdjustedFundIn(acc.id, 'tw');
     const nw = mv + cash;
-    const pl = nw - fundInfo.netAmount;
-    const ret = fundInfo.netAmount > 0 ? (pl / fundInfo.netAmount * 100) : 0;
+    const pl = nw - adjFundIn;
+    const ret = adjFundIn > 0 ? (pl / adjFundIn * 100) : 0;
     html += `<div class="card" style="border-left:3px solid #fb923c;margin-bottom:6px;text-align:left;padding:8px 12px">
       <div style="font-weight:600;font-size:0.85em">${acc.name}</div>
-      
+
       <div style="font-size:0.8em;margin-top:4px">淨值: <span class="orange">${fmtTWD(nw)}</span> | 投報: <span class="${plClass(ret)}">${fmtPct(ret)}</span></div>
     </div>`;
   }
@@ -4529,16 +4590,18 @@ function renderMarketOverviewForAccounts(container, marketAccounts, flag, market
     const divTotal = getDividendTotal(income);
     cash += incTotal;
     const fundInfo = getAccountFunds(acc.id, market);
+    // 投入金額需要把匯撥成本納入（轉出減、轉入加；同 owner 多帳戶加總時會抵消）
+    const adjFundIn = fundInfo.netAmount + getAccountTransferNet(acc.id, market);
 
     // Raw totals (before ownership %)
     rawMV += mv;
     rawCash += cash;
-    rawFundIn += fundInfo.netAmount;
+    rawFundIn += adjFundIn;
 
     // Apply ownership percentage
     const wmv = mv * ownPct;
     const wcash = cash * ownPct;
-    const wfundIn = fundInfo.netAmount * ownPct;
+    const wfundIn = adjFundIn * ownPct;
     const wDividend = divTotal * ownPct;
 
     totalMV += wmv;
@@ -4758,9 +4821,11 @@ function renderUSTab() {
   for (const t of trades) cash += calcTradeCashImpact(t, 'us');
   cash += incomeTotal; // 現金繼續吃全部收入類型（含稅/利息/微調）
 
+  const transferNet = getAccountTransferNet(currentUSAccount, 'us');
+  const adjFundIn = fundInfo.netAmount + transferNet;
   const netWorth = sumMV + cash;
-  const pl = netWorth - fundInfo.netAmount;
-  const ret = fundInfo.netAmount > 0 ? (pl / fundInfo.netAmount * 100) : 0;
+  const pl = netWorth - adjFundIn;
+  const ret = adjFundIn > 0 ? (pl / adjFundIn * 100) : 0;
 
   document.getElementById('usSummary').innerHTML = `
     <div class="card">
@@ -4777,7 +4842,7 @@ function renderUSTab() {
     </div>
     <div class="card">
       <div class="label">投入金額</div>
-      <div class="value">${fmt(fundInfo.netAmount)}</div>
+      <div class="value">${fmt(adjFundIn)}</div>
     </div>
     <div class="card">
       <div class="label">累計配息</div>
@@ -4854,10 +4919,13 @@ function renderUSTab() {
               xferOut += f.type === 'transfer_out' ? f.amount : 0;
             }
             let spent = 0, earned = 0;
+            let stockXferIn = 0, stockXferOut = 0;
             for (const t of trades) {
               const ci = calcTradeCashImpact(t, 'us');
               if (t.type === 'buy') spent += -ci;
-              else earned += ci;
+              else if (t.type === 'sell') earned += ci;
+              else if (t.type === 'transfer_in') stockXferIn += getTradeTransferCost(t);
+              else if (t.type === 'transfer_out') stockXferOut += getTradeTransferCost(t);
             }
             const incomeTotal = income.reduce((s, i) => s + i.amount, 0);
             const dividendTotal = getDividendTotal(income);
@@ -4875,6 +4943,8 @@ function renderUSTab() {
                   <div>賣股: <span style="color:#34d399">${fmt(earned)}</span></div>
                   <div>配息: <span style="color:#34d399">${fmt(dividendTotal)}</span></div>
                   ${Math.abs(otherIncome) > 0.001 ? `<div>其他收入: <span style="color:${otherIncome >= 0 ? '#34d399' : '#f87171'}">${fmt(otherIncome)}</span></div>` : ''}
+                  ${stockXferIn > 0 ? `<div>📥 匯撥入: <span style="color:#67e8f9">${fmt(stockXferIn)}</span> <span style="color:#666;font-size:0.85em">(成本基礎)</span></div>` : ''}
+                  ${stockXferOut > 0 ? `<div>📤 匯撥出: <span style="color:#67e8f9">${fmt(stockXferOut)}</span> <span style="color:#666;font-size:0.85em">(成本基礎)</span></div>` : ''}
                   <div>結餘: <span style="color:${accountCash >= 0 ? '#67e8f9' : '#f87171'};font-weight:600">${fmt(accountCash)}</span></div>
                 </div>
               </div>
@@ -5131,9 +5201,11 @@ function renderTWTab() {
   for (const t of trades) cash += calcTradeCashImpact(t, 'tw');
   cash += incomeTotal; // 現金繼續吃全部收入類型（含稅/利息/微調）
 
+  const transferNet = getAccountTransferNet(currentTWAccount, 'tw');
+  const adjFundIn = fundInfo.netAmount + transferNet;
   const netWorth = sumMV + cash;
-  const pl = netWorth - fundInfo.netAmount;
-  const ret = fundInfo.netAmount > 0 ? (pl / fundInfo.netAmount * 100) : 0;
+  const pl = netWorth - adjFundIn;
+  const ret = adjFundIn > 0 ? (pl / adjFundIn * 100) : 0;
 
   document.getElementById('twSummary').innerHTML = `
     <div class="card">
@@ -5150,7 +5222,7 @@ function renderTWTab() {
     </div>
     <div class="card">
       <div class="label">投入金額</div>
-      <div class="value">${fmtTWD(fundInfo.netAmount)}</div>
+      <div class="value">${fmtTWD(adjFundIn)}</div>
     </div>
     <div class="card">
       <div class="label">累計配息</div>
@@ -5194,10 +5266,13 @@ function renderTWTab() {
               withdrawn += f.type === 'withdraw' ? f.amount : 0;
             }
             let spent = 0, earned = 0;
+            let stockXferIn = 0, stockXferOut = 0;
             for (const t of trades) {
               const ci = calcTradeCashImpact(t, 'tw');
               if (t.type === 'buy') spent += -ci;
-              else earned += ci;
+              else if (t.type === 'sell') earned += ci;
+              else if (t.type === 'transfer_in') stockXferIn += getTradeTransferCost(t);
+              else if (t.type === 'transfer_out') stockXferOut += getTradeTransferCost(t);
             }
             const incomeTotal = income.reduce((s, i) => s + i.amount, 0);
             const dividendTotal = getDividendTotal(income);
@@ -5213,6 +5288,8 @@ function renderTWTab() {
                   <div>賣股: <span style="color:#34d399">${fmtTWD(earned)}</span></div>
                   <div>配息: <span style="color:#34d399">${fmtTWD(dividendTotal)}</span></div>
                   ${Math.abs(otherIncome) > 0.001 ? `<div>其他收入: <span style="color:${otherIncome >= 0 ? '#34d399' : '#f87171'}">${fmtTWD(otherIncome)}</span></div>` : ''}
+                  ${stockXferIn > 0 ? `<div>📥 匯撥入: <span style="color:#67e8f9">${fmtTWD(stockXferIn)}</span> <span style="color:#666;font-size:0.85em">(成本基礎)</span></div>` : ''}
+                  ${stockXferOut > 0 ? `<div>📤 匯撥出: <span style="color:#67e8f9">${fmtTWD(stockXferOut)}</span> <span style="color:#666;font-size:0.85em">(成本基礎)</span></div>` : ''}
                   <div>結餘: <span style="color:${accountCash >= 0 ? '#fb923c' : '#f87171'};font-weight:600">${fmtTWD(accountCash)}</span></div>
                 </div>
               </div>
@@ -5399,8 +5476,16 @@ function renderStockSections(containerId, analysis, trades, market) {
   ` + analysis.map(s => {
     // Match trades by normalized key (e.g., both "台積電" and "2330" → "2330")
     const tickerTrades = trades.filter(t => normalizeTickerKey(t.ticker, market) === s.ticker).sort((a, b) => b.date.localeCompare(a.date));
-    const buys = tickerTrades.filter(t => t.type === 'buy');
-    const sells = tickerTrades.filter(t => t.type === 'sell');
+    // Group "in"-flow trades together (buy + transfer_in) and "out"-flow
+    // trades together (sell + transfer_out). Transfers display differently
+    // — price column shows "—" and amount shows the carried cost basis.
+    const buys = tickerTrades.filter(t => t.type === 'buy' || t.type === 'transfer_in');
+    const sells = tickerTrades.filter(t => t.type === 'sell' || t.type === 'transfer_out');
+    const transferCost = t => {
+      const lots = Array.isArray(t.transferred_lots) ? t.transferred_lots : [];
+      return lots.reduce((sum, l) => sum + (Number(l.shares) || 0) * ((Number(l.price) || 0) + (Number(l.feePerShare) || 0)), 0);
+    };
+    const isTransfer = t => t.type === 'transfer_in' || t.type === 'transfer_out';
     const twDisplay = isTW ? getTWTickerDisplay(s.ticker) : null;
     const stockName = isTW ? (twCodeToName[s.ticker] || twPrices[s.ticker]?.name || s.ticker) : s.ticker;
     const codeLabel = isTW && stockName !== s.ticker ? ` <span style="color:#888;font-size:0.8em">(${s.ticker})</span>` : '';
@@ -5425,11 +5510,15 @@ function renderStockSections(containerId, analysis, trades, market) {
       ? buys.map(t => {
           const fee = t.fee || 0;
           const noteText = t.note || '';
+          const xfer = isTransfer(t);
+          const priceCell = xfer ? '<span style="color:#67e8f9;font-size:0.78em">匯撥</span>' : fmtPrice(t.price);
+          const amtCell = xfer ? fmtAmt(transferCost(t)) : fmtAmt(t.shares * t.price);
+          const dateCell = xfer ? `<span style="color:#67e8f9">📥 ${t.date}</span>` : t.date;
           return `<tr>
-            <td>${t.date}</td>
+            <td>${dateCell}</td>
             <td>${t.shares.toLocaleString('en-US',{maximumFractionDigits:4})}</td>
-            <td>${fmtPrice(t.price)}</td>
-            <td>${fmtAmt(t.shares * t.price)}</td>
+            <td>${priceCell}</td>
+            <td>${amtCell}</td>
             <td>${fee > 0 ? fmtAmt(fee) : '-'}</td>
             <td class="muted" title="${noteText.replace(/"/g,'&quot;')}" style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${noteText || '-'}</td>
             <td><button class="btn-danger" onclick="deleteTrade('${market}','${t.id}')" style="padding:2px 6px;font-size:0.8em;border-radius:4px">✕</button></td>
@@ -5441,11 +5530,15 @@ function renderStockSections(containerId, analysis, trades, market) {
       ? sells.map(t => {
           const fee = t.fee || 0;
           const noteText = t.note || '';
+          const xfer = isTransfer(t);
+          const priceCell = xfer ? '<span style="color:#67e8f9;font-size:0.78em">匯撥</span>' : fmtPrice(t.price);
+          const amtCell = xfer ? fmtAmt(transferCost(t)) : fmtAmt(t.shares * t.price);
+          const dateCell = xfer ? `<span style="color:#67e8f9">📤 ${t.date}</span>` : t.date;
           return `<tr>
-            <td>${t.date}</td>
+            <td>${dateCell}</td>
             <td>${t.shares.toLocaleString('en-US',{maximumFractionDigits:4})}</td>
-            <td>${fmtPrice(t.price)}</td>
-            <td>${fmtAmt(t.shares * t.price)}</td>
+            <td>${priceCell}</td>
+            <td>${amtCell}</td>
             <td>${fee > 0 ? fmtAmt(fee) : '-'}</td>
             <td class="muted" title="${noteText.replace(/"/g,'&quot;')}" style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${noteText || '-'}</td>
             <td><button class="btn-danger" onclick="deleteTrade('${market}','${t.id}')" style="padding:2px 6px;font-size:0.8em;border-radius:4px">✕</button></td>
@@ -5455,6 +5548,9 @@ function renderStockSections(containerId, analysis, trades, market) {
 
     const splitBtn = !s.isClosed
       ? `<button onclick="event.stopPropagation();openSplitModal('${market}','${s.ticker}',${s.shares})" style="background:rgba(167,139,250,0.15);color:#a78bfa;border:1px solid rgba(167,139,250,0.3);border-radius:6px;padding:3px 10px;font-size:0.78em;cursor:pointer" title="記錄拆股 / 合股調整">📊 拆股</button>`
+      : '';
+    const transferBtn = !s.isClosed && s.shares > 0.0001
+      ? `<button onclick="event.stopPropagation();openTransferModal('${market}','${s.ticker}',${s.shares})" style="background:rgba(103,232,249,0.12);color:#67e8f9;border:1px solid rgba(103,232,249,0.3);border-radius:6px;padding:3px 10px;font-size:0.78em;cursor:pointer" title="匯撥到同 owner 的其他${market==='us'?'美股':'台股'}帳戶">📤 匯撥</button>`
       : '';
 
     // Auto-expand error-state cards so the user immediately sees the bad trade
@@ -5474,7 +5570,7 @@ function renderStockSections(containerId, analysis, trades, market) {
             <span style="font-size:1.1em;font-weight:700;color:#67e8f9">${isTW ? stockName : s.ticker}${codeLabel}</span>
             <span style="font-size:0.8em;color:#aaa">${summaryText}</span>
           </div>
-          <div style="display:flex;align-items:center;gap:10px">${splitBtn}${retBadge}</div>
+          <div style="display:flex;align-items:center;gap:10px">${transferBtn}${splitBtn}${retBadge}</div>
         </div>
         <div class="stock-detail" style="display:${detailDisplay}">
           ${warningBanner}
@@ -5500,13 +5596,46 @@ function renderStockSections(containerId, analysis, trades, market) {
 }
 
 function deleteTrade(market, tradeId) {
-  if (!confirm('確定刪除這筆交易？')) return;
   const accId = market === 'us' ? currentUSAccount : currentTWAccount;
-  let trades = getAccountData(accId, market, 'trades');
-  trades = trades.filter(t => String(t.id) !== String(tradeId));
-  saveAccountData(accId, market, 'trades', trades);
+  const trades = getAccountData(accId, market, 'trades');
+  const target = trades.find(t => String(t.id) === String(tradeId));
+  // Paired匯撥 — locate the sibling on the other account and confirm cascade.
+  if (target && target.transfer_id && (target.type === 'transfer_in' || target.type === 'transfer_out')) {
+    const xid = target.transfer_id;
+    const partner = findTransferPartner(market, xid, accId);
+    const partnerAccName = partner ? ((accounts.find(a => a.id === partner.accountId) || {}).bank
+                                      || (accounts.find(a => a.id === partner.accountId) || {}).name
+                                      || partner.accountId) : null;
+    const msg = partner
+      ? `這是一筆匯撥交易，會同步刪除「${partnerAccName}」上的對應紀錄。確定？`
+      : '刪除這筆匯撥（找不到配對的另一邊）？';
+    if (!confirm(msg)) return;
+    const kept = trades.filter(t => String(t.id) !== String(tradeId));
+    saveAccountData(accId, market, 'trades', kept);
+    if (partner) {
+      const partnerTrades = getAccountData(partner.accountId, market, 'trades');
+      const partnerKept = partnerTrades.filter(t => String(t.id) !== String(partner.trade.id));
+      saveAccountData(partner.accountId, market, 'trades', partnerKept);
+    }
+  } else {
+    if (!confirm('確定刪除這筆交易？')) return;
+    const kept = trades.filter(t => String(t.id) !== String(tradeId));
+    saveAccountData(accId, market, 'trades', kept);
+  }
   if (market === 'us') renderUSTab();
   else renderTWTab();
+}
+
+function findTransferPartner(market, transferId, excludeAccId) {
+  for (const acc of accounts) {
+    if (acc.id === excludeAccId) continue;
+    const accMarket = acc.market || 'us';
+    if (accMarket !== market) continue;
+    const ts = getAccountData(acc.id, market, 'trades');
+    const found = ts.find(t => t.transfer_id === transferId);
+    if (found) return { accountId: acc.id, trade: found };
+  }
+  return null;
 }
 
 // ===== Stock Split / Reverse-split Adjustment =====
@@ -5613,6 +5742,241 @@ function executeStockSplit(market, ticker, currentShares) {
   trades.sort((a, b) => b.date.localeCompare(a.date));
   saveAccountData(accId, market, 'trades', trades);
   document.getElementById('_splitDialog').remove();
+  if (market === 'us') renderUSTab();
+  else renderTWTab();
+}
+
+// ===== Stock Transfer (匯撥 same-owner same-market) =====
+// Snapshot the FIFO buyLot consumption that a transfer_out would do, given
+// the trade list up to that date. Returns the lots peeled off (preserving
+// per-share cost basis) so transfer_in can rebuild them.
+function previewTransferLots(market, srcAccId, ticker, shares, date) {
+  const trades = getAccountData(srcAccId, market, 'trades');
+  const tickerTrades = trades
+    .filter(t => normalizeTickerKey(t.ticker, market) === ticker
+              && (!date || t.date <= date))
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const buyLots = [];
+  for (const t of tickerTrades) {
+    if (t.type === 'buy') {
+      buyLots.push({
+        shares: t.shares,
+        price: t.price,
+        feePerShare: t.shares > 0 ? (t.fee || 0) / t.shares : 0,
+      });
+    } else if (t.type === 'sell') {
+      let remaining = t.shares;
+      while (remaining > 0 && buyLots.length > 0) {
+        const lot = buyLots[0];
+        const used = Math.min(remaining, lot.shares);
+        lot.shares -= used;
+        remaining -= used;
+        if (lot.shares < 0.0001) buyLots.shift();
+      }
+    } else if (t.type === 'transfer_out') {
+      let remaining = t.shares;
+      while (remaining > 0 && buyLots.length > 0) {
+        const lot = buyLots[0];
+        const used = Math.min(remaining, lot.shares);
+        lot.shares -= used;
+        remaining -= used;
+        if (lot.shares < 0.0001) buyLots.shift();
+      }
+    } else if (t.type === 'transfer_in') {
+      const lots = Array.isArray(t.transferred_lots) ? t.transferred_lots : [];
+      for (const l of lots) {
+        buyLots.push({
+          shares: Number(l.shares) || 0,
+          price: Number(l.price) || 0,
+          feePerShare: Number(l.feePerShare) || 0,
+        });
+      }
+    }
+  }
+  // Peel `shares` FIFO from buyLots
+  const peeled = [];
+  let remaining = shares;
+  for (const lot of buyLots) {
+    if (remaining <= 0) break;
+    const used = Math.min(remaining, lot.shares);
+    if (used > 0) {
+      peeled.push({ shares: used, price: lot.price, feePerShare: lot.feePerShare });
+      remaining -= used;
+    }
+  }
+  return { lots: peeled, fulfilled: shares - remaining, available: buyLots.reduce((s, l) => s + l.shares, 0) };
+}
+
+function getEligibleTransferTargets(srcAccId, market) {
+  const src = accounts.find(a => a.id === srcAccId);
+  if (!src) return [];
+  const srcOwner = src.owner || src.name;
+  return accounts.filter(a => {
+    if (a.id === srcAccId) return false;
+    if (!a.bank) return false; // name-only persona row, no actual brokerage account
+    const accMarket = a.market || 'us';
+    if (accMarket !== market) return false;
+    if ((a.owner || a.name) !== srcOwner) return false;
+    return true;
+  });
+}
+
+function openTransferModal(market, ticker, currentShares) {
+  const srcAccId = market === 'us' ? currentUSAccount : currentTWAccount;
+  if (!srcAccId || srcAccId.startsWith('_')) {
+    alert('請先選一個具體的銀行帳戶');
+    return;
+  }
+  const src = accounts.find(a => a.id === srcAccId);
+  const targets = getEligibleTransferTargets(srcAccId, market);
+  const isTW = market === 'tw';
+  const stockName = isTW ? (twCodeToName[ticker] || ticker) : ticker;
+  const today = new Date().toISOString().slice(0, 10);
+
+  if (targets.length === 0) {
+    alert(`${src?.owner || src?.name || ''} 在${isTW ? '台股' : '美股'}沒有其他可匯撥目標帳戶。\n（匯撥功能只在「同持有人 + 同市場」之間運作）`);
+    return;
+  }
+
+  const targetOptions = targets
+    .map(a => `<option value="${a.id}">${a.bank || a.name}${a.bank ? ' (' + (a.owner || a.name) + ')' : ''}</option>`)
+    .join('');
+
+  const dialog = document.createElement('div');
+  dialog.id = '_transferDialog';
+  dialog.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:10000;display:flex;align-items:center;justify-content:center';
+  dialog.innerHTML = `
+    <div style="background:#1e1e2e;border:1px solid rgba(103,232,249,0.4);border-radius:12px;padding:24px;max-width:480px;width:90%">
+      <h3 style="color:#67e8f9;margin-bottom:6px">📤 股票匯撥</h3>
+      <div style="color:#888;font-size:0.85em;margin-bottom:16px">
+        ${stockName} · 從 <span style="color:#fbbf24">${src?.bank || src?.name || srcAccId}</span> · 目前持股
+        <span style="color:#67e8f9;font-weight:600">${currentShares.toLocaleString('en-US',{maximumFractionDigits:4})}</span> 股
+      </div>
+
+      <div style="margin-bottom:12px">
+        <label style="color:#aaa;font-size:0.88em;display:block;margin-bottom:4px">目標帳戶</label>
+        <select id="_transferTarget" style="width:100%;padding:8px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;background:rgba(255,255,255,0.08);color:#fff" onchange="updateTransferPreview('${market}','${ticker}',${currentShares},'${srcAccId}')">${targetOptions}</select>
+      </div>
+
+      <div style="margin-bottom:12px">
+        <label style="color:#aaa;font-size:0.88em;display:block;margin-bottom:4px">轉出股數</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input id="_transferShares" type="number" value="${currentShares}" min="0.0001" max="${currentShares}" step="${isTW ? 1 : 0.0001}" style="flex:1;padding:8px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;background:rgba(255,255,255,0.08);color:#fff" oninput="updateTransferPreview('${market}','${ticker}',${currentShares},'${srcAccId}')">
+          <button onclick="document.getElementById('_transferShares').value=${currentShares};updateTransferPreview('${market}','${ticker}',${currentShares},'${srcAccId}')" style="padding:6px 12px;font-size:0.78em;border-radius:6px;background:rgba(255,255,255,0.08);color:#aaa;border:1px solid rgba(255,255,255,0.15);cursor:pointer">全部</button>
+        </div>
+      </div>
+
+      <div style="margin-bottom:12px">
+        <label style="color:#aaa;font-size:0.88em;display:block;margin-bottom:4px">日期</label>
+        <input id="_transferDate" type="date" value="${today}" style="padding:6px 10px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;background:rgba(255,255,255,0.08);color:#fff" oninput="updateTransferPreview('${market}','${ticker}',${currentShares},'${srcAccId}')">
+      </div>
+
+      <div id="_transferPreview" style="background:rgba(103,232,249,0.08);border:1px solid rgba(103,232,249,0.2);border-radius:8px;padding:12px;margin-bottom:16px;font-size:0.85em"></div>
+
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-secondary" onclick="document.getElementById('_transferDialog').remove()">取消</button>
+        <button class="btn btn-add" id="_transferConfirm" onclick="executeTransfer('${market}','${ticker}','${srcAccId}')">確認匯撥</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(dialog);
+  updateTransferPreview(market, ticker, currentShares, srcAccId);
+}
+
+function updateTransferPreview(market, ticker, maxShares, srcAccId) {
+  const shares = parseFloat(document.getElementById('_transferShares').value) || 0;
+  const date = document.getElementById('_transferDate').value;
+  const tgtId = document.getElementById('_transferTarget').value;
+  const tgt = accounts.find(a => a.id === tgtId);
+  const preview = document.getElementById('_transferPreview');
+  const confirmBtn = document.getElementById('_transferConfirm');
+
+  if (shares <= 0 || shares > maxShares + 0.0001) {
+    preview.innerHTML = `<span style="color:#f87171">股數須介於 0 到 ${maxShares}</span>`;
+    confirmBtn.disabled = true;
+    confirmBtn.style.opacity = '0.5';
+    return;
+  }
+  if (!date) {
+    preview.innerHTML = '<span style="color:#f87171">請選日期</span>';
+    confirmBtn.disabled = true;
+    confirmBtn.style.opacity = '0.5';
+    return;
+  }
+  const { lots, fulfilled, available } = previewTransferLots(market, srcAccId, ticker, shares, date);
+  if (fulfilled < shares - 0.0001) {
+    preview.innerHTML = `<span style="color:#f87171">⚠️ ${date} 當天此帳戶只有 ${available.toLocaleString('en-US',{maximumFractionDigits:4})} 股可匯撥</span>`;
+    confirmBtn.disabled = true;
+    confirmBtn.style.opacity = '0.5';
+    return;
+  }
+  confirmBtn.disabled = false;
+  confirmBtn.style.opacity = '1';
+  const totalCost = lots.reduce((s, l) => s + l.shares * (l.price + l.feePerShare), 0);
+  const lotLines = lots.map(l => {
+    const cs = l.shares.toLocaleString('en-US', { maximumFractionDigits: 4 });
+    return `${cs} 股 @ 成本 ${l.price.toFixed(2)}`;
+  }).join('<br>');
+  preview.innerHTML = `
+    <div style="color:#aaa;margin-bottom:6px">系統將同時新增兩筆配對交易：</div>
+    <div style="color:#f87171;margin-bottom:4px">→ 來源帳戶：transfer_out ${fulfilled.toLocaleString('en-US',{maximumFractionDigits:4})} 股</div>
+    <div style="color:#34d399;margin-bottom:8px">→ 目標 ${tgt?.bank || tgt?.name || tgtId}：transfer_in 同等股數</div>
+    <div style="color:#888;font-size:0.82em;padding-top:8px;border-top:1px solid rgba(255,255,255,0.08)">
+      搬移成本基礎（FIFO）：<br>${lotLines}
+    </div>
+    <div style="margin-top:8px;font-size:0.82em;color:#67e8f9">合計搬移成本：${totalCost.toLocaleString('en-US',{maximumFractionDigits:2})}</div>
+  `;
+}
+
+function executeTransfer(market, ticker, srcAccId) {
+  const shares = parseFloat(document.getElementById('_transferShares').value) || 0;
+  const date = document.getElementById('_transferDate').value;
+  const tgtId = document.getElementById('_transferTarget').value;
+  const tgt = accounts.find(a => a.id === tgtId);
+  if (!tgt || shares <= 0 || !date) { alert('資料不完整'); return; }
+  const { lots, fulfilled } = previewTransferLots(market, srcAccId, ticker, shares, date);
+  if (fulfilled < shares - 0.0001) {
+    alert(`此帳戶 ${date} 可匯撥股數不足`);
+    return;
+  }
+  const transferId = `xfer_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
+  const baseId = Date.now();
+
+  const srcTrades = getAccountData(srcAccId, market, 'trades');
+  srcTrades.push({
+    id: baseId,
+    date,
+    ticker,
+    type: 'transfer_out',
+    shares: fulfilled,
+    price: 0,
+    fee: 0,
+    adjust: 0,
+    transfer_id: transferId,
+    transferred_lots: lots,
+    note: `📤 匯撥至 ${tgt.bank || tgt.name}`,
+  });
+  srcTrades.sort((a, b) => b.date.localeCompare(a.date));
+  saveAccountData(srcAccId, market, 'trades', srcTrades);
+
+  const tgtTrades = getAccountData(tgtId, market, 'trades');
+  tgtTrades.push({
+    id: baseId + 1,
+    date,
+    ticker,
+    type: 'transfer_in',
+    shares: fulfilled,
+    price: 0,
+    fee: 0,
+    adjust: 0,
+    transfer_id: transferId,
+    transferred_lots: lots,
+    note: `📥 從 ${(accounts.find(a => a.id === srcAccId) || {}).bank || (accounts.find(a => a.id === srcAccId) || {}).name || srcAccId} 匯撥`,
+  });
+  tgtTrades.sort((a, b) => b.date.localeCompare(a.date));
+  saveAccountData(tgtId, market, 'trades', tgtTrades);
+
+  document.getElementById('_transferDialog').remove();
   if (market === 'us') renderUSTab();
   else renderTWTab();
 }

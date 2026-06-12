@@ -20,11 +20,13 @@ CREATE TABLE IF NOT EXISTS public.inv_us_trades (
   account_id TEXT NOT NULL,
   date TEXT NOT NULL,
   ticker TEXT NOT NULL,
-  type TEXT NOT NULL CHECK (type IN ('buy', 'sell')),
+  type TEXT NOT NULL CHECK (type IN ('buy', 'sell', 'transfer_in', 'transfer_out')),
   shares DECIMAL(12,4) NOT NULL,
   price DECIMAL(12,4) NOT NULL,
   fee DECIMAL(10,2) DEFAULT 0,
   adjust DECIMAL(10,2) DEFAULT 0,
+  transfer_id TEXT,
+  transferred_lots JSONB,
   invest_amount DECIMAL(12,2),
   actual_cost DECIMAL(12,2),
   created_at TIMESTAMPTZ DEFAULT NOW()
@@ -64,11 +66,13 @@ CREATE TABLE IF NOT EXISTS public.inv_tw_trades (
   account_id TEXT NOT NULL,
   date TEXT NOT NULL,
   ticker TEXT NOT NULL,
-  type TEXT NOT NULL CHECK (type IN ('buy', 'sell')),
+  type TEXT NOT NULL CHECK (type IN ('buy', 'sell', 'transfer_in', 'transfer_out')),
   shares DECIMAL(12,4) NOT NULL,
   price DECIMAL(12,4) NOT NULL,
   fee DECIMAL(10,2) DEFAULT 0,
   adjust DECIMAL(10,2) DEFAULT 0,
+  transfer_id TEXT,
+  transferred_lots JSONB,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
