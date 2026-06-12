@@ -61,6 +61,8 @@ jobs:
         if: contains(steps.decide.outputs.markets, 'tw') || steps.decide.outputs.markets == 'both'
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           SCANNER_TOP_CODES_PATH: ${{ runner.temp }}/momentum_top_tw.json
           SCANNER_TOP_CODES_N: '50'
         run: |
@@ -74,6 +76,8 @@ jobs:
         if: contains(steps.decide.outputs.markets, 'tw') || steps.decide.outputs.markets == 'both'
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: |
           TOP_FILE="${{ runner.temp }}/momentum_top_tw.json"
           if [ ! -f "$TOP_FILE" ]; then
@@ -90,6 +94,8 @@ jobs:
         if: contains(steps.decide.outputs.markets, 'us') || steps.decide.outputs.markets == 'both'
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: |
           ARGS="us --limit 20"
           if [ "${{ inputs.dry_run }}" = "true" ]; then

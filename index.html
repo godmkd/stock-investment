@@ -2596,7 +2596,15 @@ function renderThemeDetail() {
   if (!el) return;
   const t = getActiveTheme();
   if (!t) {
-    el.innerHTML = '<div style="color:#666;padding:20px;text-align:center">選一個主題或新增一個來開始</div>';
+    el.innerHTML = `<div style="color:#666;padding:20px;text-align:center">選一個主題或新增一個來開始</div>
+      <div id="scannerSection" style="margin-top:20px;padding-top:16px;border-top:1px solid rgba(255,255,255,0.08)">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <h3 style="font-size:1em;margin:0;color:#a78bfa">⚡ 今日動能榜</h3>
+          <span id="scannerLastUpdate" style="font-size:0.75em;color:#666"></span>
+        </div>
+        <div id="scannerSectionContent" style="color:#666;text-align:center;padding:18px;font-size:0.85em">載入中…</div>
+      </div>`;
+    populateScannerSection(themeMarket, []);
     return;
   }
   const peersBtn = themeMarket === 'us'
@@ -2658,7 +2666,7 @@ function renderThemeDetail() {
     const nameCell = name
       ? `<div style="font-size:0.78em;color:#888;margin-top:2px;line-height:1.2">${name}</div>`
       : '';
-    html += `<tr style="border-bottom:1px solid rgba(255,255,255,0.04)">
+    html += `<tr style="border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer" onclick="openStockDetail('${themeMarket}','${tk}','${(name||'').replace(/'/g,'&#39;')}')">
       <td style="padding:8px 6px">
         <div><span style="font-weight:600">${tk}</span>${heldBadge}</div>
         ${nameCell}
@@ -2668,13 +2676,283 @@ function renderThemeDetail() {
       <td style="text-align:right;padding:8px 6px">${fmtPctCell(ret?.d3)}</td>
       <td style="text-align:right;padding:8px 6px">${fmtPctCell(ret?.w1)}</td>
       <td style="text-align:right;padding:8px 6px">${fmtPctCell(ret?.m1)}</td>
-      <td style="text-align:center;padding:8px 6px"><button class="btn-danger" style="padding:2px 8px;font-size:0.78em" onclick="removeTickerFromTheme('${tk}')">✕</button></td>
+      <td style="text-align:center;padding:8px 6px"><button class="btn-danger" style="padding:2px 8px;font-size:0.78em" onclick="event.stopPropagation();removeTickerFromTheme('${tk}')">✕</button></td>
     </tr>`;
   }
   html += '</tbody></table></div>';
   html += '<div style="margin-top:10px;font-size:0.78em;color:#666">📈 排序依 1 月報酬率（領先在前），可作為動能淘汰參考</div>';
 
+  // Scanner results section: today's top-20 momentum + chip from
+  // scanner_results. Excludes tickers already in the active theme.
+  html += `<div id="scannerSection" style="margin-top:20px;padding-top:16px;border-top:1px solid rgba(255,255,255,0.08)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <h3 style="font-size:1em;margin:0;color:#a78bfa">⚡ 今日動能榜 <span style="font-size:0.75em;color:#666">(watchlist 以外的標的)</span></h3>
+      <span id="scannerLastUpdate" style="font-size:0.75em;color:#666"></span>
+    </div>
+    <div id="scannerSectionContent" style="color:#666;text-align:center;padding:18px;font-size:0.85em">載入中…</div>
+  </div>`;
+
   el.innerHTML = html;
+  populateScannerSection(themeMarket, t.tickers);
+}
+
+// Cache today's scanner_results lookup by market.
+const _scannerCache = {};
+async function fetchTodayScannerResults(market) {
+  if (_scannerCache[market]) return _scannerCache[market];
+  if (typeof sb === 'undefined' || !sb) return { date: null, momentum: [], chip: [] };
+  // Get latest scan_date for momentum
+  const { data: mom, error: momErr } = await sb
+    .from('scanner_results')
+    .select('*')
+    .eq('market', market)
+    .eq('scan_type', 'momentum')
+    .order('scan_date', { ascending: false })
+    .order('rank', { ascending: true })
+    .limit(40);
+  if (momErr) { console.warn('scanner_results momentum fetch:', momErr); return { date: null, momentum: [], chip: [] }; }
+  const date = mom?.[0]?.scan_date || null;
+  const momToday = (mom || []).filter(r => r.scan_date === date);
+
+  let chipToday = [];
+  if (market === 'tw' && date) {
+    const { data: chip } = await sb
+      .from('scanner_results')
+      .select('*')
+      .eq('market', 'tw')
+      .eq('scan_type', 'chip')
+      .eq('scan_date', date)
+      .order('rank', { ascending: true })
+      .limit(40);
+    chipToday = chip || [];
+  }
+  const out = { date, momentum: momToday, chip: chipToday };
+  _scannerCache[market] = out;
+  return out;
+}
+
+async function populateScannerSection(market, watchlistTickers) {
+  const el = document.getElementById('scannerSectionContent');
+  const dateEl = document.getElementById('scannerLastUpdate');
+  if (!el) return;
+  const data = await fetchTodayScannerResults(market);
+  if (!data.date || data.momentum.length === 0) {
+    el.innerHTML = '<span style="color:#666">📭 還沒有 scanner 資料（scanner 跑完會自動寫進資料庫）</span>';
+    if (dateEl) dateEl.textContent = '';
+    return;
+  }
+  if (dateEl) dateEl.textContent = `掃描日：${data.date}`;
+
+  const norm = tk => (market === 'us' ? String(tk || '').toUpperCase() : String(tk || ''));
+  const wlSet = new Set((watchlistTickers || []).map(norm));
+  const chipMap = {};
+  for (const c of data.chip) chipMap[norm(c.ticker)] = c;
+
+  // Cross-ref held positions for the badge.
+  const heldSet = new Set();
+  for (const acc of accounts) {
+    const trades = getAccountData(acc.id, market, 'trades');
+    for (const tr of trades) {
+      const tk = norm(market === 'us' ? tr.ticker
+                                       : (typeof resolveTWTicker === 'function' ? resolveTWTicker(tr.ticker) : tr.ticker));
+      if (tk) heldSet.add(tk);
+    }
+  }
+
+  const others = data.momentum.filter(r => !wlSet.has(norm(r.ticker)));
+  if (others.length === 0) {
+    el.innerHTML = '<span style="color:#666">✅ 今日 scanner top 20 全部已在你的 watchlist 內</span>';
+    return;
+  }
+
+  const priceFmt = market === 'us' ? (v => '$' + Number(v).toFixed(2)) : (v => 'NT$' + Number(v).toFixed(2));
+  const pct = v => {
+    if (v === null || v === undefined || Number.isNaN(v)) return '<span style="color:#666">—</span>';
+    const sign = v >= 0 ? '+' : '';
+    const cls = v >= 0 ? '#34d399' : '#f87171';
+    return `<span style="color:${cls}">${sign}${(v*100).toFixed(1)}%</span>`;
+  };
+
+  let html = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:0.85em">';
+  html += `<thead><tr style="border-bottom:1px solid rgba(255,255,255,0.1);color:#888">
+    <th style="text-align:left;padding:6px 6px">#</th>
+    <th style="text-align:left;padding:6px 6px">代號 / 名稱</th>
+    <th style="text-align:right;padding:6px 6px">收盤</th>
+    <th style="text-align:right;padding:6px 6px">1日</th>
+    <th style="text-align:right;padding:6px 6px">20日</th>
+    <th style="text-align:right;padding:6px 6px">60日</th>
+    <th style="text-align:right;padding:6px 6px">Score</th>
+    ${market === 'tw' ? '<th style="text-align:right;padding:6px 6px">主力</th><th style="text-align:right;padding:6px 6px">集中</th>' : ''}
+    <th style="text-align:center;padding:6px 6px;width:60px"></th>
+  </tr></thead><tbody>`;
+
+  for (const r of others) {
+    const p = r.payload || {};
+    const chip = chipMap[norm(r.ticker)];
+    const cp = chip?.payload || {};
+    const heldBadge = heldSet.has(norm(r.ticker))
+      ? '<span style="background:rgba(52,211,153,0.18);color:#34d399;padding:1px 6px;border-radius:4px;font-size:0.72em;margin-left:6px">持有</span>' : '';
+    const mainLots = cp.main_player_net !== undefined ? Math.round(cp.main_player_net / 1000) : null;
+    const mainCell = mainLots !== null
+      ? `<span style="color:${mainLots >= 0 ? '#34d399' : '#f87171'}">${mainLots >= 0 ? '+' : ''}${mainLots.toLocaleString()}張</span>`
+      : '<span style="color:#666">—</span>';
+    const concCell = cp.concentration !== undefined ? `${(cp.concentration*100).toFixed(1)}%` : '<span style="color:#666">—</span>';
+    html += `<tr style="border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer" onclick="openStockDetail('${market}','${r.ticker}','${(r.name||'').replace(/'/g, '&#39;')}')">
+      <td style="padding:6px 6px;color:#888">${r.rank}</td>
+      <td style="padding:6px 6px">
+        <div><span style="font-weight:600;color:#67e8f9">${r.ticker}</span>${heldBadge}</div>
+        <div style="font-size:0.78em;color:#888">${r.name || ''}</div>
+      </td>
+      <td style="text-align:right;padding:6px 6px">${p.last_close ? priceFmt(p.last_close) : '—'}</td>
+      <td style="text-align:right;padding:6px 6px">${pct(p.pct_1d)}</td>
+      <td style="text-align:right;padding:6px 6px">${pct(p.ret_20d)}</td>
+      <td style="text-align:right;padding:6px 6px">${pct(p.ret_60d)}</td>
+      <td style="text-align:right;padding:6px 6px;font-weight:600;color:#fbbf24">${r.score ?? '—'}</td>
+      ${market === 'tw' ? `<td style="text-align:right;padding:6px 6px">${mainCell}</td><td style="text-align:right;padding:6px 6px">${concCell}</td>` : ''}
+      <td style="text-align:center;padding:6px 6px">
+        <button class="btn btn-secondary" style="padding:2px 8px;font-size:0.75em" onclick="event.stopPropagation();addTickerToActiveTheme('${r.ticker}')">＋</button>
+      </td>
+    </tr>`;
+  }
+  html += '</tbody></table></div>';
+  el.innerHTML = html;
+}
+
+function addTickerToActiveTheme(ticker) {
+  const t = getActiveTheme();
+  if (!t) { alert('請先建立一個主題（按上方的 ＋ 新增）'); return; }
+  if (t.tickers.includes(ticker)) { alert(`${ticker} 已經在「${t.name}」`); return; }
+  t.tickers.push(ticker);
+  saveThemesToCloud();
+  renderThemeList();
+  renderThemeDetail();
+  if (typeof fetchOneReturn === 'function') fetchOneReturn(ticker).then(() => renderThemeDetail());
+}
+
+// Sprint 2: per-stock detail modal — pulls last 60 days of scanner_results
+// for this ticker, plots score trend, and surfaces chip highlights.
+async function openStockDetail(market, ticker, name) {
+  if (typeof sb === 'undefined' || !sb) { alert('需登入 Supabase'); return; }
+  const startDate = new Date(Date.now() - 60 * 86400000).toISOString().slice(0, 10);
+  const { data: results, error } = await sb
+    .from('scanner_results')
+    .select('*')
+    .eq('market', market)
+    .eq('ticker', ticker)
+    .gte('scan_date', startDate)
+    .order('scan_date', { ascending: true });
+  if (error) { console.warn('detail fetch:', error); alert('讀取失敗'); return; }
+
+  const momentum = (results || []).filter(r => r.scan_type === 'momentum');
+  const chip = (results || []).filter(r => r.scan_type === 'chip');
+
+  const dialog = document.createElement('div');
+  dialog.id = '_stockDetailDialog';
+  dialog.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:10000;display:flex;align-items:center;justify-content:center;padding:12px';
+  dialog.innerHTML = `
+    <div style="background:#1e1e2e;border:1px solid rgba(167,139,250,0.4);border-radius:12px;padding:20px;max-width:560px;width:100%;max-height:85vh;overflow-y:auto">
+      <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:12px">
+        <div>
+          <h3 style="color:#a78bfa;margin:0;font-size:1.15em">${ticker}${name ? ' ' + name : ''}</h3>
+          <div style="color:#888;font-size:0.78em;margin-top:2px">過去 60 日 scanner 記錄</div>
+        </div>
+        <button onclick="document.getElementById('_stockDetailDialog').remove()" style="background:none;border:none;color:#888;cursor:pointer;font-size:1.2em">✕</button>
+      </div>
+      <div id="_stockDetailBody"></div>
+    </div>
+  `;
+  document.body.appendChild(dialog);
+
+  const body = document.getElementById('_stockDetailBody');
+  if (momentum.length === 0 && chip.length === 0) {
+    body.innerHTML = '<div style="color:#666;text-align:center;padding:24px">過去 60 日沒有上榜記錄</div>';
+    return;
+  }
+
+  // Stats summary
+  const momCount = momentum.length;
+  const lastMom = momentum[momentum.length - 1];
+  const bestScore = momentum.reduce((m, r) => Math.max(m, r.score || 0), 0);
+  const avgScore = momCount > 0 ? momentum.reduce((s, r) => s + (r.score || 0), 0) / momCount : 0;
+
+  const stats = `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px;font-size:0.85em">
+    <div style="background:rgba(255,255,255,0.04);border-radius:8px;padding:8px"><div style="color:#888;font-size:0.78em">動能上榜</div><div style="font-weight:600">${momCount} 天</div></div>
+    <div style="background:rgba(255,255,255,0.04);border-radius:8px;padding:8px"><div style="color:#888;font-size:0.78em">最高 score</div><div style="font-weight:600;color:#fbbf24">${bestScore.toFixed(1)}</div></div>
+    <div style="background:rgba(255,255,255,0.04);border-radius:8px;padding:8px"><div style="color:#888;font-size:0.78em">平均 score</div><div style="font-weight:600">${avgScore.toFixed(1)}</div></div>
+  </div>`;
+
+  let chartBlock = '';
+  if (momCount >= 2) {
+    chartBlock = `<div style="margin-bottom:14px">
+      <div style="color:#aaa;font-size:0.85em;margin-bottom:6px">📈 動能 Score 趨勢</div>
+      <canvas id="_stockScoreChart" style="max-height:180px"></canvas>
+    </div>`;
+  }
+
+  let chipBlock = '';
+  if (chip.length > 0) {
+    const lastChip = chip[chip.length - 1];
+    const cp = lastChip.payload || {};
+    const lots = cp.main_player_net !== undefined ? Math.round(cp.main_player_net / 1000) : null;
+    const conc = cp.concentration !== undefined ? (cp.concentration * 100).toFixed(1) + '%' : '—';
+    const intra = cp.intraday_ratio !== undefined ? (cp.intraday_ratio * 100).toFixed(0) + '%' : '—';
+    const buyers = (cp.top_buyers || []).slice(0, 3).map(b => Array.isArray(b) ? b[0] : '').filter(Boolean).join(' / ');
+    chipBlock = `<div style="background:rgba(103,232,249,0.06);border:1px solid rgba(103,232,249,0.18);border-radius:8px;padding:12px;font-size:0.85em">
+      <div style="color:#67e8f9;font-weight:600;margin-bottom:6px">📊 籌碼面（${lastChip.scan_date}）</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;color:#bbb">
+        <div>主力：<span style="color:${(lots||0) >= 0 ? '#34d399' : '#f87171'};font-weight:600">${lots !== null ? (lots >= 0 ? '+' : '') + lots.toLocaleString() + '張' : '—'}</span></div>
+        <div>集中度：${conc}</div>
+        <div>當沖比：${intra}</div>
+        <div>累計上榜：${chip.length} 天</div>
+      </div>
+      ${buyers ? `<div style="color:#888;font-size:0.82em;margin-top:6px">前三買：${buyers}</div>` : ''}
+    </div>`;
+  }
+
+  // Recent appearances list
+  const recent = momentum.slice(-7).reverse().map(r => {
+    const p = r.payload || {};
+    const ret60 = p.ret_60d !== null && p.ret_60d !== undefined ? `${(p.ret_60d*100).toFixed(0)}%` : '—';
+    return `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.04);font-size:0.82em">
+      <span style="color:#aaa">${r.scan_date}</span>
+      <span>排 #${r.rank}</span>
+      <span style="color:#fbbf24">${(r.score||0).toFixed(0)}</span>
+      <span style="color:#666">60日 ${ret60}</span>
+    </div>`;
+  }).join('');
+  const recentBlock = recent ? `<div style="margin-top:14px">
+    <div style="color:#aaa;font-size:0.85em;margin-bottom:6px">📅 近期上榜</div>
+    ${recent}
+  </div>` : '';
+
+  body.innerHTML = stats + chartBlock + chipBlock + recentBlock;
+
+  if (momCount >= 2 && typeof Chart !== 'undefined') {
+    const ctx = document.getElementById('_stockScoreChart');
+    if (ctx) {
+      new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: momentum.map(r => r.scan_date),
+          datasets: [{
+            label: 'Score',
+            data: momentum.map(r => r.score),
+            borderColor: '#a78bfa',
+            backgroundColor: 'rgba(167,139,250,0.15)',
+            fill: true, tension: 0.3, pointRadius: 3, borderWidth: 2,
+          }]
+        },
+        options: {
+          responsive: true,
+          scales: {
+            x: { ticks: { color: '#888', maxTicksLimit: 6, font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.05)' } },
+            y: { ticks: { color: '#888', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.05)' }, suggestedMax: 100, beginAtZero: false },
+          },
+          plugins: { legend: { display: false } },
+        }
+      });
+    }
+  }
 }
 
 // ===== Utilities =====

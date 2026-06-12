@@ -412,6 +412,13 @@ def run(entries: list[dict], limit: int, dry_run: bool, request_delay: float) ->
         return 0
 
     content = build_discord_content(results, limit)
+
+    # Persist top-N chip results to Supabase for the 主題動能 frontend tab.
+    try:
+        upsert_chip_results(sorted(results, key=lambda m: m.main_player_net, reverse=True)[:limit])
+    except Exception as e:
+        log.warning("scanner_results upsert failed: %s", e)
+
     if dry_run:
         log.info("--- DRY RUN ---\n%s", content)
         return 0
@@ -422,6 +429,44 @@ def run(entries: list[dict], limit: int, dry_run: bool, request_delay: float) ->
         return 1
     post_to_discord(webhook, content)
     return 0
+
+
+def upsert_chip_results(top: list[ChipMetrics]) -> None:
+    """Push the day's top-N chip rows into Supabase scanner_results."""
+    url = os.environ.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_SERVICE_KEY")
+    if not url or not key:
+        log.info("SUPABASE_URL/SUPABASE_SERVICE_KEY not set, skipping DB upsert")
+        return
+    from supabase import create_client
+    sb = create_client(url, key)
+    scan_date = datetime.now(TZ_TW).date().isoformat()
+    rows = []
+    for i, m in enumerate(top, start=1):
+        payload = {
+            "main_player_net": m.main_player_net,
+            "total_volume": m.total_volume,
+            "concentration": m.concentration,
+            "intraday_ratio": m.intraday_ratio,
+            "top_buyers": m.top_buyers,
+            "top_sellers": m.top_sellers,
+            "momentum_score": m.momentum_score,
+        }
+        rows.append({
+            "market": "tw",
+            "scan_type": "chip",
+            "scan_date": scan_date,
+            "rank": i,
+            "ticker": m.stock_code,
+            "name": m.stock_name or "",
+            "score": float(m.momentum_score) if m.momentum_score is not None else None,
+            "payload": payload,
+        })
+    if not rows:
+        return
+    sb.table("scanner_results").delete().eq("market", "tw").eq("scan_type", "chip").eq("scan_date", scan_date).execute()
+    sb.table("scanner_results").upsert(rows, on_conflict="market,scan_type,scan_date,ticker").execute()
+    log.info("upserted %d chip rows to scanner_results", len(rows))
 
 
 def main() -> int:

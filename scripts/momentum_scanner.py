@@ -554,6 +554,13 @@ def run(market: str, limit: int, dry_run: bool, test_symbols: list[str] | None) 
 
     payload = build_discord_payload(market, candidates, limit)
 
+    # Persist the top N (same set as Discord push) to Supabase scanner_results
+    # so the 主題動能 frontend tab can read history.
+    try:
+        upsert_momentum_results(market, candidates.head(limit), cfg)
+    except Exception as e:
+        log.warning("scanner_results upsert failed: %s", e)
+
     if dry_run:
         log.info("--- DRY RUN ---\n%s", payload["content"])
         return 0
@@ -566,6 +573,52 @@ def run(market: str, limit: int, dry_run: bool, test_symbols: list[str] | None) 
     post_to_discord(webhook, payload)
     log.info("Done.")
     return 0
+
+
+def upsert_momentum_results(market: str, top: pd.DataFrame, cfg: dict) -> None:
+    """Push the day's top-N momentum rows into Supabase scanner_results."""
+    url = os.environ.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_SERVICE_KEY")
+    if not url or not key:
+        log.info("SUPABASE_URL/SUPABASE_SERVICE_KEY not set, skipping DB upsert")
+        return
+    from supabase import create_client
+    sb = create_client(url, key)
+    scan_date = datetime.now(cfg["tz"]).date().isoformat()
+    rows = []
+    for i, (_, row) in enumerate(top.iterrows(), start=1):
+        ticker = row["symbol"].replace(".TW", "").replace(".TWO", "")
+        flags = reason_flags(row)
+        payload = {
+            "category": row.get("category"),
+            "last_close": float(row.get("last_close", 0)),
+            "pct_1d": float(row.get("pct_1d", 0)),
+            "ret_20d": float(row.get("ret_20d", 0)) if not pd.isna(row.get("ret_20d", float("nan"))) else None,
+            "ret_60d": float(row.get("ret_60d", 0)) if not pd.isna(row.get("ret_60d", float("nan"))) else None,
+            "rel_strength_60d": float(row.get("rel_strength_60d", 0)) if not pd.isna(row.get("rel_strength_60d", float("nan"))) else None,
+            "market_cap": float(row.get("market_cap")) if row.get("market_cap") is not None and not pd.isna(row.get("market_cap")) else None,
+            "last_dollar_vol": float(row.get("last_dollar_vol", 0)) if not pd.isna(row.get("last_dollar_vol", float("nan"))) else None,
+            "above_ma20": bool(row.get("above_ma20", False)),
+            "above_ma60": bool(row.get("above_ma60", False)),
+            "above_ma120": bool(row.get("above_ma120", False)),
+            "flags": flags,
+        }
+        rows.append({
+            "market": market,
+            "scan_type": "momentum",
+            "scan_date": scan_date,
+            "rank": i,
+            "ticker": ticker,
+            "name": str(row.get("name", "")),
+            "score": float(row.get("score", 0)),
+            "payload": payload,
+        })
+    if not rows:
+        return
+    # Clear today's momentum rows for this market so re-runs don't pile up stale rank slots
+    sb.table("scanner_results").delete().eq("market", market).eq("scan_type", "momentum").eq("scan_date", scan_date).execute()
+    sb.table("scanner_results").upsert(rows, on_conflict="market,scan_type,scan_date,ticker").execute()
+    log.info("upserted %d momentum rows to scanner_results", len(rows))
 
 
 def main() -> int:
