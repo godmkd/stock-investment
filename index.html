@@ -273,11 +273,18 @@
     .stock-buysell-grid { grid-template-columns: 1fr !important; }
     .stock-buysell-grid > div:first-child { border-right: none !important; border-bottom: 1px solid rgba(255,255,255,0.04); }
     .themes-grid { grid-template-columns: 1fr !important; }
+    .themes-grid > div { min-width: 0; }  /* let inner tables actually shrink + scroll */
     .themes-grid > div:first-child { max-height: none; }
     #themeList { flex-direction: row !important; flex-wrap: wrap; gap: 6px !important; }
     #themeList > div { flex: 0 0 auto; }
     .theme-table { font-size: 0.78em; }
     .theme-table th, .theme-table td { padding: 6px 4px !important; }
+    /* Scanner section table on portrait: same tighter sizing */
+    #scannerSectionContent table { font-size: 0.74em; }
+    #scannerSectionContent th, #scannerSectionContent td { padding: 5px 4px !important; white-space: nowrap; }
+    /* Card padding + theme header gap tighter on narrow */
+    #themeDetail { padding: 10px !important; }
+    #themes { padding-left: 8px; padding-right: 8px; }
   }
   /* 手機橫式：善用寬度，保持橫排 */
   @media (max-height: 500px) and (orientation: landscape) {
