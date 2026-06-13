@@ -511,6 +511,20 @@ def run(market: str, limit: int, dry_run: bool, test_symbols: list[str] | None) 
         rows.append(m)
 
     log.info("After price/liquidity filters: %d symbols qualify", len(rows))
+
+    # Sleeping breakout — reuses the same downloaded histories. Runs
+    # alongside the main momentum scan so we share the yfinance cost.
+    breakout_cands: list[SleepingBreakoutCandidate] = []
+    for sym, df in histories.items():
+        c = compute_sleeping_breakout(sym, name_map[sym], cat_map[sym], df)
+        if c is None:
+            continue
+        # Reuse the same liquidity floor as the momentum pipeline.
+        if c.last_close < cfg["min_close"]:
+            continue
+        breakout_cands.append(c)
+    log.info("Sleeping-breakout candidates: %d", len(breakout_cands))
+
     ranked = compute_composite_score(rows)
 
     if ranked.empty:
@@ -567,16 +581,21 @@ def run(market: str, limit: int, dry_run: bool, test_symbols: list[str] | None) 
         log.warning("could not persist top entries to %s: %s", top_codes_path, e)
 
     payload = build_discord_payload(market, candidates, limit)
+    breakout_payload = build_sleeping_breakout_discord(market, breakout_cands, limit)
 
-    # Persist the top N (same set as Discord push) to Supabase scanner_results
-    # so the 主題動能 frontend tab can read history.
+    # Persist both lists to Supabase so the 主題動能 frontend can read history.
     try:
         upsert_momentum_results(market, candidates.head(limit), cfg)
     except Exception as e:
-        log.warning("scanner_results upsert failed: %s", e)
+        log.warning("momentum scanner_results upsert failed: %s", e)
+    try:
+        upsert_sleeping_breakout(market, breakout_cands, cfg)
+    except Exception as e:
+        log.warning("sleeping-breakout scanner_results upsert failed: %s", e)
 
     if dry_run:
-        log.info("--- DRY RUN ---\n%s", payload["content"])
+        log.info("--- DRY RUN momentum ---\n%s", payload["content"])
+        log.info("--- DRY RUN sleeping breakout ---\n%s", breakout_payload)
         return 0
 
     webhook = os.environ.get("DISCORD_WEBHOOK_URL")
@@ -585,8 +604,159 @@ def run(market: str, limit: int, dry_run: bool, test_symbols: list[str] | None) 
         return 1
 
     post_to_discord(webhook, payload)
+    # Push the sleeping-breakout list as a separate message — same chunking
+    # rules apply, reuse post_to_discord by wrapping in a payload dict.
+    try:
+        post_to_discord(webhook, {"content": breakout_payload})
+    except Exception as e:
+        log.warning("sleeping-breakout post failed: %s", e)
     log.info("Done.")
     return 0
+
+
+@dataclass
+class SleepingBreakoutCandidate:
+    symbol: str
+    name: str
+    category: str
+    last_close: float
+    pct_1d: float
+    range_pct: float        # (base_high − base_low) / base_mean over the prior 90d
+    base_high: float        # 90d high excluding the last 5 sessions
+    breakout_pct: float     # (last_close − base_high) / base_high
+    vol_surge_ratio: float  # 5d avg vol / 20d avg vol
+
+
+# Sleeping breakout: stock spent ~90 sessions in a tight range, then in the
+# last 5 sessions broke above the prior range high with above-average volume.
+# The classic "long base + first move" pattern Dan Zanger / William O'Neil
+# describe — historically a low-noise early-trend signal.
+SB_BASE_WINDOW = 90      # sessions to measure the base
+SB_BREAKOUT_TAIL = 5     # sessions counted as the breakout window
+SB_RANGE_PCT_MAX = 0.20  # base high-low spread / mean must be ≤ this
+SB_VOL_SURGE_MIN = 1.5   # 5d avg vol must be ≥ this × 20d avg vol
+SB_BREAKOUT_MIN = 0.005  # last close must be at least 0.5% above the base high
+
+
+def compute_sleeping_breakout(
+    symbol: str,
+    name: str,
+    category: str,
+    df: pd.DataFrame,
+) -> SleepingBreakoutCandidate | None:
+    """Detect a long-base breakout. Returns None unless all gates pass."""
+    if df is None or df.empty:
+        return None
+    df = df.dropna(subset=["Close", "Volume"])
+    if len(df) < SB_BASE_WINDOW + SB_BREAKOUT_TAIL:
+        return None
+
+    close = df["Close"]
+    volume = df["Volume"]
+    last_close = float(close.iloc[-1])
+    if last_close <= 0:
+        return None
+    prev_close = float(close.iloc[-2])
+    pct_1d = last_close / prev_close - 1.0 if prev_close > 0 else 0.0
+
+    # The "base": everything between SB_BASE_WINDOW + SB_BREAKOUT_TAIL ago
+    # and SB_BREAKOUT_TAIL ago. The "breakout": last SB_BREAKOUT_TAIL sessions.
+    base_close = close.iloc[-(SB_BASE_WINDOW + SB_BREAKOUT_TAIL):-SB_BREAKOUT_TAIL]
+    if base_close.empty:
+        return None
+    base_high = float(base_close.max())
+    base_low = float(base_close.min())
+    base_mean = float(base_close.mean())
+    if base_mean <= 0:
+        return None
+    range_pct = (base_high - base_low) / base_mean
+
+    if range_pct > SB_RANGE_PCT_MAX:
+        return None
+
+    if last_close <= base_high * (1 + SB_BREAKOUT_MIN):
+        return None
+
+    avg_vol_5d = float(volume.tail(SB_BREAKOUT_TAIL).mean())
+    avg_vol_20d = float(volume.tail(20).mean())
+    if avg_vol_20d <= 0:
+        return None
+    vol_surge_ratio = avg_vol_5d / avg_vol_20d
+    if vol_surge_ratio < SB_VOL_SURGE_MIN:
+        return None
+
+    breakout_pct = last_close / base_high - 1.0
+    return SleepingBreakoutCandidate(
+        symbol=symbol, name=name, category=category,
+        last_close=last_close, pct_1d=pct_1d,
+        range_pct=range_pct, base_high=base_high,
+        breakout_pct=breakout_pct,
+        vol_surge_ratio=vol_surge_ratio,
+    )
+
+
+def build_sleeping_breakout_discord(market: str, cands: list[SleepingBreakoutCandidate], limit: int) -> str:
+    cfg = MARKET_CONFIG[market]
+    now = datetime.now(cfg["tz"]).strftime("%Y-%m-%d %H:%M %Z")
+    # Rank by breakout strength × volume surge (loose composite — favors clean breakouts
+    # with strong confirmation).
+    cands = sorted(cands, key=lambda c: c.breakout_pct * c.vol_surge_ratio, reverse=True)
+    top = cands[:limit]
+    header = (
+        f"**🕯️ {cfg['display_name']} 沉睡突破 Top {len(top)}  ·  {now}**\n"
+        f"_過去 {SB_BASE_WINDOW} 天窄幅整理（區間 ≤ {SB_RANGE_PCT_MAX*100:.0f}%）後突破，量增 ≥ {SB_VOL_SURGE_MIN}× — 早期訊號_"
+    )
+    if not top:
+        return header + "\n\n_（今日沒有合格的沉睡突破標的）_"
+    entries = []
+    for i, c in enumerate(top, 1):
+        sym_disp = c.symbol.replace(".TW", "")
+        cat = CATEGORY_LABELS.get(c.category, c.category)
+        entry = (
+            f"**{i:>2}. {sym_disp}** {c.name}  `[{cat}]`\n"
+            f"     收盤 {format_money(c.last_close, cfg['currency'])} "
+            f"({c.pct_1d*100:+.2f}%)   突破 +{c.breakout_pct*100:.1f}%   量爆 {c.vol_surge_ratio:.1f}×\n"
+            f"     ✦ 90 日窄幅整理（區間 {c.range_pct*100:.1f}%）後創高"
+        )
+        entries.append(entry)
+    return header + "\n\n" + "\n\n".join(entries)
+
+
+def upsert_sleeping_breakout(market: str, cands: list[SleepingBreakoutCandidate], cfg: dict) -> None:
+    """Persist sleeping-breakout candidates to scanner_results."""
+    url = os.environ.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_SERVICE_KEY")
+    if not url or not key:
+        return
+    from supabase import create_client
+    sb = create_client(url, key)
+    scan_date = datetime.now(cfg["tz"]).date().isoformat()
+    cands = sorted(cands, key=lambda c: c.breakout_pct * c.vol_surge_ratio, reverse=True)
+    rows = []
+    for i, c in enumerate(cands, start=1):
+        ticker = c.symbol.replace(".TW", "").replace(".TWO", "")
+        rows.append({
+            "market": market,
+            "scan_type": "sleeping_breakout",
+            "scan_date": scan_date,
+            "rank": i,
+            "ticker": ticker,
+            "name": c.name,
+            "score": float(c.breakout_pct * c.vol_surge_ratio * 100),
+            "payload": {
+                "category": c.category,
+                "last_close": c.last_close,
+                "pct_1d": c.pct_1d,
+                "range_pct": c.range_pct,
+                "base_high": c.base_high,
+                "breakout_pct": c.breakout_pct,
+                "vol_surge_ratio": c.vol_surge_ratio,
+            },
+        })
+    sb.table("scanner_results").delete().eq("market", market).eq("scan_type", "sleeping_breakout").eq("scan_date", scan_date).execute()
+    if rows:
+        sb.table("scanner_results").upsert(rows, on_conflict="market,scan_type,scan_date,ticker").execute()
+    log.info("upserted %d sleeping-breakout rows", len(rows))
 
 
 def upsert_momentum_results(market: str, top: pd.DataFrame, cfg: dict) -> None:

@@ -2707,7 +2707,7 @@ function renderThemeDetail() {
 const _scannerCache = {};
 async function fetchTodayScannerResults(market) {
   if (_scannerCache[market]) return _scannerCache[market];
-  if (typeof sb === 'undefined' || !sb) return { date: null, momentum: [], chip: [] };
+  if (typeof sb === 'undefined' || !sb) return { date: null, momentum: [], chip: [], breakout: [], accumulation: [] };
   // Get latest scan_date for momentum
   const { data: mom, error: momErr } = await sb
     .from('scanner_results')
@@ -2717,23 +2717,28 @@ async function fetchTodayScannerResults(market) {
     .order('scan_date', { ascending: false })
     .order('rank', { ascending: true })
     .limit(40);
-  if (momErr) { console.warn('scanner_results momentum fetch:', momErr); return { date: null, momentum: [], chip: [] }; }
+  if (momErr) { console.warn('scanner_results momentum fetch:', momErr); return { date: null, momentum: [], chip: [], breakout: [], accumulation: [] }; }
   const date = mom?.[0]?.scan_date || null;
   const momToday = (mom || []).filter(r => r.scan_date === date);
 
-  let chipToday = [];
-  if (market === 'tw' && date) {
-    const { data: chip } = await sb
+  const fetchType = async (type) => {
+    if (!date) return [];
+    const { data } = await sb
       .from('scanner_results')
       .select('*')
-      .eq('market', 'tw')
-      .eq('scan_type', 'chip')
+      .eq('market', market)
+      .eq('scan_type', type)
       .eq('scan_date', date)
       .order('rank', { ascending: true })
       .limit(40);
-    chipToday = chip || [];
-  }
-  const out = { date, momentum: momToday, chip: chipToday };
+    return data || [];
+  };
+
+  const chipToday = market === 'tw' ? await fetchType('chip') : [];
+  const breakoutToday = await fetchType('sleeping_breakout');
+  const accumulationToday = market === 'tw' ? await fetchType('silent_accumulation') : [];
+
+  const out = { date, momentum: momToday, chip: chipToday, breakout: breakoutToday, accumulation: accumulationToday };
   _scannerCache[market] = out;
   return out;
 }
@@ -2822,7 +2827,101 @@ async function populateScannerSection(market, watchlistTickers) {
     </tr>`;
   }
   html += '</tbody></table></div>';
+
+  // Sleeping breakout
+  if (data.breakout && data.breakout.length > 0) {
+    html += renderEarlySignalSection(market, '🕯️ 沉睡突破', '90 天窄幅整理後突破，量增 ≥ 1.5×', data.breakout, heldSet, norm, 'breakout');
+  }
+  // Silent accumulation (TW only)
+  if (data.accumulation && data.accumulation.length > 0) {
+    html += renderEarlySignalSection(market, '🤫 悄悄收', '主力連續多日買超，但動能還沒爆發 — 默默收貨候選', data.accumulation, heldSet, norm, 'accumulation');
+  }
+
   el.innerHTML = html;
+}
+
+// Compact table renderer for the early-signal sections (沉睡突破 / 悄悄收).
+// Columns adapt to scan_type so the same function covers both.
+function renderEarlySignalSection(market, title, subtitle, rows, heldSet, norm, kind) {
+  let out = `<div style="margin-top:18px;padding-top:14px;border-top:1px solid rgba(255,255,255,0.05)">
+    <div style="margin-bottom:8px">
+      <h4 style="margin:0;font-size:0.95em;color:#67e8f9">${title} <span style="color:#666;font-size:0.78em">(${rows.length})</span></h4>
+      <div style="font-size:0.75em;color:#888;margin-top:2px">${subtitle}</div>
+    </div>
+    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:0.82em">`;
+  if (kind === 'breakout') {
+    out += `<thead><tr style="border-bottom:1px solid rgba(255,255,255,0.08);color:#888">
+      <th style="text-align:left;padding:5px 6px">#</th>
+      <th style="text-align:left;padding:5px 6px">代號 / 名稱</th>
+      <th style="text-align:right;padding:5px 6px">收盤</th>
+      <th style="text-align:right;padding:5px 6px">1日</th>
+      <th style="text-align:right;padding:5px 6px">突破</th>
+      <th style="text-align:right;padding:5px 6px">量爆</th>
+      <th style="text-align:right;padding:5px 6px">區間</th>
+      <th style="text-align:center;padding:5px 6px;width:40px"></th>
+    </tr></thead><tbody>`;
+    for (const r of rows) {
+      const p = r.payload || {};
+      const heldBadge = heldSet.has(norm(r.ticker))
+        ? '<span style="background:rgba(52,211,153,0.18);color:#34d399;padding:1px 6px;border-radius:4px;font-size:0.72em;margin-left:6px">持有</span>' : '';
+      const priceFmt = market === 'us' ? (v => '$' + Number(v).toFixed(2)) : (v => 'NT$' + Number(v).toFixed(2));
+      const pctCell = (v, suffix='') => {
+        if (v === null || v === undefined || Number.isNaN(v)) return '<span style="color:#666">—</span>';
+        const cls = v >= 0 ? '#34d399' : '#f87171';
+        return `<span style="color:${cls}">${v >= 0 ? '+' : ''}${(v*100).toFixed(1)}%${suffix}</span>`;
+      };
+      out += `<tr style="border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer" onclick="openStockDetail('${market}','${r.ticker}','${(r.name||'').replace(/'/g,'&#39;')}')">
+        <td style="padding:5px 6px;color:#888">${r.rank}</td>
+        <td style="padding:5px 6px">
+          <div><span style="font-weight:600;color:#67e8f9">${r.ticker}</span>${heldBadge}</div>
+          <div style="font-size:0.78em;color:#888">${r.name || ''}</div>
+        </td>
+        <td style="text-align:right;padding:5px 6px">${p.last_close ? priceFmt(p.last_close) : '—'}</td>
+        <td style="text-align:right;padding:5px 6px">${pctCell(p.pct_1d)}</td>
+        <td style="text-align:right;padding:5px 6px"><span style="color:#fbbf24;font-weight:600">+${(p.breakout_pct*100).toFixed(1)}%</span></td>
+        <td style="text-align:right;padding:5px 6px">${(p.vol_surge_ratio || 0).toFixed(1)}×</td>
+        <td style="text-align:right;padding:5px 6px;color:#aaa">${(p.range_pct*100).toFixed(1)}%</td>
+        <td style="text-align:center;padding:5px 6px"><button class="btn btn-secondary" style="padding:2px 8px;font-size:0.75em" onclick="event.stopPropagation();addTickerToActiveTheme('${r.ticker}')">＋</button></td>
+      </tr>`;
+    }
+  } else if (kind === 'accumulation') {
+    out += `<thead><tr style="border-bottom:1px solid rgba(255,255,255,0.08);color:#888">
+      <th style="text-align:left;padding:5px 6px">#</th>
+      <th style="text-align:left;padding:5px 6px">代號 / 名稱</th>
+      <th style="text-align:right;padding:5px 6px">連N日</th>
+      <th style="text-align:right;padding:5px 6px">累計主力</th>
+      <th style="text-align:right;padding:5px 6px">平均集中</th>
+      <th style="text-align:right;padding:5px 6px">動能</th>
+      <th style="text-align:center;padding:5px 6px;width:40px"></th>
+    </tr></thead><tbody>`;
+    for (const r of rows) {
+      const p = r.payload || {};
+      const heldBadge = heldSet.has(norm(r.ticker))
+        ? '<span style="background:rgba(52,211,153,0.18);color:#34d399;padding:1px 6px;border-radius:4px;font-size:0.72em;margin-left:6px">持有</span>' : '';
+      const totalLots = p.total_main_lots || 0;
+      const totalLotsStr = Math.abs(totalLots) >= 10000
+        ? `${totalLots >= 0 ? '+' : ''}${(totalLots/10000).toFixed(1)}萬`
+        : `${totalLots >= 0 ? '+' : ''}${totalLots.toFixed(0)}`;
+      const momScore = p.avg_momentum_score;
+      const momCell = momScore !== null && momScore !== undefined
+        ? `<span style="color:#fbbf24">${momScore.toFixed(0)}</span>`
+        : '<span style="color:#666">未上榜</span>';
+      out += `<tr style="border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer" onclick="openStockDetail('${market}','${r.ticker}','${(r.name||'').replace(/'/g,'&#39;')}')">
+        <td style="padding:5px 6px;color:#888">${r.rank}</td>
+        <td style="padding:5px 6px">
+          <div><span style="font-weight:600;color:#67e8f9">${r.ticker}</span>${heldBadge}</div>
+          <div style="font-size:0.78em;color:#888">${r.name || ''}</div>
+        </td>
+        <td style="text-align:right;padding:5px 6px"><span style="color:#a78bfa;font-weight:600">${p.appearances || 0}</span></td>
+        <td style="text-align:right;padding:5px 6px"><span style="color:${totalLots >= 0 ? '#34d399' : '#f87171'}">${totalLotsStr}張</span></td>
+        <td style="text-align:right;padding:5px 6px">${((p.avg_concentration||0)*100).toFixed(1)}%</td>
+        <td style="text-align:right;padding:5px 6px">${momCell}</td>
+        <td style="text-align:center;padding:5px 6px"><button class="btn btn-secondary" style="padding:2px 8px;font-size:0.75em" onclick="event.stopPropagation();addTickerToActiveTheme('${r.ticker}')">＋</button></td>
+      </tr>`;
+    }
+  }
+  out += '</tbody></table></div></div>';
+  return out;
 }
 
 function addTickerToActiveTheme(ticker) {

@@ -419,8 +419,20 @@ def run(entries: list[dict], limit: int, dry_run: bool, request_delay: float) ->
     except Exception as e:
         log.warning("scanner_results upsert failed: %s", e)
 
+    # Silent accumulation — query past 14 days of chip results, find tickers
+    # that recurred with positive 主力買超 but haven't been pushed by momentum.
+    accum_content = ""
+    try:
+        accum = compute_silent_accumulation(limit=20)
+        accum_content = build_accumulation_discord(accum)
+        upsert_accumulation_results(accum)
+    except Exception as e:
+        log.warning("silent-accumulation pass failed: %s", e)
+
     if dry_run:
-        log.info("--- DRY RUN ---\n%s", content)
+        log.info("--- DRY RUN chip ---\n%s", content)
+        if accum_content:
+            log.info("--- DRY RUN silent-accumulation ---\n%s", accum_content)
         return 0
 
     webhook = os.environ.get("DISCORD_WEBHOOK_URL")
@@ -428,7 +440,155 @@ def run(entries: list[dict], limit: int, dry_run: bool, request_delay: float) ->
         log.error("DISCORD_WEBHOOK_URL not set; cannot post.")
         return 1
     post_to_discord(webhook, content)
+    if accum_content:
+        try:
+            post_to_discord(webhook, accum_content)
+        except Exception as e:
+            log.warning("silent-accumulation post failed: %s", e)
     return 0
+
+
+# ---------------------------------------------------------------------------
+# Silent accumulation — "悄悄收"
+# ---------------------------------------------------------------------------
+# Idea: scan the past N trading days of chip results. Tickers that appear
+# repeatedly (3+ days) with positive 主力買超 but haven't been picked up by
+# the momentum top 20 are candidates for "main player accumulating quietly".
+
+ACCUM_LOOKBACK_DAYS = 14
+ACCUM_MIN_APPEARANCES = 3
+ACCUM_MAX_AVG_MOM_SCORE = 75  # if momentum score is high they've already moved
+
+
+@dataclass
+class AccumulationCandidate:
+    ticker: str
+    name: str
+    appearances: int             # days within the lookback window
+    avg_main_lots: float         # average 主力買超 in 張
+    total_main_lots: float       # cumulative 主力買超 over the window
+    avg_rank: float              # lower = stronger chip presence
+    avg_concentration: float     # 0..1
+    avg_momentum_score: float | None  # latest momentum score, if any
+
+
+def _get_supabase():
+    url = os.environ.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_SERVICE_KEY")
+    if not url or not key:
+        return None
+    from supabase import create_client
+    return create_client(url, key)
+
+
+def compute_silent_accumulation(limit: int = 20) -> list[AccumulationCandidate]:
+    sb = _get_supabase()
+    if sb is None:
+        return []
+    from datetime import timedelta as _td
+    today = datetime.now(TZ_TW).date()
+    start = (today - _td(days=ACCUM_LOOKBACK_DAYS * 2)).isoformat()  # cover weekends
+
+    chip = sb.table("scanner_results").select("*") \
+        .eq("market", "tw").eq("scan_type", "chip") \
+        .gte("scan_date", start).order("scan_date", ascending=True).execute().data or []
+    mom = sb.table("scanner_results").select("ticker, scan_date, score") \
+        .eq("market", "tw").eq("scan_type", "momentum") \
+        .gte("scan_date", start).execute().data or []
+
+    # Bucket by ticker
+    by_tk: dict[str, list[dict]] = {}
+    for r in chip:
+        by_tk.setdefault(r["ticker"], []).append(r)
+    mom_score_by_tk: dict[str, list[float]] = {}
+    for r in mom:
+        if r.get("score") is not None:
+            mom_score_by_tk.setdefault(r["ticker"], []).append(float(r["score"]))
+
+    candidates: list[AccumulationCandidate] = []
+    for ticker, recs in by_tk.items():
+        if len(recs) < ACCUM_MIN_APPEARANCES:
+            continue
+        # Only count days where 主力 was POSITIVE — buying, not selling.
+        positives = [r for r in recs
+                     if (r.get("payload") or {}).get("main_player_net", 0) > 0]
+        if len(positives) < ACCUM_MIN_APPEARANCES:
+            continue
+        nets = [(r.get("payload") or {}).get("main_player_net", 0) for r in positives]
+        concs = [(r.get("payload") or {}).get("concentration", 0) for r in positives]
+        ranks = [r.get("rank", 99) for r in positives]
+        avg_mom = (sum(mom_score_by_tk.get(ticker, [])) / len(mom_score_by_tk[ticker])
+                   if mom_score_by_tk.get(ticker) else None)
+        if avg_mom is not None and avg_mom > ACCUM_MAX_AVG_MOM_SCORE:
+            continue  # already a momentum darling — not "silent"
+        candidates.append(AccumulationCandidate(
+            ticker=ticker,
+            name=positives[-1].get("name", ""),
+            appearances=len(positives),
+            avg_main_lots=sum(nets) / len(nets) / 1000,
+            total_main_lots=sum(nets) / 1000,
+            avg_rank=sum(ranks) / len(ranks),
+            avg_concentration=sum(concs) / len(concs),
+            avg_momentum_score=avg_mom,
+        ))
+    # Rank: more appearances first, then higher cumulative lots.
+    candidates.sort(key=lambda c: (c.appearances, c.total_main_lots), reverse=True)
+    return candidates[:limit]
+
+
+def build_accumulation_discord(cands: list[AccumulationCandidate]) -> str:
+    now = datetime.now(TZ_TW).strftime("%Y-%m-%d %H:%M %Z")
+    header = (
+        f"**🤫 台股 悄悄收 Top {len(cands)}  ·  {now}**\n"
+        f"_過去 {ACCUM_LOOKBACK_DAYS} 個交易日內 ≥ {ACCUM_MIN_APPEARANCES} 日主力買超，"
+        f"但尚未進入動能榜 — 主力默默收貨候選_"
+    )
+    if not cands:
+        return header + "\n\n_（今日沒有合格的悄悄收標的）_"
+    entries = []
+    for i, c in enumerate(cands, 1):
+        mom_part = f"動能 {c.avg_momentum_score:.0f}" if c.avg_momentum_score is not None else "未上動能榜"
+        avg_lots_str = f"{c.avg_main_lots:+.0f}" if abs(c.avg_main_lots) < 10000 else f"{c.avg_main_lots/10000:+.1f}萬"
+        total_lots_str = f"{c.total_main_lots:+.0f}" if abs(c.total_main_lots) < 10000 else f"{c.total_main_lots/10000:+.1f}萬"
+        entry = (
+            f"**{i:>2}. {c.ticker}** {c.name}\n"
+            f"     連 {c.appearances} 日上榜   平均主力 {avg_lots_str}張   "
+            f"累計 {total_lots_str}張   集中 {c.avg_concentration*100:.1f}%\n"
+            f"     ✦ {mom_part} · 平均 chip 排名 {c.avg_rank:.1f}"
+        )
+        entries.append(entry)
+    return header + "\n\n" + "\n\n".join(entries)
+
+
+def upsert_accumulation_results(cands: list[AccumulationCandidate]) -> None:
+    sb = _get_supabase()
+    if sb is None:
+        return
+    scan_date = datetime.now(TZ_TW).date().isoformat()
+    rows = []
+    for i, c in enumerate(cands, start=1):
+        rows.append({
+            "market": "tw",
+            "scan_type": "silent_accumulation",
+            "scan_date": scan_date,
+            "rank": i,
+            "ticker": c.ticker,
+            "name": c.name,
+            "score": float(c.appearances * 10 + min(c.total_main_lots / 1000, 100)),
+            "payload": {
+                "appearances": c.appearances,
+                "avg_main_lots": c.avg_main_lots,
+                "total_main_lots": c.total_main_lots,
+                "avg_rank": c.avg_rank,
+                "avg_concentration": c.avg_concentration,
+                "avg_momentum_score": c.avg_momentum_score,
+                "lookback_days": ACCUM_LOOKBACK_DAYS,
+            },
+        })
+    sb.table("scanner_results").delete().eq("market", "tw").eq("scan_type", "silent_accumulation").eq("scan_date", scan_date).execute()
+    if rows:
+        sb.table("scanner_results").upsert(rows, on_conflict="market,scan_type,scan_date,ticker").execute()
+    log.info("upserted %d silent-accumulation rows", len(rows))
 
 
 def upsert_chip_results(top: list[ChipMetrics]) -> None:
