@@ -965,7 +965,7 @@
     <button class="tutorial-close" onclick="this.parentElement.style.display='none';localStorage.setItem('hide_tutorial_dca','1')">✕</button>
     <div class="tutorial-title">💡 定期定額使用說明</div>
     • 快速輸入定期定額買入紀錄，每筆可設不同股票<br>
-    • 股票代號自動判別市場：純數字 → 台股，含英文 → 美股<br>
+    • 股票代號自動判別市場：數字開頭 → 台股（含 00631L 等），英文開頭 → 美股<br>
     • 手續費率會依市場自動帶入（台股 0.1425%，美股 0.01425%）<br>
     • 每個帳戶可設不同金額，勾選要參與的帳戶<br>
     • 送出後自動寫入對應市場的交易紀錄
@@ -1005,7 +1005,7 @@
   <!-- Original DCA quick entry -->
   <div class="add-form">
     <h2>🎯 新增定期定額批次（手動）</h2>
-    <div style="font-size:0.82em;color:#888;margin-bottom:12px">純數字代號 → 台股，含英文字母 → 美股，自動判讀市場與手續費率</div>
+    <div style="font-size:0.82em;color:#888;margin-bottom:12px">數字開頭 → 台股（含 00631L 等），英文開頭 → 美股，自動判讀市場與手續費率</div>
 
     <div id="dcaEntries"></div>
 
@@ -3289,8 +3289,11 @@ for (const [name, code] of Object.entries(twTickerMap)) {
 }
 
 function resolveTWTicker(ticker) {
-  const code = ticker.replace(/[^0-9]/g, '');
-  if (code && code.length >= 4) return code;
+  // 台股代碼為「4~6 位數字 + 可選 1~2 個英文字母尾碼」，例如 2330、00631L、2881A
+  // 注意：不可把字母尾碼刪掉，否則 00631L 會變成 00631（另一支股票）
+  const t = (ticker || '').trim().toUpperCase();
+  const m = t.match(/[0-9]{4,6}[A-Z]{0,2}/);
+  if (m) return m[0];
   return twTickerMap[ticker] || ticker;
 }
 
@@ -6396,10 +6399,10 @@ function deleteTWIncome(id) {
 }
 
 // ===== DCA Tab =====
-// 判斷股票代號是台股還是美股：純數字=台股，含英文=美股
+// 判斷股票代號是台股還是美股：數字開頭=台股（含 00631L、2881A 等帶字母尾碼者），英文開頭=美股
 function detectMarket(ticker) {
   if (!ticker) return 'tw';
-  return /^[0-9]+$/.test(ticker.trim()) ? 'tw' : 'us';
+  return /^[0-9]/.test(ticker.trim()) ? 'tw' : 'us';
 }
 function getDefaultFeeRate(market) {
   return market === 'us' ? 0.0001425 : 0.001425;
