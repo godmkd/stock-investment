@@ -7363,12 +7363,13 @@ function saveMortgageField(id) {
   const m = mortgages.find(x => x.id === id);
   if (!m) return;
   m.name = document.getElementById(`mort-name-${id}`)?.value || m.name;
-  const accIdEl = document.getElementById(`mort-account-${id}`);
-  if (accIdEl) {
-    m.accountId = accIdEl.value || '';
-    // 帳戶選擇時自動同步 owner
-    const linkedAcc = accounts.find(a => a.id === m.accountId);
-    m.owner = linkedAcc ? linkedAcc.name : '';
+  // 此下拉的 value 是「持有人字串」(見 render 處 mort-account-${m.id})，
+  // 不是 accountId。直接當 owner 讀取，與下拉自己的 onchange 保持一致，
+  // 否則編輯其他欄位時會把 owner 清成空字串（跳回不綁定）。
+  const ownerEl = document.getElementById(`mort-account-${id}`);
+  if (ownerEl) {
+    m.owner = ownerEl.value || '';
+    m.accountId = '';
   }
   m.propertyType = document.getElementById(`mort-proptype-${id}`)?.value || m.propertyType;
   m.totalPrice = parseFloat(document.getElementById(`mort-price-${id}`)?.value) || 0;
