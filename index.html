@@ -4871,6 +4871,9 @@ function renderOverviewTab() {
   if (summary.usNetWorth > 0) saveMonthlySnapshot('us', summary.usNetWorth, ovwOwner);
   if (summary.twNetWorth > 0) saveMonthlySnapshot('tw', summary.twNetWorth, ovwOwner);
   saveMonthlyExtras(summary, ovwOwner, filteredAccounts, !!currentOwnerFilter);
+  // Stash live net worth so the daily drill-down can overlay "today" with the
+  // live (intraday) value instead of the last close (matches summary card).
+  window._liveNetWorth = { us: summary.usNetWorth, tw: summary.twNetWorth };
   // Backfill past months' total_debt from debtSnapshots BEFORE rendering
   // the detailed table — loadOverviewTrends does this too but it runs async,
   // so without this call the table paints with stale data on first render.
@@ -8784,6 +8787,28 @@ async function loadOverviewTrends(range) {
       if (statusEl) statusEl.textContent = '修改貸款或質押後會自動記錄';
     }
 
+    // Stash daily net-worth series for the per-month daily drill-down in the
+    // detailed table. Past days = close (frozen); today = live (overlaid),
+    // same rule as the monthly current-month cell. Cloned so overlaying
+    // "today" never mutates the arrays the trend chart already rendered.
+    const _today = new Date().toISOString().slice(0, 10);
+    const _overlayToday = (series, live) => {
+      const out = (series || []).map(d => ({ ...d }));
+      if (live == null) return out;
+      const last = out[out.length - 1];
+      if (last && last.date === _today) last.value = live;
+      else out.push({ date: _today, value: live });
+      return out;
+    };
+    const _liveUS = window._liveNetWorth?.us, _liveTW = window._liveNetWorth?.tw;
+    const _liveCombined = (_liveUS != null || _liveTW != null)
+      ? (_liveUS || 0) * usdTwdRate + (_liveTW || 0) : null;
+    window._dailyNetWorth = {
+      us: _overlayToday(usDaily, _liveUS),
+      tw: _overlayToday(twDaily, _liveTW),
+      total: _overlayToday(combinedDaily, _liveCombined),
+    };
+
   } catch (err) {
     console.error('loadOverviewTrends error:', err);
   }
@@ -9383,7 +9408,7 @@ function renderDetailedMonthlySnapshotTable(usKey, twKey, owner) {
     const cls = v => plClass(v).replace('style="', '').replace('"','');
 
     return { ym: m, html: `<tr>
-      <td>${m}</td>
+      ${_dailyMonthCell('us', m)}
       ${dual2(usdNw, twdNw)}
       ${dual2(usdInv_, twdInv_)}
       ${dual2(usdProfit, twdProfit, cls(usdProfit))}
@@ -9391,7 +9416,7 @@ function renderDetailedMonthlySnapshotTable(usKey, twKey, owner) {
       ${td(rate != null ? rate.toFixed(3) : dash)}
       ${dual2(usdDiff, twdDiff, cls(usdDiff))}
       ${dualPct(usdDiffPct, twdDiffPct, cls(usdDiffPct))}
-    </tr>` };
+    </tr>` + _dailyDetailRow('us', m, 8) };
   });
   const usHdr = '<th>月份</th><th style="text-align:right">淨值<br><span style="font-size:0.78em;color:#888">(USD/TWD)</span></th><th style="text-align:right">投資金額<br><span style="font-size:0.78em;color:#888">(USD/TWD)</span></th><th style="text-align:right">獲利<br><span style="font-size:0.78em;color:#888">(USD/TWD)</span></th><th style="text-align:right">投報率<br><span style="font-size:0.78em;color:#888">(USD/TWD)</span></th><th style="text-align:right">USD/TWD</th><th style="text-align:right">月差額<br><span style="font-size:0.78em;color:#888">(USD/TWD)</span></th><th style="text-align:right">月損益率<br><span style="font-size:0.78em;color:#888">(USD/TWD)</span></th>';
 
@@ -9404,14 +9429,14 @@ function renderDetailedMonthlySnapshotTable(usKey, twKey, owner) {
     const allNW = months.map(mm => twData[mm]);
     const [diff, diffPctVal] = diffPct(allNW, i);
     return { ym: m, html: `<tr>
-      <td>${m}</td>
+      ${_dailyMonthCell('tw', m)}
       ${td(nw != null ? fmtTWD(nw) : dash)}
       ${td(inv != null ? fmtTWD(inv) : dash)}
       ${td(profit != null ? fmtTWD(profit) : dash, plClass(profit).replace('style="', '').replace('"',''))}
       ${td(roi != null ? fmtPct(roi) : dash, plClass(roi).replace('style="', '').replace('"',''))}
       ${td(diff != null ? fmtTWD(diff) : dash, plClass(diff).replace('style="', '').replace('"',''))}
       ${td(diffPctVal != null ? fmtPct(diffPctVal) : dash, plClass(diffPctVal).replace('style="', '').replace('"',''))}
-    </tr>` };
+    </tr>` + _dailyDetailRow('tw', m, 7) };
   });
   const twHdr = '<th>月份</th><th style="text-align:right">淨值(TWD)</th><th style="text-align:right">投資金額(TWD)</th><th style="text-align:right">獲利(TWD)</th><th style="text-align:right">投報率</th><th style="text-align:right">月差額</th><th style="text-align:right">月損益率</th>';
 
@@ -9433,14 +9458,14 @@ function renderDetailedMonthlySnapshotTable(usKey, twKey, owner) {
     const roi = (profit != null && inv > 0) ? profit / inv * 100 : null;
     const [diff, diffPctVal] = diffPct(totalNW, i);
     return { ym: m, html: `<tr>
-      <td>${m}</td>
+      ${_dailyMonthCell('total', m)}
       ${td(inv != null ? fmtTWD(inv) : dash)}
       ${td(profit != null ? fmtTWD(profit) : dash, plClass(profit).replace('style="', '').replace('"',''))}
       ${td(nw != null ? fmtTWD(nw) : dash)}
       ${td(roi != null ? fmtPct(roi) : dash, plClass(roi).replace('style="', '').replace('"',''))}
       ${td(diff != null ? fmtTWD(diff) : dash, plClass(diff).replace('style="', '').replace('"',''))}
       ${td(diffPctVal != null ? fmtPct(diffPctVal) : dash, plClass(diffPctVal).replace('style="', '').replace('"',''))}
-    </tr>` };
+    </tr>` + _dailyDetailRow('total', m, 7) };
   });
   const totalHdr = '<th>月份</th><th style="text-align:right">總投資</th><th style="text-align:right">總獲利</th><th style="text-align:right">總金額</th><th style="text-align:right">投報率</th><th style="text-align:right">月差額</th><th style="text-align:right">月損益率</th>';
 
@@ -9497,6 +9522,52 @@ window.setMonthlyDetailTab = function(id) {
   const btnRow = document.querySelector('[data-monthly-tab]')?.previousElementSibling;
   // Cheap approach: just re-render the section. Owner+filter unchanged so renderOverviewTab.
   if (typeof renderOverviewTab === 'function') renderOverviewTab();
+};
+
+// ===== Per-month daily drill-down =====
+// A month row's first cell toggles a hidden row holding that month's daily
+// net worth (from window._dailyNetWorth, built in loadOverviewTrends).
+function _dailyMonthCell(market, ym) {
+  return `<td style="cursor:pointer;user-select:none" onclick="window._toggleDailyDetail('${market}','${ym}',this)"><span class="daily-caret" style="display:inline-block;width:12px;color:#888">▸</span>${ym}</td>`;
+}
+function _dailyDetailRow(market, ym, colspan) {
+  return `<tr id="daily-${market}-${ym}" style="display:none"><td colspan="${colspan}" style="padding:0;border:none"><div style="padding:4px 10px 8px;background:rgba(167,139,250,0.05)"></div></td></tr>`;
+}
+window._toggleDailyDetail = function(market, ym, cellEl) {
+  const row = document.getElementById(`daily-${market}-${ym}`);
+  if (!row) return;
+  const opening = row.style.display === 'none';
+  row.style.display = opening ? '' : 'none';
+  const caret = cellEl && cellEl.querySelector('.daily-caret');
+  if (caret) caret.textContent = opening ? '▾' : '▸';
+  if (opening) {
+    // (Re)fill lazily — the daily series may have loaded after first paint.
+    const box = row.querySelector('div');
+    if (box && !row.dataset.filled) {
+      const html = window._buildDailyRows(market, ym);
+      box.innerHTML = html;
+      if (!html.includes('尚無')) row.dataset.filled = '1';
+    }
+  }
+};
+window._buildDailyRows = function(market, ym) {
+  const series = (window._dailyNetWorth && window._dailyNetWorth[market]) || [];
+  const rows = series.filter(d => d && d.date && d.date.slice(0, 7) === ym)
+                     .sort((a, b) => b.date.localeCompare(a.date));
+  if (rows.length === 0) return '<div style="color:#888;font-size:0.82em;padding:4px">尚無每日資料（切換到較長的趨勢區間以載入更多天）</div>';
+  const fmtFn = market === 'us' ? fmt : fmtTWD;
+  // Day-over-day diff (computed chronologically)
+  const chrono = [...rows].reverse();
+  const diffMap = {};
+  for (let i = 1; i < chrono.length; i++) diffMap[chrono[i].date] = chrono[i].value - chrono[i - 1].value;
+  const today = new Date().toISOString().slice(0, 10);
+  const body = rows.map(d => {
+    const diff = diffMap[d.date];
+    const dcls = diff == null ? '' : (diff >= 0 ? 'color:#34d399' : 'color:#f87171');
+    const tag = d.date === today ? ' <span style="color:#fbbf24;font-size:0.8em">即時</span>' : '';
+    return `<tr><td style="padding:2px 8px;color:#bbb">${d.date}${tag}</td><td style="text-align:right;padding:2px 8px">${fmtFn(d.value)}</td><td style="text-align:right;padding:2px 8px;${dcls}">${diff == null ? '--' : (diff >= 0 ? '+' : '') + fmtFn(diff)}</td></tr>`;
+  }).join('');
+  return `<table style="width:100%;font-size:0.8em"><thead><tr><th style="text-align:left;padding:2px 8px;color:#888;font-weight:500">日期</th><th style="text-align:right;padding:2px 8px;color:#888;font-weight:500">淨值</th><th style="text-align:right;padding:2px 8px;color:#888;font-weight:500">日差額</th></tr></thead><tbody>${body}</tbody></table>`;
 };
 
 function renderCombinedMonthlySnapshotTable(usKey, twKey, title) {
