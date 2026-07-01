@@ -4868,12 +4868,14 @@ function renderOverviewTab() {
   const titleText = currentOwnerFilter ? '👤 ' + currentOwnerFilter : '';
   // Save per-owner snapshots from overview tab
   const ovwOwner = currentOwnerFilter || null;
-  // Only write the live current-month value while the market is OPEN. When
-  // closed (pre-open / after-close / weekend) the last session's close already
-  // holds via the trend sync, so we don't overwrite it with a stale/pre-market
-  // live quote nor create a not-yet-traded future month.
-  if (summary.usNetWorth > 0 && isMarketOpen('us')) saveMonthlySnapshot('us', summary.usNetWorth, ovwOwner);
-  if (summary.twNetWorth > 0 && isMarketOpen('tw')) saveMonthlySnapshot('tw', summary.twNetWorth, ovwOwner);
+  // Write the live value into the current *session* month (effective date on
+  // the market clock — see marketTodayStr, so pre-open lands on the last
+  // trading day, not a future month). This is the SAME value shown on the
+  // summary card, so the latest monthly/daily row matches it — every day, not
+  // just at month-end. pruneFutureMonths() removes any not-yet-traded future
+  // month so a pre-open live value never spawns a phantom next-month row.
+  if (summary.usNetWorth > 0) saveMonthlySnapshot('us', summary.usNetWorth, ovwOwner);
+  if (summary.twNetWorth > 0) saveMonthlySnapshot('tw', summary.twNetWorth, ovwOwner);
   saveMonthlyExtras(summary, ovwOwner, filteredAccounts, !!currentOwnerFilter);
   pruneFutureMonths(); // clear any premature future-month rows before rendering
   // Stash live net worth + net funded so the daily drill-down can overlay
@@ -8829,11 +8831,12 @@ async function loadOverviewTrends(range) {
       else arr.push(entry);
       return arr;
     };
-    // Overlay the live "today" value only while that market's session is OPEN;
-    // when closed the last row stays at the official close for the last session.
-    if (_liveUS != null && isMarketOpen('us')) _setToday(_usEnriched, _todayUS, { date: _todayUS, value: _liveUS, invested: _liveUSInv, rate: _r, valueTWD: _liveUS * _r });
-    if (_liveTW != null && isMarketOpen('tw')) _setToday(_twEnriched, _todayTW, { date: _todayTW, value: _liveTW, invested: _liveTWInv });
-    if ((_liveUS != null || _liveTW != null) && isMarketOpen('total')) _setToday(_totalEnriched, _todayTW, { date: _todayTW, value: (_liveUS || 0) * _r + (_liveTW || 0), invested: (_liveUSInv || 0) * _r + (_liveTWInv || 0) });
+    // Overlay the live value onto the current session's row (effective date on
+    // the market clock), so the latest daily row equals the summary card —
+    // every day, not just month-end. Past sessions keep their close.
+    if (_liveUS != null) _setToday(_usEnriched, _todayUS, { date: _todayUS, value: _liveUS, invested: _liveUSInv, rate: _r, valueTWD: _liveUS * _r });
+    if (_liveTW != null) _setToday(_twEnriched, _todayTW, { date: _todayTW, value: _liveTW, invested: _liveTWInv });
+    if (_liveUS != null || _liveTW != null) _setToday(_totalEnriched, _todayTW, { date: _todayTW, value: (_liveUS || 0) * _r + (_liveTW || 0), invested: (_liveUSInv || 0) * _r + (_liveTWInv || 0) });
 
     window._dailyNetWorth = { us: _usEnriched, tw: _twEnriched, total: _totalEnriched };
     pruneFutureMonths(); // also prune after the async trend sync settles
@@ -9235,16 +9238,6 @@ function _tzParts(tz) {
   return o; // {year,month,day,hour,minute}
 }
 function _marketTz(market) { return market === 'us' ? 'America/New_York' : 'Asia/Taipei'; }
-// Is the market's regular session in progress right now?
-function isMarketOpen(market) {
-  if (market === 'total') return isMarketOpen('us') || isMarketOpen('tw');
-  const p = _tzParts(_marketTz(market));
-  const dow = new Date(Date.UTC(+p.year, +p.month - 1, +p.day, 12)).getUTCDay();
-  if (dow === 0 || dow === 6) return false; // weekend
-  const hm = +p.hour * 60 + +p.minute;
-  return market === 'us' ? (hm >= 570 && hm < 960)   // 09:30–16:00 ET
-                         : (hm >= 540 && hm < 810);  // 09:00–13:30 Taipei
-}
 // Effective trading-session date on the market's clock (YYYY-MM-DD): today once
 // the session has opened; otherwise the previous trading day (skips weekends).
 function marketTodayStr(market) {
@@ -9667,9 +9660,9 @@ window._buildDailyRows = function(market, ym) {
   const chrono = [...rows].reverse();
   const diffMap = {};
   for (let i = 1; i < chrono.length; i++) diffMap[chrono[i].date] = chrono[i].value - chrono[i - 1].value;
-  // "即時" only while the market is open (the overlaid live row); otherwise the
-  // latest row is the last session's close and gets no live tag.
-  const liveToday = isMarketOpen(market) ? marketTodayStr(market) : null;
+  // The current session's row (effective date) carries the live value that
+  // matches the summary card, so it gets the 即時 tag.
+  const liveToday = marketTodayStr(market);
   // ROI = (net worth − net funded) / net funded. Rate-invariant, so the same
   // % holds in USD or TWD; shown once per row.
   const roiOf = d => (d.invested != null && d.invested > 0) ? (d.value - d.invested) / d.invested * 100 : null;
