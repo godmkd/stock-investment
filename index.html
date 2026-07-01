@@ -2348,7 +2348,7 @@ function renderThemeList() {
   el.innerHTML = list.map(t => {
     const active = t.id === activeThemeId;
     return `<div onclick="selectTheme('${t.id}')" style="padding:8px 10px;border-radius:6px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;${active ? 'background:rgba(52,211,153,0.15);border-left:3px solid #34d399' : 'background:rgba(255,255,255,0.03)'}">
-      <span style="font-size:0.9em;color:${active ? '#fff' : '#bbb'}">${t.name}</span>
+      <span style="font-size:0.9em;color:${active ? '#fff' : '#bbb'}">${escapeHtml(t.name)}</span>
       <span style="font-size:0.75em;color:#666">${t.tickers.length}</span>
     </div>`;
   }).join('');
@@ -2617,7 +2617,7 @@ function renderThemeDetail() {
   const peersBtn = themeMarket === 'us'
     ? `<button class="btn btn-secondary" style="padding:4px 10px;font-size:0.82em" onclick="findPeers()">🔍 找 peers</button>` : '';
   let html = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
-    <h3 style="font-size:1.05em;margin:0">${t.name} <span style="color:#666;font-size:0.8em">(${t.tickers.length})</span></h3>
+    <h3 style="font-size:1.05em;margin:0">${escapeHtml(t.name)} <span style="color:#666;font-size:0.8em">(${t.tickers.length})</span></h3>
     <div style="display:flex;gap:6px">
       ${peersBtn}
       <button class="btn btn-secondary" style="padding:4px 10px;font-size:0.82em" onclick="renameTheme()">改名</button>
@@ -3087,6 +3087,11 @@ function todayStr() {
 function fmt(n) { return '$' + (n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 function fmtTWD(n) { return 'NT$' + Math.round(n || 0).toLocaleString('en-US'); }
 function fmtTWD2(n) { return 'NT$' + (n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+// Escape user free-text (theme names, notes) before putting it into innerHTML,
+// so characters like < > & don't break the layout or inject markup.
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
 function fmtPct(n) { return (n >= 0 ? '+' : '') + (n || 0).toFixed(2) + '%'; }
 // 台股手續費計算: 四捨五入, 最低1元
 function calcTWFee(amount, feeRate) {
@@ -5938,7 +5943,7 @@ function renderStockSections(containerId, analysis, trades, market) {
             <td>${priceCell}</td>
             <td>${amtCell}</td>
             <td>${fee > 0 ? fmtAmt(fee) : '-'}</td>
-            <td class="muted" title="${noteText.replace(/"/g,'&quot;')}" style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${noteText || '-'}</td>
+            <td class="muted" title="${escapeHtml(noteText)}" style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(noteText) || '-'}</td>
             <td><button class="btn-danger" onclick="deleteTrade('${market}','${t.id}')" style="padding:2px 6px;font-size:0.8em;border-radius:4px">✕</button></td>
           </tr>`;
         }).join('')
@@ -5958,7 +5963,7 @@ function renderStockSections(containerId, analysis, trades, market) {
             <td>${priceCell}</td>
             <td>${amtCell}</td>
             <td>${fee > 0 ? fmtAmt(fee) : '-'}</td>
-            <td class="muted" title="${noteText.replace(/"/g,'&quot;')}" style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${noteText || '-'}</td>
+            <td class="muted" title="${escapeHtml(noteText)}" style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(noteText) || '-'}</td>
             <td><button class="btn-danger" onclick="deleteTrade('${market}','${t.id}')" style="padding:2px 6px;font-size:0.8em;border-radius:4px">✕</button></td>
           </tr>`;
         }).join('')
@@ -8412,7 +8417,8 @@ async function fetchFXHistory(startDate, endDate) {
 async function fetchStockHistory(market, tickers, startDate, endDate) {
   const table = market === 'us' ? 'us_stock_history' : 'tw_stock_history';
   const tickerCol = market === 'us' ? 'ticker' : 'stock_code';
-  const cacheKey = `${market}_${tickers.sort().join(',')}_${startDate}_${endDate || ''}`;
+  // Clone before sort — sort() is in-place and would mutate the caller's array.
+  const cacheKey = `${market}_${[...tickers].sort().join(',')}_${startDate}_${endDate || ''}`;
   if (_trendCache[cacheKey]) return _trendCache[cacheKey];
 
   // Supabase server caps responses at 1000 rows regardless of client
