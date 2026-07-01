@@ -4868,9 +4868,14 @@ function renderOverviewTab() {
   const titleText = currentOwnerFilter ? '👤 ' + currentOwnerFilter : '';
   // Save per-owner snapshots from overview tab
   const ovwOwner = currentOwnerFilter || null;
-  if (summary.usNetWorth > 0) saveMonthlySnapshot('us', summary.usNetWorth, ovwOwner);
-  if (summary.twNetWorth > 0) saveMonthlySnapshot('tw', summary.twNetWorth, ovwOwner);
+  // Only write the live current-month value while the market is OPEN. When
+  // closed (pre-open / after-close / weekend) the last session's close already
+  // holds via the trend sync, so we don't overwrite it with a stale/pre-market
+  // live quote nor create a not-yet-traded future month.
+  if (summary.usNetWorth > 0 && isMarketOpen('us')) saveMonthlySnapshot('us', summary.usNetWorth, ovwOwner);
+  if (summary.twNetWorth > 0 && isMarketOpen('tw')) saveMonthlySnapshot('tw', summary.twNetWorth, ovwOwner);
   saveMonthlyExtras(summary, ovwOwner, filteredAccounts, !!currentOwnerFilter);
+  pruneFutureMonths(); // clear any premature future-month rows before rendering
   // Stash live net worth + net funded so the daily drill-down can overlay
   // "today" with the live (intraday) value instead of the last close
   // (matches summary card), and compute today's live ROI.
@@ -8824,11 +8829,14 @@ async function loadOverviewTrends(range) {
       else arr.push(entry);
       return arr;
     };
-    if (_liveUS != null) _setToday(_usEnriched, _todayUS, { date: _todayUS, value: _liveUS, invested: _liveUSInv, rate: _r, valueTWD: _liveUS * _r });
-    if (_liveTW != null) _setToday(_twEnriched, _todayTW, { date: _todayTW, value: _liveTW, invested: _liveTWInv });
-    if (_liveUS != null || _liveTW != null) _setToday(_totalEnriched, _todayTW, { date: _todayTW, value: (_liveUS || 0) * _r + (_liveTW || 0), invested: (_liveUSInv || 0) * _r + (_liveTWInv || 0) });
+    // Overlay the live "today" value only while that market's session is OPEN;
+    // when closed the last row stays at the official close for the last session.
+    if (_liveUS != null && isMarketOpen('us')) _setToday(_usEnriched, _todayUS, { date: _todayUS, value: _liveUS, invested: _liveUSInv, rate: _r, valueTWD: _liveUS * _r });
+    if (_liveTW != null && isMarketOpen('tw')) _setToday(_twEnriched, _todayTW, { date: _todayTW, value: _liveTW, invested: _liveTWInv });
+    if ((_liveUS != null || _liveTW != null) && isMarketOpen('total')) _setToday(_totalEnriched, _todayTW, { date: _todayTW, value: (_liveUS || 0) * _r + (_liveTW || 0), invested: (_liveUSInv || 0) * _r + (_liveTWInv || 0) });
 
     window._dailyNetWorth = { us: _usEnriched, tw: _twEnriched, total: _totalEnriched };
+    pruneFutureMonths(); // also prune after the async trend sync settles
 
   } catch (err) {
     console.error('loadOverviewTrends error:', err);
@@ -9212,16 +9220,70 @@ function createDoughnutChart(canvasId, labels, data, colors) {
 let monthlySnapshots = JSON.parse(localStorage.getItem('monthly_snapshots') || '{}');
 // Format: { "us": { "2026-04": 12345.67, ... }, "tw": { "2026-04": 999999, ... } }
 
-// YYYY-MM-DD "today" on a market's clock. US markets use US Eastern time so
-// the month/day boundary tracks the NY trading session; the browser runs on
-// Taiwan time (UTC+8, ~12h ahead of NY), which would otherwise roll US figures
-// into the next month a day early at a month boundary. Non-US uses local time.
+// ---- Market clock helpers ----
+// The browser runs on Taiwan time (UTC+8). Each market settles a day/month on
+// its own exchange clock: US = US Eastern (regular session 09:30–16:00),
+// TW = Taipei (09:00–13:30). Before a market opens (or on weekends) the live
+// value still reflects the PRIOR session, so figures are attributed to the last
+// trading day — never to a not-yet-traded future date/month (e.g. a 2026-07 US
+// row appearing at 00:xx ET on 7/1 before the US market has opened).
+function _tzParts(tz) {
+  const f = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
+  const o = {};
+  for (const p of f.formatToParts(new Date())) if (p.type !== 'literal') o[p.type] = p.value;
+  if (o.hour === '24') o.hour = '00'; // some engines emit 24 for midnight
+  return o; // {year,month,day,hour,minute}
+}
+function _marketTz(market) { return market === 'us' ? 'America/New_York' : 'Asia/Taipei'; }
+// Is the market's regular session in progress right now?
+function isMarketOpen(market) {
+  if (market === 'total') return isMarketOpen('us') || isMarketOpen('tw');
+  const p = _tzParts(_marketTz(market));
+  const dow = new Date(Date.UTC(+p.year, +p.month - 1, +p.day, 12)).getUTCDay();
+  if (dow === 0 || dow === 6) return false; // weekend
+  const hm = +p.hour * 60 + +p.minute;
+  return market === 'us' ? (hm >= 570 && hm < 960)   // 09:30–16:00 ET
+                         : (hm >= 540 && hm < 810);  // 09:00–13:30 Taipei
+}
+// Effective trading-session date on the market's clock (YYYY-MM-DD): today once
+// the session has opened; otherwise the previous trading day (skips weekends).
 function marketTodayStr(market) {
-  const opts = market === 'us' ? { timeZone: 'America/New_York' } : undefined;
-  return new Date().toLocaleDateString('en-CA', opts); // en-CA => YYYY-MM-DD
+  const p = _tzParts(_marketTz(market === 'total' ? 'tw' : market));
+  const openMin = (market === 'us') ? 570 : 540;
+  const hm = +p.hour * 60 + +p.minute;
+  const dt = new Date(Date.UTC(+p.year, +p.month - 1, +p.day, 12));
+  const rollToPrevWeekday = () => { do { dt.setUTCDate(dt.getUTCDate() - 1); } while (dt.getUTCDay() === 0 || dt.getUTCDay() === 6); };
+  const dow = dt.getUTCDay();
+  if (dow === 0 || dow === 6) rollToPrevWeekday();  // weekend -> last Friday
+  else if (hm < openMin) rollToPrevWeekday();        // pre-open -> prev trading day
+  return dt.toISOString().slice(0, 10);
 }
 function currentMonthKey(market) {
   return marketTodayStr(market).slice(0, 7);
+}
+// Drop month buckets beyond a market's effective current-session month — e.g. a
+// "2026-07" US row created (by an older build or a pre-open render) before the
+// US market opened on 7/1. Safe: ym can only exceed cur when it's premature.
+function _monthKeyFamily(key) {
+  if (key === 'rate') return 'us';
+  if (key === 'us' || key.startsWith('us_')) return 'us';
+  if (key === 'tw' || key.startsWith('tw_')) return 'tw';
+  if (key.startsWith('total_debt')) return 'tw';
+  return null;
+}
+function pruneFutureMonths() {
+  const cur = { us: currentMonthKey('us'), tw: currentMonthKey('tw') };
+  let changed = false;
+  for (const key of Object.keys(monthlySnapshots)) {
+    const fam = _monthKeyFamily(key);
+    if (!fam) continue;
+    const bucket = monthlySnapshots[key];
+    if (!bucket || typeof bucket !== 'object') continue;
+    for (const ym of Object.keys(bucket)) {
+      if (ym > cur[fam]) { delete bucket[ym]; changed = true; }
+    }
+  }
+  if (changed) { try { localStorage.setItem('monthly_snapshots', JSON.stringify(monthlySnapshots)); } catch {} }
 }
 
 function saveMonthlySnapshot(market, netWorth, owner) {
@@ -9605,7 +9667,9 @@ window._buildDailyRows = function(market, ym) {
   const chrono = [...rows].reverse();
   const diffMap = {};
   for (let i = 1; i < chrono.length; i++) diffMap[chrono[i].date] = chrono[i].value - chrono[i - 1].value;
-  const today = marketTodayStr(market); // US = US Eastern, else local (TW)
+  // "即時" only while the market is open (the overlaid live row); otherwise the
+  // latest row is the last session's close and gets no live tag.
+  const liveToday = isMarketOpen(market) ? marketTodayStr(market) : null;
   // ROI = (net worth − net funded) / net funded. Rate-invariant, so the same
   // % holds in USD or TWD; shown once per row.
   const roiOf = d => (d.invested != null && d.invested > 0) ? (d.value - d.invested) / d.invested * 100 : null;
@@ -9615,7 +9679,7 @@ window._buildDailyRows = function(market, ym) {
     const dcls = diff == null ? '' : (diff >= 0 ? 'color:#34d399' : 'color:#f87171');
     const roi = roiOf(d);
     const rcls = roi == null ? '' : (roi >= 0 ? 'color:#34d399' : 'color:#f87171');
-    const tag = d.date === today ? ' <span style="color:#fbbf24;font-size:0.8em">即時</span>' : '';
+    const tag = (liveToday && d.date === liveToday) ? ' <span style="color:#fbbf24;font-size:0.8em">即時</span>' : '';
     const nwCell = isUS
       ? `<td style="text-align:right;padding:2px 8px">${fmt(d.value)}<div style="font-size:0.8em;color:#888">${d.valueTWD != null ? fmtTWD(d.valueTWD) : '--'}</div></td>`
       : `<td style="text-align:right;padding:2px 8px">${fmtTWD(d.value)}</td>`;
