@@ -8749,21 +8749,6 @@ async function loadOverviewTrends(range) {
     const twDaily = accs.length ? buildHistoricalNetWorth(accs, 'tw', twHistory, 'stock_code', applyPct, twSplits)
                                 : buildDailyNetWorth(twHistory, twHoldings, twCash, 'stock_code');
 
-    // Render US chart
-    if (usTickers.length === 0) {
-      document.getElementById('ovTrendStatus_us').textContent = '無美股持股';
-    } else {
-      renderTrendLine('ovTrend_us', usDaily, '#3b82f6', fmt, 'ovTrendStatus_us');
-      if (usDaily.length === 0) document.getElementById('ovTrendStatus_us').textContent = `無歷史資料 (${usTickers.join(',')})`;
-    }
-    // Render TW chart
-    if (twTickers.length === 0) {
-      document.getElementById('ovTrendStatus_tw').textContent = '無台股持股';
-    } else {
-      renderTrendLine('ovTrend_tw', twDaily, '#f97316', fmtTWD, 'ovTrendStatus_tw');
-      if (twDaily.length === 0) document.getElementById('ovTrendStatus_tw').textContent = `無歷史資料 (${twTickers.join(',')})`;
-    }
-
     // Build combined (TWD) — merge US × historical_daily_rate + TW.
     // Daily rate from fx_rates table (carry forward last known rate to
     // weekend/holiday dates that aren't in fx data).
@@ -8784,39 +8769,11 @@ async function loadOverviewTrends(range) {
       const r = lastRate ?? monthRateMap[date.slice(0,7)] ?? usdTwdRate;
       return { date, value: lastUs * r + lastTw, invested: lastUsInv * r + lastTwInv, rate: r };
     });
-    renderTrendLine('ovTrend_combined', combinedDaily, '#a78bfa', fmtTWD, 'ovTrendStatus_combined');
 
-    // Sync monthly snapshots from trend data so the table matches the chart.
-    // Take each month's LAST data point: current month = today's value
-    // (keeps updating); past months = month-end value (auto frozen).
-    syncMonthlySnapshotsFromTrend(usDaily, 'us');
-    syncMonthlySnapshotsFromTrend(twDaily, 'tw');
-    // Backfill historical USD/TWD rate per month from fx_rates (Yahoo).
-    // Past months without a stored rate fall back to today's rate
-    // otherwise — making every row look identical.
-    syncMonthlyRatesFromFx(fxMap);
-    // Backfill past months' debt from debtSnapshots (which records every
-    // mortgage/pledge change). Without this, 負債 column only shows current
-    // month — past months stay "--" even though the debt existed back then.
-    syncMonthlyDebtFromSnapshots();
-
-    // Render debt trend from snapshots
-    const debtData = (debtSnapshots.total || [])
-      .filter(s => s.date >= startStr && s.date <= endStr)
-      .map(s => ({ date: s.date, value: s.amount }));
-    if (debtData.length > 0) {
-      renderTrendLine('ovTrend_debt', debtData, '#f87171', fmtTWD, 'ovTrendStatus_debt');
-    } else {
-      const statusEl = document.getElementById('ovTrendStatus_debt');
-      if (statusEl) statusEl.textContent = '修改貸款或質押後會自動記錄';
-    }
-
-    // ---- Enrich + stash daily series for the per-month daily drill-down ----
-    // Past days = close (frozen); today = live (overlaid), same rule as the
-    // monthly current-month cell. Each entry carries `invested` (net funded)
-    // for per-day ROI; US entries also carry that day's close FX rate and the
-    // TWD net worth (USD nw × that day's close rate). Arrays are fresh clones
-    // so overlaying "today" never mutates what the trend chart rendered.
+    // ---- Enrich + overlay the live "today" value BEFORE rendering/sync, so the
+    // trend chart, the daily drill-down AND the monthly table all use the SAME
+    // series: past days = close (frozen); current session = live (matching the
+    // summary card). US entries also carry that day's close FX rate + TWD value.
     const _rateByDate = {};
     combinedDaily.forEach(d => { _rateByDate[d.date] = d.rate; });
     const _usEnriched = usDaily.map(d => {
@@ -8840,12 +8797,47 @@ async function loadOverviewTrends(range) {
       else arr.push(entry);
       return arr;
     };
-    // Overlay the live value onto the current session's row (effective date on
-    // the market clock), so the latest daily row equals the summary card —
-    // every day, not just month-end. Past sessions keep their close.
     if (_liveUS != null) _setToday(_usEnriched, _todayUS, { date: _todayUS, value: _liveUS, invested: _liveUSInv, rate: _r, valueTWD: _liveUS * _r });
     if (_liveTW != null) _setToday(_twEnriched, _todayTW, { date: _todayTW, value: _liveTW, invested: _liveTWInv });
     if (_liveUS != null || _liveTW != null) _setToday(_totalEnriched, _todayTW, { date: _todayTW, value: (_liveUS || 0) * _r + (_liveTW || 0), invested: (_liveUSInv || 0) * _r + (_liveTWInv || 0) });
+
+    // Render charts from the OVERLAID series so the trend's latest point equals
+    // the monthly table / summary card (same time-settlement rule).
+    if (usTickers.length === 0) {
+      document.getElementById('ovTrendStatus_us').textContent = '無美股持股';
+    } else {
+      renderTrendLine('ovTrend_us', _usEnriched, '#3b82f6', fmt, 'ovTrendStatus_us');
+      if (usDaily.length === 0) document.getElementById('ovTrendStatus_us').textContent = `無歷史資料 (${usTickers.join(',')})`;
+    }
+    if (twTickers.length === 0) {
+      document.getElementById('ovTrendStatus_tw').textContent = '無台股持股';
+    } else {
+      renderTrendLine('ovTrend_tw', _twEnriched, '#f97316', fmtTWD, 'ovTrendStatus_tw');
+      if (twDaily.length === 0) document.getElementById('ovTrendStatus_tw').textContent = `無歷史資料 (${twTickers.join(',')})`;
+    }
+    renderTrendLine('ovTrend_combined', _totalEnriched, '#a78bfa', fmtTWD, 'ovTrendStatus_combined');
+
+    // Sync monthly snapshots from the SAME overlaid series, so the table's
+    // current-session value matches the chart's latest point (current month =
+    // live; past months = month-end close, auto-frozen).
+    syncMonthlySnapshotsFromTrend(_usEnriched, 'us');
+    syncMonthlySnapshotsFromTrend(_twEnriched, 'tw');
+    // Backfill historical USD/TWD rate per month from fx_rates (Yahoo).
+    syncMonthlyRatesFromFx(fxMap);
+    // Backfill past months' debt from debtSnapshots (which records every
+    // mortgage/pledge change). Without this, 負債 column only shows current month.
+    syncMonthlyDebtFromSnapshots();
+
+    // Render debt trend from snapshots
+    const debtData = (debtSnapshots.total || [])
+      .filter(s => s.date >= startStr && s.date <= endStr)
+      .map(s => ({ date: s.date, value: s.amount }));
+    if (debtData.length > 0) {
+      renderTrendLine('ovTrend_debt', debtData, '#f87171', fmtTWD, 'ovTrendStatus_debt');
+    } else {
+      const statusEl = document.getElementById('ovTrendStatus_debt');
+      if (statusEl) statusEl.textContent = '修改貸款或質押後會自動記錄';
+    }
 
     window._dailyNetWorth = { us: _usEnriched, tw: _twEnriched, total: _totalEnriched };
     pruneFutureMonths(); // also prune after the async trend sync settles
