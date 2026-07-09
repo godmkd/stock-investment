@@ -9217,7 +9217,9 @@ function createDoughnutChart(canvasId, labels, data, colors) {
                 const v = Number(ds.data[i]) || 0;
                 const pct = tot > 0 ? (v / tot * 100).toFixed(2) : '0.00';
                 const color = Array.isArray(ds.backgroundColor) ? ds.backgroundColor[i] : ds.backgroundColor;
-                return { text: `${lab} ${pct}%`, fillStyle: color, strokeStyle: color, lineWidth: 0, hidden: false, index: i };
+                // fontColor keeps the legend text visible on the dark theme — a
+                // custom generateLabels otherwise drops the labels.color default.
+                return { text: `${lab} ${pct}%`, fillStyle: color, strokeStyle: color, fontColor: '#ccc', lineWidth: 0, hidden: false, index: i };
               });
             }
           }
@@ -9507,14 +9509,28 @@ function renderMonthlySnapshotTable(snapshotKey, fmtFn, title) {
 }
 
 // ===== Detailed monthly table — 4 sections =====
-function renderDetailedMonthlySnapshotTable(usKey, twKey, owner) {
-  const usData = monthlySnapshots[usKey] || {};
-  const twData = monthlySnapshots[twKey] || {};
-  const usInv = monthlySnapshots[owner ? 'us_invested_' + owner : 'us_invested'] || {};
-  const usInvTWD = monthlySnapshots[owner ? 'us_invested_twd_' + owner : 'us_invested_twd'] || {};
-  const twInv = monthlySnapshots[owner ? 'tw_invested_' + owner : 'tw_invested'] || {};
-  const rateMap = monthlySnapshots.rate || {};
-  const debtMap = monthlySnapshots[owner ? 'total_debt_' + owner : 'total_debt'] || {};
+function renderDetailedMonthlySnapshotTable(usKey, twKey, owner, period) {
+  period = period || window._detailPeriod || 'month';
+  const isYear = period === 'year';
+  const perLabel = isYear ? '年' : '月';
+  let usData = monthlySnapshots[usKey] || {};
+  let twData = monthlySnapshots[twKey] || {};
+  let usInv = monthlySnapshots[owner ? 'us_invested_' + owner : 'us_invested'] || {};
+  let usInvTWD = monthlySnapshots[owner ? 'us_invested_twd_' + owner : 'us_invested_twd'] || {};
+  let twInv = monthlySnapshots[owner ? 'tw_invested_' + owner : 'tw_invested'] || {};
+  let rateMap = monthlySnapshots.rate || {};
+  let debtMap = monthlySnapshots[owner ? 'total_debt_' + owner : 'total_debt'] || {};
+
+  // Yearly view: aggregate each month-keyed map into a year-keyed one holding
+  // that year's LAST month value (year-end), mirroring how the monthly view
+  // takes each month's month-end value. Uses the already-loaded monthly data —
+  // no extra fetch or time-range needed.
+  if (isYear) {
+    const toYearMap = m => { const o = {}; for (const k of Object.keys(m).sort()) o[k.slice(0, 4)] = m[k]; return o; };
+    usData = toYearMap(usData); twData = toYearMap(twData); usInv = toYearMap(usInv);
+    usInvTWD = toYearMap(usInvTWD); twInv = toYearMap(twInv); debtMap = toYearMap(debtMap);
+    rateMap = toYearMap(rateMap);
+  }
 
   const months = [...new Set([
     ...Object.keys(usData), ...Object.keys(twData),
@@ -9550,7 +9566,7 @@ function renderDetailedMonthlySnapshotTable(usKey, twKey, owner) {
   // past months use that month's frozen snapshot rate.
   // US section: current month follows the US clock (matches the US net-worth
   // month), so at a month boundary the live rate override lands on the right row.
-  const _curMonth = currentMonthKey('us');
+  const _curMonth = isYear ? currentMonthKey('us').slice(0, 4) : currentMonthKey('us');
   const ratePerMonth = months.map(m => m === _curMonth ? usdTwdRate : (rateMap[m] || usdTwdRate));
   const twdNwArr = months.map((_, i) => usdNwArr[i] != null ? usdNwArr[i] * ratePerMonth[i] : null);
   // For invested TWD, use the actual NTD paid in (already snapshotted)
@@ -9581,7 +9597,7 @@ function renderDetailedMonthlySnapshotTable(usKey, twKey, owner) {
     const cls = v => plClass(v).replace('style="', '').replace('"','');
 
     return { ym: m, html: `<tr>
-      ${_dailyMonthCell('us', m)}
+      ${isYear ? `<td>${m}</td>` : _dailyMonthCell('us', m)}
       ${dual2(usdNw, twdNw)}
       ${dual2(usdInv_, twdInv_)}
       ${dual2(usdProfit, twdProfit, cls(usdProfit))}
@@ -9589,9 +9605,9 @@ function renderDetailedMonthlySnapshotTable(usKey, twKey, owner) {
       ${td(rate != null ? rate.toFixed(3) : dash)}
       ${dual2(usdDiff, twdDiff, cls(usdDiff))}
       ${dualPct(usdDiffPct, twdDiffPct, cls(usdDiffPct))}
-    </tr>` + _dailyDetailRow('us', m, 8) };
+    </tr>` + (isYear ? '' : _dailyDetailRow('us', m, 8)) };
   });
-  const usHdr = '<th>月份</th><th style="text-align:right">淨值<br><span style="font-size:0.78em;color:#888">(USD/TWD)</span></th><th style="text-align:right">投資金額<br><span style="font-size:0.78em;color:#888">(USD/TWD)</span></th><th style="text-align:right">獲利<br><span style="font-size:0.78em;color:#888">(USD/TWD)</span></th><th style="text-align:right">投報率<br><span style="font-size:0.78em;color:#888">(USD/TWD)</span></th><th style="text-align:right">USD/TWD</th><th style="text-align:right">月差額<br><span style="font-size:0.78em;color:#888">(USD/TWD)</span></th><th style="text-align:right">月損益率<br><span style="font-size:0.78em;color:#888">(USD/TWD)</span></th>';
+  const usHdr = `<th>${perLabel}份</th><th style="text-align:right">淨值<br><span style="font-size:0.78em;color:#888">(USD/TWD)</span></th><th style="text-align:right">投資金額<br><span style="font-size:0.78em;color:#888">(USD/TWD)</span></th><th style="text-align:right">獲利<br><span style="font-size:0.78em;color:#888">(USD/TWD)</span></th><th style="text-align:right">投報率<br><span style="font-size:0.78em;color:#888">(USD/TWD)</span></th><th style="text-align:right">USD/TWD</th><th style="text-align:right">${perLabel}差額<br><span style="font-size:0.78em;color:#888">(USD/TWD)</span></th><th style="text-align:right">${perLabel}損益率<br><span style="font-size:0.78em;color:#888">(USD/TWD)</span></th>`;
 
   // ===== TW section =====
   const twItems = months.map((m, i) => {
@@ -9602,16 +9618,16 @@ function renderDetailedMonthlySnapshotTable(usKey, twKey, owner) {
     const allNW = months.map(mm => twData[mm]);
     const [diff, diffPctVal] = diffPct(allNW, i);
     return { ym: m, html: `<tr>
-      ${_dailyMonthCell('tw', m)}
+      ${isYear ? `<td>${m}</td>` : _dailyMonthCell('tw', m)}
       ${td(nw != null ? fmtTWD(nw) : dash)}
       ${td(inv != null ? fmtTWD(inv) : dash)}
       ${td(profit != null ? fmtTWD(profit) : dash, plClass(profit).replace('style="', '').replace('"',''))}
       ${td(roi != null ? fmtPct(roi) : dash, plClass(roi).replace('style="', '').replace('"',''))}
       ${td(diff != null ? fmtTWD(diff) : dash, plClass(diff).replace('style="', '').replace('"',''))}
       ${td(diffPctVal != null ? fmtPct(diffPctVal) : dash, plClass(diffPctVal).replace('style="', '').replace('"',''))}
-    </tr>` + _dailyDetailRow('tw', m, 7) };
+    </tr>` + (isYear ? '' : _dailyDetailRow('tw', m, 7)) };
   });
-  const twHdr = '<th>月份</th><th style="text-align:right">淨值(TWD)</th><th style="text-align:right">投資金額(TWD)</th><th style="text-align:right">獲利(TWD)</th><th style="text-align:right">投報率</th><th style="text-align:right">月差額</th><th style="text-align:right">月損益率</th>';
+  const twHdr = `<th>${perLabel}份</th><th style="text-align:right">淨值(TWD)</th><th style="text-align:right">投資金額(TWD)</th><th style="text-align:right">獲利(TWD)</th><th style="text-align:right">投報率</th><th style="text-align:right">${perLabel}差額</th><th style="text-align:right">${perLabel}損益率</th>`;
 
   // ===== Total section (in TWD) =====
   // Carry each market's last-known value forward across months. US and TW cross
@@ -9642,16 +9658,16 @@ function renderDetailedMonthlySnapshotTable(usKey, twKey, owner) {
     const roi = (profit != null && inv > 0) ? profit / inv * 100 : null;
     const [diff, diffPctVal] = diffPct(totalNW, i);
     return { ym: m, html: `<tr>
-      ${_dailyMonthCell('total', m)}
+      ${isYear ? `<td>${m}</td>` : _dailyMonthCell('total', m)}
       ${td(inv != null ? fmtTWD(inv) : dash)}
       ${td(profit != null ? fmtTWD(profit) : dash, plClass(profit).replace('style="', '').replace('"',''))}
       ${td(nw != null ? fmtTWD(nw) : dash)}
       ${td(roi != null ? fmtPct(roi) : dash, plClass(roi).replace('style="', '').replace('"',''))}
       ${td(diff != null ? fmtTWD(diff) : dash, plClass(diff).replace('style="', '').replace('"',''))}
       ${td(diffPctVal != null ? fmtPct(diffPctVal) : dash, plClass(diffPctVal).replace('style="', '').replace('"',''))}
-    </tr>` + _dailyDetailRow('total', m, 7) };
+    </tr>` + (isYear ? '' : _dailyDetailRow('total', m, 7)) };
   });
-  const totalHdr = '<th>月份</th><th style="text-align:right">總投資</th><th style="text-align:right">總獲利</th><th style="text-align:right">總金額</th><th style="text-align:right">投報率</th><th style="text-align:right">月差額</th><th style="text-align:right">月損益率</th>';
+  const totalHdr = `<th>${perLabel}份</th><th style="text-align:right">總投資</th><th style="text-align:right">總獲利</th><th style="text-align:right">總金額</th><th style="text-align:right">投報率</th><th style="text-align:right">${perLabel}差額</th><th style="text-align:right">${perLabel}損益率</th>`;
 
   // ===== Debt section =====
   const debtVals = months.map(m => debtMap[m]);
@@ -9667,7 +9683,7 @@ function renderDetailedMonthlySnapshotTable(usKey, twKey, owner) {
       ${td(diffPctVal != null ? fmtPct(diffPctVal) : dash, debtCls(diffPctVal))}
     </tr>` };
   });
-  const debtHdr = '<th>月份</th><th style="text-align:right">總負債</th><th style="text-align:right">月差額</th><th style="text-align:right">月差額%</th>';
+  const debtHdr = `<th>${perLabel}份</th><th style="text-align:right">總負債</th><th style="text-align:right">${perLabel}差額</th><th style="text-align:right">${perLabel}差額%</th>`;
 
   // Active tab persists across re-renders
   const activeTab = window._monthlyDetailTab || 'us';
@@ -9683,18 +9699,42 @@ function renderDetailedMonthlySnapshotTable(usKey, twKey, owner) {
     return `<button onclick="setMonthlyDetailTab('${t.id}')" style="padding:6px 14px;border:1px solid ${active?'#a78bfa':'rgba(255,255,255,0.15)'};background:${active?'rgba(167,139,250,0.2)':'rgba(255,255,255,0.04)'};color:${active?'#a78bfa':'#aaa'};border-radius:6px;cursor:pointer;font-size:0.88em;font-weight:${active?'700':'500'}">${t.label}</button>`;
   }).join('');
 
+  // Year view renders a flat table (one row per year); month view keeps the
+  // per-year collapsible groups with daily drill-down.
+  const renderBody = (items, header) => items.length === 0
+    ? '<div style="padding:14px;color:#888;text-align:center">尚無資料</div>'
+    : (isYear
+        ? `<div style="overflow-x:auto;margin-top:8px"><table style="width:100%;font-size:0.85em;min-width:600px"><thead><tr>${header}</tr></thead><tbody>${items.map(it => it.html).join('')}</tbody></table></div>`
+        : yearGrouped(items, header, 600));
+
   const panels = tabs.map(t => `
     <div data-monthly-tab="${t.id}" style="display:${t.id===activeTab?'block':'none'}">
-      ${t.items.length === 0 ? '<div style="padding:14px;color:#888;text-align:center">尚無資料</div>' : yearGrouped(t.items, t.header, 600)}
+      ${renderBody(t.items, t.header)}
     </div>`).join('');
+
+  // 月 / 年 period toggle
+  const periodBtns = [['month', '月'], ['year', '年']].map(([id, lab]) => {
+    const active = period === id;
+    return `<button onclick="setDetailPeriod('${id}')" style="padding:6px 14px;border:1px solid ${active?'#34d399':'rgba(255,255,255,0.15)'};background:${active?'rgba(52,211,153,0.18)':'rgba(255,255,255,0.04)'};color:${active?'#34d399':'#aaa'};border-radius:6px;cursor:pointer;font-size:0.88em;font-weight:${active?'700':'500'}">${lab}</button>`;
+  }).join('');
 
   return `
     <div style="margin-top:16px">
-      <h3 style="color:#a78bfa;margin-bottom:8px">📊 每月詳細紀錄</h3>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${tabBtns}</div>
+      <h3 style="color:#a78bfa;margin-bottom:8px">📊 投資詳細記錄</h3>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;align-items:center">
+        ${periodBtns}
+        <span style="width:1px;height:20px;background:rgba(255,255,255,0.15);margin:0 4px"></span>
+        ${tabBtns}
+      </div>
       ${panels}
     </div>`;
 }
+
+// Period switcher (月 / 年). Year aggregates the same monthly data — no fetch.
+window.setDetailPeriod = function(p) {
+  window._detailPeriod = p;
+  if (typeof renderOverviewTab === 'function') renderOverviewTab();
+};
 
 // Tab switcher: hides all panels, shows selected; updates button styles in place
 window.setMonthlyDetailTab = function(id) {
