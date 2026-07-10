@@ -9696,7 +9696,7 @@ function renderDetailedMonthlySnapshotTable(usKey, twKey, owner, period) {
 
   const tabBtns = tabs.map(t => {
     const active = t.id === activeTab;
-    return `<button onclick="setMonthlyDetailTab('${t.id}')" style="padding:6px 14px;border:1px solid ${active?'#a78bfa':'rgba(255,255,255,0.15)'};background:${active?'rgba(167,139,250,0.2)':'rgba(255,255,255,0.04)'};color:${active?'#a78bfa':'#aaa'};border-radius:6px;cursor:pointer;font-size:0.88em;font-weight:${active?'700':'500'}">${t.label}</button>`;
+    return `<button onclick="setMonthlyDetailTab('${t.id}')" style="flex:0 0 auto;white-space:nowrap;padding:6px 11px;border:1px solid ${active?'#a78bfa':'rgba(255,255,255,0.15)'};background:${active?'rgba(167,139,250,0.2)':'rgba(255,255,255,0.04)'};color:${active?'#a78bfa':'#aaa'};border-radius:6px;cursor:pointer;font-size:0.88em;font-weight:${active?'700':'500'}">${t.label}</button>`;
   }).join('');
 
   // Year view renders a flat table (one row per year); month view keeps the
@@ -9715,15 +9715,15 @@ function renderDetailedMonthlySnapshotTable(usKey, twKey, owner, period) {
   // 月 / 年 period toggle
   const periodBtns = [['month', '月'], ['year', '年']].map(([id, lab]) => {
     const active = period === id;
-    return `<button onclick="setDetailPeriod('${id}')" style="padding:6px 14px;border:1px solid ${active?'#34d399':'rgba(255,255,255,0.15)'};background:${active?'rgba(52,211,153,0.18)':'rgba(255,255,255,0.04)'};color:${active?'#34d399':'#aaa'};border-radius:6px;cursor:pointer;font-size:0.88em;font-weight:${active?'700':'500'}">${lab}</button>`;
+    return `<button onclick="setDetailPeriod('${id}')" style="flex:0 0 auto;white-space:nowrap;padding:6px 11px;border:1px solid ${active?'#34d399':'rgba(255,255,255,0.15)'};background:${active?'rgba(52,211,153,0.18)':'rgba(255,255,255,0.04)'};color:${active?'#34d399':'#aaa'};border-radius:6px;cursor:pointer;font-size:0.88em;font-weight:${active?'700':'500'}">${lab}</button>`;
   }).join('');
 
   return `
     <div style="margin-top:16px">
       <h3 style="color:#a78bfa;margin-bottom:8px">📊 投資詳細記錄</h3>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;align-items:center">
+      <div style="display:flex;gap:4px;flex-wrap:nowrap;overflow-x:auto;margin-bottom:8px;align-items:center;-webkit-overflow-scrolling:touch">
         ${periodBtns}
-        <span style="width:1px;height:20px;background:rgba(255,255,255,0.15);margin:0 4px"></span>
+        <span style="flex:0 0 auto;width:1px;height:20px;background:rgba(255,255,255,0.15);margin:0 4px"></span>
         ${tabBtns}
       </div>
       ${panels}
