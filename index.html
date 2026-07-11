@@ -9777,15 +9777,18 @@ window._toggleDailyDetail = function(market, ym, cellEl) {
 };
 window._buildDailyRows = function(market, ym) {
   const series = (window._dailyNetWorth && window._dailyNetWorth[market]) || [];
-  const rows = series.filter(d => d && d.date && d.date.slice(0, 7) === ym)
-                     .sort((a, b) => b.date.localeCompare(a.date));
+  // Day-over-day diff is computed across the FULL series (not just this month),
+  // so each month's FIRST day diffs against the previous month's LAST day
+  // instead of showing "--".
+  const full = series.filter(d => d && d.date && d.value != null)
+                     .sort((a, b) => a.date.localeCompare(b.date));
+  const diffMap = {};
+  for (let i = 1; i < full.length; i++) diffMap[full[i].date] = full[i].value - full[i - 1].value;
+  const rows = full.filter(d => d.date.slice(0, 7) === ym)
+                   .sort((a, b) => b.date.localeCompare(a.date));
   if (rows.length === 0) return '<div style="color:#888;font-size:0.82em;padding:4px">尚無每日資料（切換到較長的趨勢區間以載入更多天）</div>';
   const isUS = market === 'us';
   const fmtFn = isUS ? fmt : fmtTWD;
-  // Day-over-day diff (computed chronologically)
-  const chrono = [...rows].reverse();
-  const diffMap = {};
-  for (let i = 1; i < chrono.length; i++) diffMap[chrono[i].date] = chrono[i].value - chrono[i - 1].value;
   // The current session's row (effective date) carries the live value that
   // matches the summary card, so it gets the 即時 tag.
   const liveToday = marketTodayStr(market);
