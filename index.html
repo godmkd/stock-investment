@@ -3222,20 +3222,34 @@ async function refreshUSPrices() {
   const key = localStorage.getItem('us_finnhub_key') || localStorage.getItem('finnhub_key');
   if (!key) { setStatus('請先設定 Finnhub API Key'); alert('請先設定 Finnhub API Key'); return; }
 
-  // 更新所有帳戶的美股股票
+  // 更新所有帳戶的美股股票。現有持股（股數>0）優先更新，已清空的舊持股排後面，
+  // 這樣在 Finnhub 免費版逐檔限速下，最重要的持股會最先拿到新價。
   const allTickers = new Set();
+  const heldTickers = new Set();
   for (const acc of accounts) {
     const trades = getAccountData(acc.id, 'us', 'trades');
     trades.forEach(t => allTickers.add(t.ticker));
+    // Currently-held tickers for this account (shares > 0, not closed).
+    const income = getAccountData(acc.id, 'us', 'income');
+    for (const s of analyzeStocks(trades, 'us', income)) {
+      if (!s.isClosed && s.shares > 0.0001) heldTickers.add(s.ticker);
+    }
   }
-  const tickers = [...allTickers];
+  // Order: held first (rendered next to the summary), then the rest.
+  const held = [...allTickers].filter(t => heldTickers.has(normalizeTickerKey(t, 'us')));
+  const rest = [...allTickers].filter(t => !heldTickers.has(normalizeTickerKey(t, 'us')));
+  const tickers = [...held, ...rest];
   if (tickers.length === 0) { setStatus('沒有股票需要更新'); alert('沒有股票需要更新'); return; }
 
   let success = 0;
   for (let i = 0; i < tickers.length; i++) {
-    setStatus(`更新中... ${i + 1}/${tickers.length} (${tickers[i]})`);
+    const heldTag = i < held.length ? '持股' : '觀察';
+    setStatus(`更新中... ${i + 1}/${tickers.length} (${tickers[i]} · ${heldTag})`);
     const ok = await fetchPrice(tickers[i]);
     if (ok) success++;
+    // Refresh the UI as soon as all held stocks are done, so current holdings
+    // show fresh prices without waiting for the closed/old positions.
+    if (i === held.length - 1) { renderUSTab(); renderOverviewTab(); }
     if (i < tickers.length - 1) await new Promise(r => setTimeout(r, 300));
   }
   setStatus(`最後更新：${new Date().toLocaleString('zh-TW')} (${success}/${tickers.length} 檔)`);
