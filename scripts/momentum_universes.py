@@ -141,7 +141,7 @@ TW_ETF_ACTIVE = [
 ]
 
 
-def _fetch_json_with_retry(url: str, headers: dict, timeout: int = 30, retries: int = 3,
+def _fetch_json_with_retry(url: str, headers: dict, timeout: int = 30, retries: int = 5,
                            backoff: float = 2.0) -> list | dict:
     """GET a JSON endpoint with retries on empty body / decode errors.
 
@@ -532,13 +532,32 @@ def build_us_universe() -> list[dict]:
 
     Order matters: we keep S&P 500 / Nasdaq 100 categories over Russell 2000
     (a large/mid-cap stock should be tagged as S&P 500, not Russell 2000).
+
+    Each source is best-effort: an upstream change to one scraped page (e.g.
+    Wikipedia dropping the Nasdaq-100 constituents table) logs a warning and is
+    skipped rather than aborting the whole run. We only raise if the combined
+    result is implausibly small (all/most sources down).
     """
+    def _safe(fn):
+        try:
+            return fn()
+        except Exception as e:
+            log.warning("US universe source %s failed, skipping: %s: %s",
+                        fn.__name__, type(e).__name__, e)
+            return []
+
     items: list[dict] = []
-    items.extend(fetch_sp500())
-    items.extend(fetch_nasdaq100())
-    items.extend(build_us_etfs())
-    items.extend(build_us_adrs())
-    items.extend(fetch_us_broad_market())
+    # Order preserved for category precedence (dedup keeps first seen).
+    items.extend(_safe(fetch_sp500))
+    items.extend(_safe(fetch_nasdaq100))
+    items.extend(_safe(build_us_etfs))
+    items.extend(_safe(build_us_adrs))
+    items.extend(_safe(fetch_us_broad_market))
+    # Sanity floor: a healthy union is thousands of symbols. If we got almost
+    # nothing, the important sources are all down — fail so the scanner posts
+    # its "資料源失敗" skip notice instead of silently scanning a stub.
+    if len(items) < 100:
+        raise RuntimeError(f"US universe collapsed to {len(items)} symbols — upstream sources down")
     seen = set()
     deduped = []
     for it in items:
