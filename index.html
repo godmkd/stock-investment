@@ -9954,6 +9954,165 @@ function getAccountGroupHoldings(accList) {
 
 let _lastOwnerGroups = null;
 // ===== Merged Portfolio (合併總覽) =====
+// ===== Per-stock daily attribution (合併總覽下鑽) =====
+// Reconstruct ONE stock's per-day series from the trade ledger + historical
+// close prices, and split each day's change into:
+//   🟦 買賣 (buySell) = actual cash moved on trades that day, incl fee
+//        (= −calcTradeCashImpact, so feeIncluded / TW floor / adjust all honoured)
+//   🟩 資本利得 (gain) = ΔMarketValue − trade value at 成交價 (no fee)
+//        i.e. pure price move, incl the intraday move on shares bought that day
+//   🟨 配息 (dividend) = that day's income matched to this ticker
+// 當日合計(不含息) = gain − fee ; 當日合計(含息) = gain + dividend − fee.
+// Mirrors buildHistoricalNetWorth's split un-adjustment. Owner scope follows the
+// caller's filteredAccounts/applyPct (i.e. the top 持有人篩選 — option A).
+function buildPerStockDailySeries(filteredAccounts, market, tickerKey, history, splitsMap, applyPct) {
+  if (!history || history.length === 0) return [];
+  splitsMap = splitsMap || {};
+  const normalize = market === 'tw'
+    ? (t => (typeof resolveTWTicker === 'function' ? resolveTWTicker(t) : t))
+    : (t => t);
+  const key = normalize(tickerKey);
+  function priceFactor(date) {
+    const splits = splitsMap[key];
+    if (!splits || !splits.length) return 1;
+    let f = 1;
+    for (const s of splits) if (s.date > date) f *= s.ratio;
+    return f;
+  }
+  // Collect this ticker's trades + dividends (income matched by source/ticker).
+  const trades = [];
+  const divByDate = {};
+  for (const acc of filteredAccounts) {
+    const pct = applyPct ? (acc.ownership_pct ?? 100) / 100 : 1;
+    for (const t of getAccountData(acc.id, market, 'trades')) {
+      if (!t.date || normalize(t.ticker) !== key) continue;
+      trades.push({ ...t, _pct: pct, _type: String(t.type || '').toLowerCase(), _shares: Number(t.shares) || 0 });
+    }
+    for (const i of getAccountData(acc.id, market, 'income')) {
+      if (!i.date) continue;
+      const src = i.source || i.ticker || '';
+      if (src === tickerKey || normalize(src) === key) {
+        divByDate[i.date] = (divByDate[i.date] || 0) + (Number(i.amount) || 0) * pct;
+      }
+    }
+  }
+  trades.sort((a, b) => a.date.localeCompare(b.date));
+
+  const tickerField = market === 'us' ? 'ticker' : 'stock_code';
+  const closeByDate = {};
+  for (const row of history) {
+    if (normalize(row[tickerField]) !== key) continue;
+    closeByDate[row.trade_date] = parseFloat(row.close_price) || 0;
+  }
+  const dates = Object.keys(closeByDate).sort();
+  if (!dates.length) return [];
+
+  let shares = 0, ti = 0, prevMv = null;
+  // Pre-seed holdings from trades strictly BEFORE the first history date so day 1
+  // doesn't get credited with all historical purchases.
+  const startDate = dates[0];
+  while (ti < trades.length && trades[ti].date < startDate) {
+    const t = trades[ti];
+    const sh = t._shares * t._pct;
+    if (t._type === 'buy' || t._type === 'transfer_in') shares += sh;
+    else if (t._type === 'sell' || t._type === 'transfer_out') shares -= sh;
+    ti++;
+  }
+
+  const out = [];
+  for (const date of dates) {
+    let dayBuySell = 0, dayMVflow = 0, dayFee = 0;
+    while (ti < trades.length && trades[ti].date <= date) {
+      const t = trades[ti];
+      const sh = t._shares * t._pct;
+      if (t._type === 'buy' || t._type === 'transfer_in') shares += sh;
+      else if (t._type === 'sell' || t._type === 'transfer_out') shares -= sh;
+      if (t._type === 'buy' || t._type === 'sell') {
+        dayBuySell += -calcTradeCashImpact(t, market) * t._pct;      // cash, incl fee (買 + / 賣 −)
+        const mvf = (t._shares * (Number(t.price) || 0)) * t._pct;   // value at 成交價, no fee
+        dayMVflow += (t._type === 'buy' ? mvf : -mvf);
+        dayFee += (t.feeIncluded ? 0 : (Number(t.fee) || 0)) * t._pct;
+      } else {
+        // transfers are neutral: value at trade/market price → no fake gain
+        const px = (t.price != null ? Number(t.price) : (closeByDate[date] || 0) * priceFactor(date));
+        const mvf = (t._shares * px) * t._pct;
+        dayMVflow += (t._type === 'transfer_in' ? mvf : -mvf);
+      }
+      ti++;
+    }
+    const closeEff = (closeByDate[date] || 0) * priceFactor(date);
+    const mv = shares * closeEff;
+    const dMv = prevMv == null ? null : (mv - prevMv);
+    const gain = dMv == null ? null : (dMv - dayMVflow);
+    const dividend = divByDate[date] || 0;
+    const pnlEx = gain == null ? null : (gain - dayFee);
+    const pnlInc = gain == null ? null : (gain + dividend - dayFee);
+    out.push({ date, close: closeEff, shares, mv, buySell: dayBuySell, gain, dividend, fee: dayFee, pnlEx, pnlInc });
+    prevMv = mv;
+  }
+  return out;
+}
+
+window._stockDailyCache = window._stockDailyCache || {};
+window._toggleStockDaily = async function(safeKey, market, ticker, headerEl) {
+  const box = document.getElementById('stkdaily_' + safeKey);
+  if (!box) return;
+  const arrow = headerEl && headerEl.querySelector('.stk-arrow');
+  const opening = box.style.display === 'none';
+  box.style.display = opening ? 'block' : 'none';
+  if (arrow) arrow.style.transform = opening ? 'rotate(90deg)' : '';
+  if (!opening || box.dataset.loaded) return;
+  box.innerHTML = '<div style="padding:10px;color:#888;font-size:.85em">載入中…</div>';
+  try {
+    const filteredAccounts = currentOwnerFilter ? accounts.filter(a => a.owner === currentOwnerFilter) : accounts;
+    const applyPct = !!currentOwnerFilter;
+    const norm = (market === 'tw' && typeof resolveTWTicker === 'function') ? resolveTWTicker(ticker) : ticker;
+    // Range: from this ticker's first trade to today.
+    let firstDate = null;
+    for (const acc of filteredAccounts) {
+      for (const t of getAccountData(acc.id, market, 'trades')) {
+        const tk = (market === 'tw' && typeof resolveTWTicker === 'function') ? resolveTWTicker(t.ticker) : t.ticker;
+        if (tk === norm && t.date && (!firstDate || t.date < firstDate)) firstDate = t.date;
+      }
+    }
+    const endStr = new Date().toISOString().slice(0, 10);
+    const startStr = firstDate || new Date(Date.now() - 365 * 86400000).toISOString().slice(0, 10);
+    const [history, splits] = await Promise.all([
+      fetchStockHistory(market, [norm], startStr, endStr),
+      fetchSplits(market),
+    ]);
+    const series = buildPerStockDailySeries(filteredAccounts, market, ticker, history, splits, applyPct);
+    box.innerHTML = window._renderStockDailyTable(series, market);
+    box.dataset.loaded = '1';
+  } catch (err) {
+    box.innerHTML = '<div style="padding:10px;color:#f87171;font-size:.85em">載入失敗：' + err.message + '</div>';
+  }
+};
+
+window._renderStockDailyTable = function(series, market) {
+  if (!series || !series.length) return '<div style="padding:10px;color:#888;font-size:.85em">無每日資料</div>';
+  const isUS = market === 'us';
+  const f = isUS ? fmt : fmtTWD;
+  const hasDiv = series.some(r => r.dividend);
+  const rows = series.filter(r => Math.abs(r.shares) > 0.0001 || r.buySell || r.dividend).slice().reverse();
+  const g = (v) => v == null ? '' : (v >= 0 ? 'color:#34d399' : 'color:#f87171');
+  const signed = (v, color) => `<td style="text-align:right;padding:3px 8px;${color || ''}">${(v == null || v === 0) ? '—' : (v > 0 ? '+' : '') + f(v)}</td>`;
+  const th = (t, extra) => `<th style="padding:3px 8px;${extra || 'text-align:right'};color:#888">${t}</th>`;
+  const head = `<tr style="font-size:.72em">${th('日期','text-align:left')}${th('收盤')}${th('持股')}${th('個股淨值')}${th('🟦買賣')}${th('🟩資本利得')}${hasDiv ? th('🟨配息') : ''}${th('合計' + (hasDiv ? '(不含息)' : ''))}${hasDiv ? th('合計(含息)') : ''}</tr>`;
+  const body = rows.map(r => `<tr style="font-size:.78em">
+    <td style="padding:3px 8px;color:#bbb;white-space:nowrap">${r.date}</td>
+    <td style="text-align:right;padding:3px 8px">${f(r.close)}</td>
+    <td style="text-align:right;padding:3px 8px">${r.shares.toLocaleString('en-US', { maximumFractionDigits: 4 })}</td>
+    <td style="text-align:right;padding:3px 8px;color:#fbbf24">${f(r.mv)}</td>
+    ${signed(r.buySell)}
+    ${signed(r.gain, g(r.gain))}
+    ${hasDiv ? `<td style="text-align:right;padding:3px 8px;${r.dividend ? 'color:#fbbf24' : ''}">${r.dividend ? '+' + f(r.dividend) : '—'}</td>` : ''}
+    ${signed(r.pnlEx, g(r.pnlEx))}
+    ${hasDiv ? signed(r.pnlInc, g(r.pnlInc)) : ''}
+  </tr>`).join('');
+  return `<table style="width:100%;min-width:${hasDiv ? 700 : 540}px;border-collapse:collapse"><thead>${head}</thead><tbody>${body}</tbody></table>`;
+};
+
 function renderMergedPortfolio() {
   const section = document.getElementById('mergedPortfolioSection');
   if (!section) return;
@@ -10022,32 +10181,38 @@ function renderMergedPortfolio() {
         </div>
         <div style="font-size:0.85em;color:#fbbf24;font-weight:600">${fmtTWD(totalWeightedValueTWD)}</div>
       </div>
-      <div id="mergedPortfolioPanel" style="overflow-x:auto;display:none">
-        <table>
-          <thead><tr><th>股票</th><th>市場</th><th>總股數</th><th>加權股數</th><th>原始市值</th><th>加權市值</th><th>加權市值 TWD</th><th>佔比</th><th>帳戶明細</th></tr></thead>
-          <tbody>`;
+      <div id="mergedPortfolioPanel" style="display:none;padding:8px">`;
 
   for (const e of entries) {
     const flag = e.market === 'us' ? '🇺🇸' : '🇹🇼';
-    const currency = e.market === 'us' ? 'USD' : 'TWD';
     const fmtFn = e.market === 'us' ? fmt : fmtTWD;
     const pctOfTotal = totalWeightedValueTWD > 0 ? (e.weightedValueTWD / totalWeightedValueTWD * 100).toFixed(2) : '0.00';
-    const accDetails = e.accounts.map(a => `${a.name}${a.bank ? '(' + a.bank + ')' : ''}: ${a.shares}股 x${a.pct}%`).join('<br>');
+    const safeKey = (e.ticker + '_' + e.market).replace(/[^A-Za-z0-9_]/g, '_');
+    const tkArg = e.ticker.replace(/'/g, "\\'");
+    // One account per line.
+    const accLines = e.accounts.map(a => `<div>${a.name}${a.bank ? '（' + a.bank + '）' : ''}：${a.shares.toLocaleString('en-US', {maximumFractionDigits: 4})} 股 ×${a.pct}%</div>`).join('');
 
-    html += `<tr>
-      <td><span style="color:#67e8f9;font-weight:600">${e.ticker}</span></td>
-      <td>${flag}</td>
-      <td>${e.totalShares.toLocaleString('en-US', {maximumFractionDigits: 4})}</td>
-      <td>${e.totalWeightedShares.toLocaleString('en-US', {maximumFractionDigits: 4})}</td>
-      <td>${fmtFn(e.marketValue)}</td>
-      <td>${fmtFn(e.weightedValue)}</td>
-      <td style="color:#fbbf24">${fmtTWD(e.weightedValueTWD)}</td>
-      <td>${pctOfTotal}%</td>
-      <td style="font-size:0.75em;color:#888">${accDetails}</td>
-    </tr>`;
+    html += `
+      <div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.08);border-radius:8px;margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;cursor:pointer;user-select:none" onclick="window._toggleStockDaily('${safeKey}','${e.market}','${tkArg}',this)">
+          <span style="display:flex;align-items:center;gap:8px;white-space:nowrap">
+            <span class="stk-arrow" style="display:inline-block;transition:transform .2s;color:#888">▸</span>
+            <span style="color:#67e8f9;font-weight:700">${flag} ${e.ticker}</span>
+          </span>
+          <span style="color:#fbbf24;font-weight:600;font-size:.9em">${pctOfTotal}%</span>
+        </div>
+        <div style="padding:0 12px 10px;font-size:.82em;color:#aaa">
+          <div>持股 ${e.totalShares.toLocaleString('en-US', {maximumFractionDigits: 4})} · 加權市值 <span style="color:#fbbf24">${fmtTWD(e.weightedValueTWD)}</span> <span style="color:#666">(原始 ${fmtFn(e.marketValue)})</span></div>
+          <div style="margin-top:6px">
+            <div style="color:#777;margin-bottom:2px">帳戶明細</div>
+            <div style="color:#999;line-height:1.7">${accLines}</div>
+          </div>
+        </div>
+        <div id="stkdaily_${safeKey}" style="display:none;overflow-x:auto;padding:0 12px 12px"></div>
+      </div>`;
   }
 
-  html += `</tbody></table>
+  html += `
       </div>
     </div>`;
 
