@@ -748,7 +748,7 @@
             </div>
             <div class="form-group" style="flex:1 1 80px">
               <label>類型</label>
-              <select id="twQiTradeType"><option value="buy">買入</option><option value="sell">賣出</option></select>
+              <select id="twQiTradeType" onchange="twQiToggleTax()"><option value="buy">買入</option><option value="sell">賣出</option></select>
             </div>
             <div class="form-group" style="flex:0 0 120px">
               <label>手續費率 ‰</label>
@@ -758,12 +758,16 @@
               <label>手續費低消</label>
               <input type="number" id="twQiFeeMin" value="20" step="1" min="0" style="font-size:0.85em">
             </div>
+            <div class="form-group" id="twQiTaxGroup" style="flex:0 0 120px;display:none">
+              <label>證交稅率 ‰ <span class="help-tip">!<span class="help-text">只有賣出才收證交稅。一般股 3‰、ETF 1‰、當沖 1.5‰。此欄會記住你上次填的值。</span></span></label>
+              <input type="number" id="twQiTaxRate" value="3" step="0.1" min="0" style="font-size:0.85em">
+            </div>
           </div>
           <div class="form-group">
-            <label>每行一筆：<code>日期 股數 價格 (手續費)</code></label>
+            <label>每行一筆：<code>日期 股數 價格 (手續費) (交易稅)</code></label>
             <textarea id="twQiTradeText" rows="6" placeholder="2024.3.5 1000 580&#10;2024.4.1 500 595&#10;3.15 2000 570 500（個別手續費覆蓋預設）" style="font-family:monospace;font-size:0.88em"></textarea>
           </div>
-          <div style="color:#666;font-size:0.75em;margin:4px 0 8px">格式：<code>日期 股數 價格 (手續費)</code>・預設手續費率千分之1.425・有填低消時：取「率算出來」跟「低消」中較高者・行內第4欄可覆蓋預設 <span class="help-tip">!<span class="help-text">欄位之間用任意空格分隔。每行格式：日期 股數 價格，行內第4欄可指定手續費。</span></span></div>
+          <div style="color:#666;font-size:0.75em;margin:4px 0 8px">格式：<code>日期 股數 價格 (手續費) (交易稅)</code>・手續費預設千分之1.425、有填低消時取較高者・<b>賣出</b>才會依證交稅率自動算稅（一般股3‰）・第4欄可覆蓋手續費、第5欄可覆蓋交易稅 <span class="help-tip">!<span class="help-text">欄位之間用任意空格分隔。買入不收證交稅；賣出的證交稅會歸在「買賣」而非「配息」。</span></span></div>
           <div class="form-group" style="margin-bottom:8px"><label>備註（選填）</label><input type="text" id="twQiTradeNote" placeholder="備註" style="font-size:0.85em"></div>
           <button class="btn btn-add" onclick="try{submitTWQITrade()}catch(e){alert('錯誤:'+e.message)}">✅ 快速送出</button>
         </div>
@@ -1613,11 +1617,12 @@ function calcTradeCashImpact(t, market) {
   const raw = t.shares * t.price;
   const base = (market === 'tw') ? Math.floor(raw) : raw; // 台股無條件捨去，美股不動
   const fee = t.feeIncluded ? 0 : (t.fee || 0);
+  const tax = t.tax || 0; // 賣出證交稅：歸在買賣現金流，不歸在配息
   const adj = t.adjust || 0;
   if (t.type === 'buy') {
     return -(base + fee) + adj;
   } else {
-    return (base - fee) + adj;
+    return (base - fee - tax) + adj;
   }
 }
 
@@ -4108,6 +4113,20 @@ function switchTWQI(mode) {
   document.getElementById('twQiTradeBtn').style.cssText = 'padding:5px 12px;font-size:0.82em;border-radius:6px;' + (mode === 'trade' ? active : inactive);
   document.getElementById('twQiFundBtn').style.cssText = 'padding:5px 12px;font-size:0.82em;border-radius:6px;' + (mode === 'fund' ? active : inactive);
   document.getElementById('twQiIncomeBtn').style.cssText = 'padding:5px 12px;font-size:0.82em;border-radius:6px;' + (mode === 'income' ? active : inactive);
+  if (mode === 'trade') twQiToggleTax();
+}
+
+// 賣出時才顯示「證交稅率」欄，並還原上次輸入的值（localStorage 記憶）
+function twQiToggleTax() {
+  const sel = document.getElementById('twQiTradeType');
+  const grp = document.getElementById('twQiTaxGroup');
+  if (!sel || !grp) return;
+  const isSell = sel.value === 'sell';
+  grp.style.display = isSell ? '' : 'none';
+  if (isSell) {
+    const saved = localStorage.getItem('twQiTaxRate');
+    if (saved != null && saved !== '') document.getElementById('twQiTaxRate').value = saved;
+  }
 }
 
 function parseQILines(text) {
@@ -4258,6 +4277,11 @@ function submitTWQITrade() {
   const feeRatePermille = parseFloat(document.getElementById('twQiFeeRate')?.value);
   const feeRate = !isNaN(feeRatePermille) ? feeRatePermille / 1000 : 0.001425;
   const feeMin = parseFloat(document.getElementById('twQiFeeMin')?.value) || 0;
+  // 賣出交易稅（證交稅）：只在賣出時計，並記住這次輸入的稅率供下次使用
+  const taxRateVal = document.getElementById('twQiTaxRate')?.value;
+  const taxRatePermille = parseFloat(taxRateVal);
+  const taxRate = (type === 'sell' && !isNaN(taxRatePermille)) ? taxRatePermille / 1000 : 0;
+  if (type === 'sell' && taxRateVal != null && taxRateVal !== '') localStorage.setItem('twQiTaxRate', taxRateVal);
   const text = document.getElementById('twQiTradeText').value;
   const note = document.getElementById('twQiTradeNote')?.value.trim() || '';
   if (!ticker) { alert('請輸入股票代號'); return; }
@@ -4277,7 +4301,10 @@ function submitTWQITrade() {
     // 第 4 欄手動覆蓋；否則 max(率算, 低消)，再取整（台股慣例無條件捨去）
     const calcFee = Math.floor(shares * price * feeRate);
     const fee = parts.length >= 4 ? parseFloat(parts[3]) : Math.max(calcFee, feeMin);
-    data.push({ id: Date.now() + count, date, ticker: resolved, type, shares, price, fee: fee || 0, adjust: 0, note });
+    // 交易稅：只在賣出時計。第 5 欄可覆蓋，否則依稅率無條件捨去；買入為 0。
+    let tax = 0;
+    if (type === 'sell') tax = parts.length >= 5 ? parseFloat(parts[4]) : Math.floor(shares * price * taxRate);
+    data.push({ id: Date.now() + count, date, ticker: resolved, type, shares, price, fee: fee || 0, tax: tax || 0, adjust: 0, note });
     count++;
   });
   if (errors.length > 0 && count === 0) { alert('解析錯誤:\n' + errors.join('\n')); return; }
@@ -4447,14 +4474,15 @@ function analyzeStocks(trades, market, income) {
         shares += t.shares;
         buyLots.push({ shares: t.shares, price: t.price, feePerShare: t.shares > 0 ? fee / t.shares : 0 });
       } else if (t.type === 'sell') {
-        totalFee += fee;
+        const sellCost = fee + (t.tax || 0); // 手續費 + 證交稅，皆算賣出成本
+        totalFee += sellCost;
         totalSold += t.shares * t.price;
-        totalSellFee += fee;
+        totalSellFee += sellCost;
         shares -= t.shares;
         // FIFO realized P&L
         let remaining = t.shares;
         const sellPrice = t.price;
-        const sellFeePerShare = t.shares > 0 ? fee / t.shares : 0;
+        const sellFeePerShare = t.shares > 0 ? sellCost / t.shares : 0;
         while (remaining > 0 && buyLots.length > 0) {
           const lot = buyLots[0];
           const used = Math.min(remaining, lot.shares);
@@ -4499,7 +4527,7 @@ function analyzeStocks(trades, market, income) {
     // 該股票的配息總額（用 normalized key 匹配）
     const origTickers = [...new Set(tickerTrades.map(t => t.ticker))];
     const tickerIncome = income
-      .filter(i => origTickers.includes(i.source) || origTickers.includes(i.ticker) || normalizeTickerKey(i.source||'', market) === ticker)
+      .filter(i => i.type !== 'tax' && (origTickers.includes(i.source) || origTickers.includes(i.ticker) || normalizeTickerKey(i.source||'', market) === ticker))
       .reduce((s, i) => s + i.amount, 0);
 
     // 淨成本均價 = (買入花費 - 賣出收入 - 配息) / 剩餘股數
@@ -5813,50 +5841,71 @@ function renderIncomeSections(panelId, income, market) {
 
   const typeMap = { dividend: {label:'股利',color:'52,211,153',text:'#34d399',icon:'🟢'}, interest: {label:'利息',color:'103,232,249',text:'#67e8f9',icon:'🔵'}, tax: {label:'稅',color:'248,113,113',text:'#f87171',icon:'🔴'}, adjust: {label:'微調',color:'251,191,36',text:'#fbbf24',icon:'🟡'} };
 
+  // 台股來源正規化：股號與中文名視為同一檔（例：2330 與 台積電 → 2330），最後顯示中文。
+  const isTWCode = (s) => /^[0-9]{4,6}[A-Z]{0,2}$/.test(s);
+  const sourceKey = (src) => {
+    const s = (src || '').trim();
+    if (!isTW || !s) return s || 'Unknown';
+    const code = resolveTWTicker(s);
+    return isTWCode(code) ? code : s;
+  };
+  const sourceLabel = (key) => {
+    if (!isTW) return key;
+    if (isTWCode(key)) {
+      const name = twCodeToName[key] || (twPrices[key] && twPrices[key].name);
+      return name ? `${name} (${key})` : key;
+    }
+    return key;
+  };
+
   // Helper to render a simple row
   const renderRow = (item) => {
     const isNeg = item.amount < 0;
     return `<tr>
       <td>${item.date}</td>
-      <td><span style="color:#67e8f9">${item.source}</span></td>
+      <td><span style="color:#67e8f9">${isTW ? sourceLabel(sourceKey(item.source)) : item.source}</span></td>
       <td><span class="${isNeg ? 'neg' : 'pos'}">${isNeg ? '' : '+'}${fmtAmt(item.amount)}</span></td>
       <td class="muted">${item.note || '-'}</td>
       <td><button class="btn-danger" onclick="${deleteFn}(${item.id})">✕</button></td>
     </tr>`;
   };
 
-  // Dividend section: grouped by source (ticker) with collapsible
-  let dividendHTML = '';
-  if (dividends.length > 0) {
+  // 依正規化後的來源分組（股利/利息共用），標題顯示中文名
+  const renderGrouped = (items, bgColor) => {
     const grouped = {};
-    for (const d of dividends) {
-      const key = d.source || 'Unknown';
-      if (!grouped[key]) grouped[key] = [];
-      grouped[key].push(d);
+    for (const d of items) {
+      const k = sourceKey(d.source);
+      (grouped[k] = grouped[k] || []).push(d);
     }
-    const tickers = Object.keys(grouped).sort();
-    dividendHTML = tickers.map(ticker => {
-      const items = grouped[ticker];
-      const total = items.reduce((s, i) => s + i.amount, 0);
+    return Object.keys(grouped).sort().map(k => {
+      const list = grouped[k];
+      const total = list.reduce((s, i) => s + i.amount, 0);
       return `<div style="margin-bottom:4px">
         <div onclick="const p=this.nextElementSibling;p.style.display=p.style.display==='none'?'block':'none';this.querySelector('.arrow').classList.toggle('open')"
-             style="display:flex;justify-content:space-between;align-items:center;padding:6px 14px;cursor:pointer;background:rgba(52,211,153,0.05);border-radius:6px;user-select:none">
+             style="display:flex;justify-content:space-between;align-items:center;padding:6px 14px;cursor:pointer;background:rgba(${bgColor},0.05);border-radius:6px;user-select:none">
           <div style="display:flex;align-items:center;gap:8px">
             <span class="arrow" style="color:#666;transition:transform 0.2s;display:inline-block;font-size:0.8em">▶</span>
-            <span style="color:#67e8f9;font-weight:600">${ticker}</span>
-            <span style="color:#888;font-size:0.8em">(${items.length}筆)</span>
+            <span style="color:#67e8f9;font-weight:600">${sourceLabel(k)}</span>
+            <span style="color:#888;font-size:0.8em">(${list.length}筆)</span>
           </div>
-          <span class="pos" style="font-size:0.85em">+${fmtAmt(total)}</span>
+          <span class="${total >= 0 ? 'pos' : 'neg'}" style="font-size:0.85em">${total >= 0 ? '+' : ''}${fmtAmt(total)}</span>
         </div>
         <div style="display:none">
           <table style="font-size:0.85em"><thead><tr><th>日期</th><th>來源</th><th>金額 ${currency}</th><th>備註</th><th></th></tr></thead>
-          <tbody>${items.map(renderRow).join('')}</tbody></table>
+          <tbody>${list.map(renderRow).join('')}</tbody></table>
         </div>
       </div>`;
     }).join('');
-  } else {
-    dividendHTML = '<div style="text-align:center;color:#666;padding:14px;font-size:0.85em">尚無股利紀錄</div>';
-  }
+  };
+
+  // Dividend section: grouped by normalized source (中文/股號彙整為一組)
+  const dividendHTML = dividends.length > 0
+    ? renderGrouped(dividends, '52,211,153')
+    : '<div style="text-align:center;color:#666;padding:14px;font-size:0.85em">尚無股利紀錄</div>';
+  // Interest section: 同樣依來源彙整
+  const interestHTML = interests.length > 0
+    ? renderGrouped(interests, '103,232,249')
+    : '<div style="text-align:center;color:#666;padding:14px;font-size:0.85em">尚無利息紀錄</div>';
 
   // Simple sub-section renderer for interest/tax/adjust
   const renderSimpleSection = (items, type) => {
@@ -5889,7 +5938,7 @@ function renderIncomeSections(panelId, income, market) {
 
   panel.innerHTML = `<div>
     ${divH.html}<div id="${divH.uid}" style="display:none">${dividendHTML}</div>
-    ${intH.html}<div id="${intH.uid}" style="display:none">${renderSimpleSection(interests, 'interest')}</div>
+    ${intH.html}<div id="${intH.uid}" style="display:none">${interestHTML}</div>
     ${taxH.html}<div id="${taxH.uid}" style="display:none">${renderSimpleSection(taxes, 'tax')}</div>
     ${adjH.html}<div id="${adjH.uid}" style="display:none">${renderSimpleSection(adjusts, 'adjust')}</div>
   </div>`;
@@ -9989,7 +10038,7 @@ function buildPerStockDailySeries(filteredAccounts, market, tickerKey, history, 
       trades.push({ ...t, _pct: pct, _type: String(t.type || '').toLowerCase(), _shares: Number(t.shares) || 0 });
     }
     for (const i of getAccountData(acc.id, market, 'income')) {
-      if (!i.date) continue;
+      if (!i.date || i.type === 'tax') continue; // 稅歸在買賣，不計入配息
       const src = i.source || i.ticker || '';
       if (src === tickerKey || normalize(src) === key) {
         divByDate[i.date] = (divByDate[i.date] || 0) + (Number(i.amount) || 0) * pct;
