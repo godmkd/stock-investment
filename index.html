@@ -4524,10 +4524,11 @@ function analyzeStocks(trades, market, income) {
       }
     }
 
-    // 該股票的配息總額（用 normalized key 匹配）
+    // 該股票的配息/稅淨額（用 normalized key 匹配）。配息為正、稅為負，
+    // 一起計入該股票的淨成本與損益（稅是成本，會拉高成本、降低損益）。
     const origTickers = [...new Set(tickerTrades.map(t => t.ticker))];
     const tickerIncome = income
-      .filter(i => i.type !== 'tax' && (origTickers.includes(i.source) || origTickers.includes(i.ticker) || normalizeTickerKey(i.source||'', market) === ticker))
+      .filter(i => origTickers.includes(i.source) || origTickers.includes(i.ticker) || normalizeTickerKey(i.source||'', market) === ticker)
       .reduce((s, i) => s + i.amount, 0);
 
     // 淨成本均價 = (買入花費 - 賣出收入 - 配息) / 剩餘股數
@@ -10031,6 +10032,7 @@ function buildPerStockDailySeries(filteredAccounts, market, tickerKey, history, 
   // Collect this ticker's trades + dividends (income matched by source/ticker).
   const trades = [];
   const divByDate = {};
+  const taxByDate = {}; // 稅：算成本（拉低合計），不算配息
   for (const acc of filteredAccounts) {
     const pct = applyPct ? (acc.ownership_pct ?? 100) / 100 : 1;
     for (const t of getAccountData(acc.id, market, 'trades')) {
@@ -10038,10 +10040,12 @@ function buildPerStockDailySeries(filteredAccounts, market, tickerKey, history, 
       trades.push({ ...t, _pct: pct, _type: String(t.type || '').toLowerCase(), _shares: Number(t.shares) || 0 });
     }
     for (const i of getAccountData(acc.id, market, 'income')) {
-      if (!i.date || i.type === 'tax') continue; // 稅歸在買賣，不計入配息
+      if (!i.date) continue;
       const src = i.source || i.ticker || '';
       if (src === tickerKey || normalize(src) === key) {
-        divByDate[i.date] = (divByDate[i.date] || 0) + (Number(i.amount) || 0) * pct;
+        const amt = (Number(i.amount) || 0) * pct;
+        if (i.type === 'tax') taxByDate[i.date] = (taxByDate[i.date] || 0) + amt; // 稅歸成本，不歸配息
+        else divByDate[i.date] = (divByDate[i.date] || 0) + amt;
       }
     }
   }
@@ -10080,7 +10084,8 @@ function buildPerStockDailySeries(filteredAccounts, market, tickerKey, history, 
         dayBuySell += -calcTradeCashImpact(t, market) * t._pct;      // cash, incl fee (買 + / 賣 −)
         const mvf = (t._shares * (Number(t.price) || 0)) * t._pct;   // value at 成交價, no fee
         dayMVflow += (t._type === 'buy' ? mvf : -mvf);
-        dayFee += (t.feeIncluded ? 0 : (Number(t.fee) || 0)) * t._pct;
+        // 手續費 + 賣出證交稅都算成本（證交稅隨賣出）
+        dayFee += ((t.feeIncluded ? 0 : (Number(t.fee) || 0)) + (Number(t.tax) || 0)) * t._pct;
       } else {
         // transfers are neutral: value at trade/market price → no fake gain
         const px = (t.price != null ? Number(t.price) : (closeByDate[date] || 0) * priceFactor(date));
@@ -10094,8 +10099,9 @@ function buildPerStockDailySeries(filteredAccounts, market, tickerKey, history, 
     const dMv = prevMv == null ? null : (mv - prevMv);
     const gain = dMv == null ? null : (dMv - dayMVflow);
     const dividend = divByDate[date] || 0;
-    const pnlEx = gain == null ? null : (gain - dayFee);
-    const pnlInc = gain == null ? null : (gain + dividend - dayFee);
+    const taxDay = taxByDate[date] || 0; // 負值：稅是成本，計入損益但不計入配息
+    const pnlEx = gain == null ? null : (gain - dayFee + taxDay);
+    const pnlInc = gain == null ? null : (gain + dividend - dayFee + taxDay);
     out.push({ date, close: closeEff, shares, mv, buySell: dayBuySell, gain, dividend, fee: dayFee, pnlEx, pnlInc });
     prevMv = mv;
   }
