@@ -1018,6 +1018,21 @@
       <button class="btn btn-add" onclick="submitAllDCA()">✅ 全部送出</button>
     </div>
   </div>
+
+  <hr style="border-color:rgba(255,255,255,0.08);margin:20px 0">
+
+  <!-- Batch fund deposit -->
+  <div class="add-form">
+    <h2>💰 批量存入資金（手動）</h2>
+    <div style="font-size:0.82em;color:#888;margin-bottom:12px">選帳戶自動判別市場：美股帳戶可填台幣/匯率，台股帳戶直接輸入台幣金額</div>
+
+    <div id="fundEntries"></div>
+
+    <div style="display:flex;gap:8px;margin:16px 0">
+      <button class="btn btn-secondary" onclick="addFundEntry()">＋ 再加一筆</button>
+      <button class="btn btn-add" onclick="submitAllFundEntries()">✅ 全部送出</button>
+    </div>
+  </div>
 </div>
 
 <!-- ========== MORTGAGE TAB ========== -->
@@ -3148,6 +3163,10 @@ function renderAccountSelectors() {
   if (document.getElementById('dcaEntries')) {
     document.getElementById('dcaEntries').innerHTML = '';
     addDCAEntry();
+  }
+  if (document.getElementById('fundEntries')) {
+    document.getElementById('fundEntries').innerHTML = '';
+    addFundEntry();
   }
 }
 
@@ -6652,10 +6671,140 @@ function submitAllDCA() {
   renderTWTab();
 }
 
+let fundEntryId = 0;
+function addFundEntry() {
+  const id = ++fundEntryId;
+  const container = document.getElementById('fundEntries');
+
+  const div = document.createElement('div');
+  div.className = 'dca-entry';
+  div.id = `fund-entry-${id}`;
+
+  div.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <h3>📅 ${new Date().toLocaleDateString('zh-TW')}</h3>
+      <button class="btn-remove-row" onclick="document.getElementById('fund-entry-${id}').remove()">✕</button>
+    </div>
+    <div class="dca-row">
+      <div class="form-group">
+        <label>日期 (預設今日)</label>
+        <input type="text" class="fundDate" placeholder="${todayStr().replace(/-/g,'.')}" data-entry="${id}">
+      </div>
+      <div class="form-group">
+        <label>類型</label>
+        <select class="fundType" data-entry="${id}"><option value="deposit">存入</option><option value="withdraw">提出</option></select>
+      </div>
+    </div>
+    <div style="margin-top:10px">
+      <div style="font-size:0.85em;color:#888;margin-bottom:6px">帳戶：</div>
+      <div class="fundPersonRows" data-entry="${id}"></div>
+      <button class="btn btn-secondary" onclick="addFundPerson(${id})" style="padding:3px 10px;font-size:0.78em;margin-top:4px">＋ 新增帳戶</button>
+    </div>
+  `;
+
+  container.appendChild(div);
+  addFundPerson(id);
+}
+
+let fundPersonId = 0;
+function addFundPerson(entryId) {
+  const pid = ++fundPersonId;
+  const container = document.querySelector(`.fundPersonRows[data-entry="${entryId}"]`);
+  if (!container) return;
+  const allOwners = [...new Set(accounts.map(a => a.owner || a.name))];
+  const sel = 'padding:4px 8px;border:1px solid rgba(255,255,255,0.15);border-radius:4px;background:rgba(255,255,255,0.08);color:#fff;font-size:0.85em';
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;gap:6px;align-items:center;margin-bottom:4px;flex-wrap:wrap';
+  row.id = `fundPerson_${pid}`;
+  row.innerHTML = `
+    <select class="fundOwnerSel" data-pid="${pid}" onchange="fundOwnerChanged(${entryId},${pid})" style="${sel};min-width:80px">
+      <option value="">戶名</option>
+      ${allOwners.map(o => `<option value="${o}">${o}</option>`).join('')}
+    </select>
+    <select class="fundAccSel" data-pid="${pid}" onchange="fundAccountChanged(${entryId},${pid})" style="${sel};min-width:100px"><option value="">帳戶</option></select>
+    <input type="number" class="fundAmt" data-pid="${pid}" placeholder="金額" style="${sel};width:90px;color:#fbbf24;font-weight:600;text-align:right">
+    <input type="number" class="fundTwdAmt" data-pid="${pid}" placeholder="台幣(選填)" style="${sel};width:90px;display:none">
+    <input type="number" class="fundRate" data-pid="${pid}" placeholder="匯率(選填)" style="${sel};width:80px;display:none">
+    <button onclick="document.getElementById('fundPerson_${pid}').remove()" style="background:none;border:none;color:#f87171;cursor:pointer;font-size:0.9em">✕</button>
+  `;
+  container.appendChild(row);
+}
+
+window.fundOwnerChanged = function(entryId, pid) {
+  const row = document.getElementById(`fundPerson_${pid}`);
+  if (!row) return;
+  const owner = row.querySelector('.fundOwnerSel').value;
+  const accSel = row.querySelector('.fundAccSel');
+  const ownerAccs = accounts.filter(a => (a.owner || a.name) === owner && a.bank);
+  accSel.innerHTML = ownerAccs.length > 0
+    ? ownerAccs.map(a => `<option value="${a.id}" data-market="${a.market || 'tw'}">${a.bank}${a.market ? (a.market==='us'?' 🇺🇸':' 🇹🇼') : ''}</option>`).join('')
+    : '<option value="">無帳戶</option>';
+  fundAccountChanged(entryId, pid);
+};
+
+window.fundAccountChanged = function(entryId, pid) {
+  const row = document.getElementById(`fundPerson_${pid}`);
+  if (!row) return;
+  const accSel = row.querySelector('.fundAccSel');
+  const market = accSel.selectedOptions[0]?.dataset.market || 'tw';
+  const isUS = market === 'us';
+  row.querySelector('.fundTwdAmt').style.display = isUS ? '' : 'none';
+  row.querySelector('.fundRate').style.display = isUS ? '' : 'none';
+  row.querySelector('.fundAmt').placeholder = isUS ? '美金金額' : '台幣金額';
+};
+
+function submitAllFundEntries() {
+  const entries = document.querySelectorAll('#fundEntries .dca-entry');
+  let totalCount = 0;
+  const touchedMarkets = new Set();
+
+  entries.forEach(entry => {
+    const date = parseFlexDate(entry.querySelector('.fundDate').value);
+    const type = entry.querySelector('.fundType').value;
+    const personRows = entry.querySelectorAll('.fundPersonRows > div');
+
+    personRows.forEach(row => {
+      const accSel = row.querySelector('.fundAccSel');
+      const accid = accSel?.value;
+      if (!accid) return;
+      const amount = parseFloat(row.querySelector('.fundAmt')?.value) || 0;
+      if (amount <= 0) return;
+      const market = accSel.selectedOptions[0]?.dataset.market || 'tw';
+      let data = getAccountData(accid, market, 'funds');
+      if (market === 'us') {
+        let twdAmount = parseFloat(row.querySelector('.fundTwdAmt')?.value);
+        let rate = parseFloat(row.querySelector('.fundRate')?.value);
+        if (isNaN(twdAmount)) twdAmount = null;
+        if (isNaN(rate)) rate = null;
+        if (twdAmount && !rate) rate = twdAmount / amount;
+        if (rate && !twdAmount) twdAmount = amount * rate;
+        data.push({ id: Date.now() + totalCount, date, type, amount, twdAmount, rate, note: '' });
+      } else {
+        data.push({ id: Date.now() + totalCount, date, type, amount, note: '' });
+      }
+      data.sort((a, b) => b.date.localeCompare(a.date));
+      saveAccountData(accid, market, 'funds', data);
+      touchedMarkets.add(market);
+      totalCount++;
+    });
+  });
+
+  if (totalCount === 0) { alert('沒有有效的資金紀錄（請確認已選帳戶並填金額）'); return; }
+  document.getElementById('fundEntries').innerHTML = '';
+  addFundEntry();
+  alert(`✅ 已新增 ${totalCount} 筆資金紀錄`);
+  if (touchedMarkets.has('us')) renderUSTab();
+  if (touchedMarkets.has('tw')) renderTWTab();
+}
+
 function renderDCATab() {
   // Just reset the form
   document.getElementById('dcaEntries').innerHTML = '';
   addDCAEntry();
+  if (document.getElementById('fundEntries')) {
+    document.getElementById('fundEntries').innerHTML = '';
+    addFundEntry();
+  }
   renderTplList();
   refreshTplExecSelect();
   // Set default month
