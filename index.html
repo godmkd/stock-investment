@@ -7540,12 +7540,11 @@ function fundTplExecPreview() {
     const lastDay = new Date(year, month, 0).getDate();
     if (day > lastDay) day = lastDay;
     const rawDate = `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
-    const actualDate = nextBusinessDay(rawDate);
     s.entries.forEach(e => {
       const acc = accounts.find(a => a.id === e.accId);
       if (!acc) return;
       rows.push({
-        date: actualDate, rawDate, day: s.day,
+        date: rawDate, day: s.day,
         accId: e.accId, accLabel: accountLabel(acc), market: acc.market || 'tw',
         type: e.type, amount: e.amount, twdAmount: e.twdAmount, rate: e.rate
       });
@@ -7567,7 +7566,7 @@ function fundTplExecPreview() {
       </tr></thead>
       <tbody>
         ${rows.map(r => `<tr>
-          <td>${r.date}${r.rawDate !== r.date ? `<div style="font-size:0.75em;color:#f59e0b">原 ${r.rawDate}，遇假日順延</div>` : ''}</td>
+          <td>${r.date}</td>
           <td>${r.accLabel}</td>
           <td>${r.type === 'deposit' ? '存入' : '提出'}</td>
           <td style="color:#fbbf24">${r.market === 'us' ? '$' : 'NT$'}${r.amount.toLocaleString()}</td>
