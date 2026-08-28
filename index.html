@@ -1021,6 +1021,35 @@
 
   <hr style="border-color:rgba(255,255,255,0.08);margin:20px 0">
 
+  <!-- Fund Template Management -->
+  <div class="tpl-section">
+    <h2>📋 資金範本 <span class="help-tip">!<span class="help-text">建立範本後可每月快速執行存入資金，系統自動處理假日。</span></span></h2>
+    <div id="fundTplList"></div>
+    <button class="btn btn-secondary" onclick="openFundTplEditor()" style="margin-top:8px">＋ 新增範本</button>
+    <div id="fundTplEditorWrap"></div>
+  </div>
+
+  <!-- Fund Template Monthly Execution -->
+  <div class="tpl-exec-section">
+    <h2>⚡ 資金範本月度執行</h2>
+    <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px">
+      <div class="form-group" style="min-width:160px">
+        <label>選擇範本</label>
+        <select id="fundTplExecSelect" onchange="fundTplExecPreview()" style="padding:8px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.08);color:#fff;font-size:0.9em">
+          <option value="">-- 請選擇 --</option>
+        </select>
+      </div>
+      <div class="form-group" style="min-width:140px">
+        <label>月份</label>
+        <input type="month" id="fundTplExecMonth" onchange="fundTplExecPreview()" style="padding:8px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.08);color:#fff;font-size:0.9em">
+      </div>
+    </div>
+    <div id="fundTplExecPreviewArea"></div>
+    <div id="fundTplExecSubmitArea" style="margin-top:12px"></div>
+  </div>
+
+  <hr style="border-color:rgba(255,255,255,0.08);margin:20px 0">
+
   <!-- Batch fund deposit -->
   <div class="add-form">
     <h2>💰 批量存入資金（手動）</h2>
@@ -1383,6 +1412,7 @@ async function loadAllDataFromSupabase() {
 
   // Load DCA templates
   await loadDcaTemplatesFromSupabase();
+  await loadFundTemplatesFromSupabase();
 }
 
 // In-memory cache for account data (trades/funds/income)
@@ -6807,11 +6837,18 @@ function renderDCATab() {
   }
   renderTplList();
   refreshTplExecSelect();
+  renderFundTplList();
+  refreshFundTplExecSelect();
   // Set default month
   const mi = document.getElementById('tplExecMonth');
   if (mi && !mi.value) {
     const d = new Date();
     mi.value = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+  }
+  const fmi = document.getElementById('fundTplExecMonth');
+  if (fmi && !fmi.value) {
+    const d = new Date();
+    fmi.value = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
   }
 }
 
@@ -7236,6 +7273,343 @@ function tplExecSubmit() {
   window._tplExecRows = null;
   renderUSTab();
   renderTWTab();
+}
+
+// ===== Fund Deposit Template System =====
+
+let _fundTemplatesCache = null;
+function getFundTemplates() {
+  if (_fundTemplatesCache) return _fundTemplatesCache;
+  try { return JSON.parse(localStorage.getItem('fund_templates') || '[]'); } catch(e) { return []; }
+}
+function saveFundTemplates(tpls) {
+  _fundTemplatesCache = tpls;
+  localStorage.setItem('fund_templates', JSON.stringify(tpls));
+  if (currentUser) {
+    const uid = currentUser.id;
+    sb.from('inv_fund_templates').upsert({ id: uid, user_id: uid, data: tpls }, { onConflict: 'id' }).then(({ error }) => {
+      if (error) console.error('Save fund templates error:', error.message);
+    });
+  }
+}
+async function loadFundTemplatesFromSupabase() {
+  if (!currentUser) return;
+  const { data } = await sb.from('inv_fund_templates').select('data').eq('user_id', currentUser.id).maybeSingle();
+  if (data && Array.isArray(data.data)) {
+    _fundTemplatesCache = data.data;
+    localStorage.setItem('fund_templates', JSON.stringify(data.data));
+  }
+}
+
+// --- Template List ---
+function renderFundTplList() {
+  const list = document.getElementById('fundTplList');
+  if (!list) return;
+  const tpls = getFundTemplates();
+  if (tpls.length === 0) {
+    list.innerHTML = '<div style="color:#666;font-size:0.85em;padding:8px 0">尚無範本，點擊下方按鈕新增</div>';
+    return;
+  }
+  list.innerHTML = tpls.map(t => {
+    const schedDesc = t.schedules.map(s => {
+      const totalAmt = s.entries.reduce((sum, e) => sum + e.amount, 0);
+      return `${s.day}日 (${s.entries.length}筆, $${totalAmt.toLocaleString()})`;
+    }).join('、');
+    return `<div class="tpl-list-item">
+      <div class="tpl-info">
+        <div class="tpl-name">${t.name}</div>
+        <div class="tpl-detail">存入日: ${schedDesc}</div>
+      </div>
+      <div class="tpl-actions">
+        <button class="btn btn-primary" style="padding:4px 10px;font-size:0.75em" onclick="openFundTplEditor('${t.id}')">編輯</button>
+        <button class="btn-danger" onclick="deleteFundTpl('${t.id}')">刪除</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function deleteFundTpl(id) {
+  if (!confirm('確定刪除此範本？')) return;
+  let tpls = getFundTemplates();
+  tpls = tpls.filter(t => t.id !== id);
+  saveFundTemplates(tpls);
+  renderFundTplList();
+  refreshFundTplExecSelect();
+}
+
+// --- Template Editor ---
+let _fundTplEditorScheduleId = 0;
+let _fundTplEditorEntryId = 0;
+
+function openFundTplEditor(editId) {
+  const wrap = document.getElementById('fundTplEditorWrap');
+  let tpl = null;
+  if (editId) {
+    tpl = getFundTemplates().find(t => t.id === editId);
+  }
+  const isEdit = !!tpl;
+  const name = tpl ? tpl.name : '';
+
+  wrap.innerHTML = `<div class="tpl-editor" id="fundTplEditorPanel">
+    <h3 style="color:#a78bfa;margin-bottom:10px">${isEdit ? '編輯範本' : '新增範本'}</h3>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+      <div class="form-group" style="min-width:140px">
+        <label>範本名稱</label>
+        <input type="text" id="fundTplEdName" value="${name}" placeholder="每月薪轉存入">
+      </div>
+    </div>
+    <div style="font-size:0.85em;color:#888;margin-bottom:6px">存入日排程：</div>
+    <div id="fundTplEdSchedules"></div>
+    <button class="btn btn-secondary" onclick="addFundTplSchedule()" style="padding:3px 10px;font-size:0.78em;margin:6px 0">＋ 新增存入日</button>
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <button class="btn btn-add" onclick="saveFundTplEditor('${editId || ''}')">${isEdit ? '儲存' : '新增'}</button>
+      <button class="btn" style="background:rgba(255,255,255,0.1);color:#ccc" onclick="document.getElementById('fundTplEditorWrap').innerHTML=''">取消</button>
+    </div>
+  </div>`;
+
+  if (tpl && tpl.schedules) {
+    tpl.schedules.forEach(s => addFundTplSchedule(s));
+  } else {
+    addFundTplSchedule();
+  }
+}
+
+function addFundTplSchedule(data) {
+  const sid = ++_fundTplEditorScheduleId;
+  const container = document.getElementById('fundTplEdSchedules');
+  if (!container) return;
+  const div = document.createElement('div');
+  div.className = 'tpl-schedule';
+  div.id = `fundTplSched_${sid}`;
+  div.innerHTML = `
+    <div class="tpl-schedule-header">
+      <div style="display:flex;gap:8px;align-items:center">
+        <label style="font-size:0.85em;color:#67e8f9">每月</label>
+        <input type="number" class="fundTplSchedDay" min="1" max="31" value="${data ? data.day : ''}" placeholder="5"
+          style="width:50px;padding:4px 6px;border-radius:6px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.08);color:#fff;font-size:0.9em;text-align:center">
+        <label style="font-size:0.85em;color:#67e8f9">日</label>
+      </div>
+      <button onclick="document.getElementById('fundTplSched_${sid}').remove()" style="background:none;border:none;color:#f87171;cursor:pointer;font-size:0.85em">✕ 移除</button>
+    </div>
+    <div class="fundTplSchedEntries" data-sid="${sid}"></div>
+    <button class="btn btn-secondary" onclick="addFundTplEntry(${sid})" style="padding:2px 8px;font-size:0.72em;margin-top:4px">＋ 帳戶</button>
+  `;
+  container.appendChild(div);
+
+  if (data && data.entries) {
+    data.entries.forEach(e => addFundTplEntry(sid, e));
+  } else {
+    addFundTplEntry(sid);
+  }
+}
+
+function addFundTplEntry(sid, data) {
+  const eid = ++_fundTplEditorEntryId;
+  const container = document.querySelector(`.fundTplSchedEntries[data-sid="${sid}"]`);
+  if (!container) return;
+  const allOwners = [...new Set(accounts.map(a => a.owner || a.name))];
+  const sel = 'padding:4px 8px;border:1px solid rgba(255,255,255,0.15);border-radius:4px;background:rgba(255,255,255,0.08);color:#fff;font-size:0.85em';
+  const row = document.createElement('div');
+  row.className = 'tpl-investor-row';
+  row.id = `fundTplEnt_${eid}`;
+  row.innerHTML = `
+    <select class="fundTplEntOwnerSel" data-eid="${eid}" onchange="fundTplEntOwnerChanged(${eid})" style="${sel};min-width:80px">
+      <option value="">戶名</option>
+      ${allOwners.map(o => `<option value="${o}">${o}</option>`).join('')}
+    </select>
+    <select class="fundTplEntAccSel" data-eid="${eid}" onchange="fundTplEntAccountChanged(${eid})" style="${sel};min-width:100px"><option value="">帳戶</option></select>
+    <select class="fundTplEntType" data-eid="${eid}" style="${sel};min-width:60px"><option value="deposit"${!data || data.type!=='withdraw'?' selected':''}>存入</option><option value="withdraw"${data && data.type==='withdraw'?' selected':''}>提出</option></select>
+    <input type="number" class="fundTplEntAmt" data-eid="${eid}" placeholder="金額" value="${data ? data.amount : ''}" style="${sel};width:90px;color:#fbbf24;font-weight:600;text-align:right">
+    <input type="number" class="fundTplEntTwd" data-eid="${eid}" placeholder="台幣(選填)" value="${data && data.twdAmount != null ? data.twdAmount : ''}" style="${sel};width:90px;display:none">
+    <input type="number" class="fundTplEntRate" data-eid="${eid}" placeholder="匯率(選填)" value="${data && data.rate != null ? data.rate : ''}" style="${sel};width:80px;display:none">
+    <button onclick="document.getElementById('fundTplEnt_${eid}').remove()" style="background:none;border:none;color:#f87171;cursor:pointer;font-size:0.9em">✕</button>
+  `;
+  container.appendChild(row);
+
+  if (data && data.accId) {
+    const acc = accounts.find(a => a.id === data.accId);
+    if (acc) {
+      const ownerSel = row.querySelector('.fundTplEntOwnerSel');
+      ownerSel.value = acc.owner || acc.name;
+      fundTplEntOwnerChanged(eid);
+      setTimeout(() => {
+        row.querySelector('.fundTplEntAccSel').value = data.accId;
+        fundTplEntAccountChanged(eid);
+      }, 0);
+    }
+  }
+}
+
+window.fundTplEntOwnerChanged = function(eid) {
+  const row = document.getElementById(`fundTplEnt_${eid}`);
+  if (!row) return;
+  const owner = row.querySelector('.fundTplEntOwnerSel').value;
+  const accSel = row.querySelector('.fundTplEntAccSel');
+  const ownerAccs = accounts.filter(a => (a.owner || a.name) === owner && a.bank);
+  accSel.innerHTML = ownerAccs.length > 0
+    ? ownerAccs.map(a => `<option value="${a.id}" data-market="${a.market || 'tw'}">${a.bank}${a.market ? (a.market==='us'?' 🇺🇸':' 🇹🇼') : ''}</option>`).join('')
+    : '<option value="">無帳戶</option>';
+  fundTplEntAccountChanged(eid);
+};
+
+window.fundTplEntAccountChanged = function(eid) {
+  const row = document.getElementById(`fundTplEnt_${eid}`);
+  if (!row) return;
+  const accSel = row.querySelector('.fundTplEntAccSel');
+  const market = accSel.selectedOptions[0]?.dataset.market || 'tw';
+  const isUS = market === 'us';
+  row.querySelector('.fundTplEntTwd').style.display = isUS ? '' : 'none';
+  row.querySelector('.fundTplEntRate').style.display = isUS ? '' : 'none';
+  row.querySelector('.fundTplEntAmt').placeholder = isUS ? '美金金額' : '台幣金額';
+};
+
+function saveFundTplEditor(editId) {
+  const name = document.getElementById('fundTplEdName').value.trim();
+  if (!name) { alert('請輸入範本名稱'); return; }
+
+  const schedEls = document.querySelectorAll('#fundTplEdSchedules .tpl-schedule');
+  const schedules = [];
+  for (const sEl of schedEls) {
+    const day = parseInt(sEl.querySelector('.fundTplSchedDay').value);
+    if (!day || day < 1 || day > 31) { alert('存入日請輸入 1-31'); return; }
+    const entRows = sEl.querySelectorAll('.tpl-investor-row');
+    const entries = [];
+    entRows.forEach(r => {
+      const accId = r.querySelector('.fundTplEntAccSel')?.value;
+      const amount = parseFloat(r.querySelector('.fundTplEntAmt')?.value) || 0;
+      if (!accId || amount <= 0) return;
+      const type = r.querySelector('.fundTplEntType')?.value || 'deposit';
+      const market = r.querySelector('.fundTplEntAccSel').selectedOptions[0]?.dataset.market || 'tw';
+      let twdAmount = null, rate = null;
+      if (market === 'us') {
+        const twdVal = parseFloat(r.querySelector('.fundTplEntTwd')?.value);
+        const rateVal = parseFloat(r.querySelector('.fundTplEntRate')?.value);
+        twdAmount = isNaN(twdVal) ? null : twdVal;
+        rate = isNaN(rateVal) ? null : rateVal;
+      }
+      entries.push({ accId, type, amount, twdAmount, rate });
+    });
+    if (entries.length === 0) { alert(`第 ${day} 日：請新增至少一個帳戶`); return; }
+    schedules.push({ day, entries });
+  }
+  if (schedules.length === 0) { alert('請新增至少一個存入日'); return; }
+
+  let tpls = getFundTemplates();
+  if (editId) {
+    const idx = tpls.findIndex(t => t.id === editId);
+    if (idx >= 0) tpls[idx] = { ...tpls[idx], name, schedules };
+  } else {
+    tpls.push({ id: Date.now().toString(), name, schedules });
+  }
+  saveFundTemplates(tpls);
+  document.getElementById('fundTplEditorWrap').innerHTML = '';
+  renderFundTplList();
+  refreshFundTplExecSelect();
+}
+
+// --- Fund Template Monthly Execution ---
+function refreshFundTplExecSelect() {
+  const sel = document.getElementById('fundTplExecSelect');
+  if (!sel) return;
+  const tpls = getFundTemplates();
+  const prev = sel.value;
+  sel.innerHTML = '<option value="">-- 請選擇 --</option>' +
+    tpls.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+  if (prev) sel.value = prev;
+}
+
+function fundTplExecPreview() {
+  const tplId = document.getElementById('fundTplExecSelect').value;
+  const monthVal = document.getElementById('fundTplExecMonth').value;
+  const previewArea = document.getElementById('fundTplExecPreviewArea');
+  const submitArea = document.getElementById('fundTplExecSubmitArea');
+
+  if (!tplId || !monthVal) {
+    previewArea.innerHTML = '';
+    submitArea.innerHTML = '';
+    return;
+  }
+
+  const tpl = getFundTemplates().find(t => t.id === tplId);
+  if (!tpl) return;
+
+  const [year, month] = monthVal.split('-').map(Number);
+  const rows = [];
+  tpl.schedules.forEach(s => {
+    let day = s.day;
+    const lastDay = new Date(year, month, 0).getDate();
+    if (day > lastDay) day = lastDay;
+    const rawDate = `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+    const actualDate = nextBusinessDay(rawDate);
+    s.entries.forEach(e => {
+      const acc = accounts.find(a => a.id === e.accId);
+      if (!acc) return;
+      rows.push({
+        date: actualDate, rawDate, day: s.day,
+        accId: e.accId, accLabel: accountLabel(acc), market: acc.market || 'tw',
+        type: e.type, amount: e.amount, twdAmount: e.twdAmount, rate: e.rate
+      });
+    });
+  });
+
+  if (rows.length === 0) {
+    previewArea.innerHTML = '<div style="color:#666;font-size:0.85em">此範本沒有有效的帳戶</div>';
+    submitArea.innerHTML = '';
+    return;
+  }
+
+  previewArea.innerHTML = `
+    <div style="font-size:0.85em;color:#888;margin-top:12px;margin-bottom:6px">存入預覽 (共 ${rows.length} 筆)：</div>
+    <div style="overflow-x:auto">
+    <table class="tpl-preview-table">
+      <thead><tr>
+        <th>日期</th><th>帳戶</th><th>類型</th><th>金額</th>
+      </tr></thead>
+      <tbody>
+        ${rows.map(r => `<tr>
+          <td>${r.date}${r.rawDate !== r.date ? `<div style="font-size:0.75em;color:#f59e0b">原 ${r.rawDate}，遇假日順延</div>` : ''}</td>
+          <td>${r.accLabel}</td>
+          <td>${r.type === 'deposit' ? '存入' : '提出'}</td>
+          <td style="color:#fbbf24">${r.market === 'us' ? '$' : 'NT$'}${r.amount.toLocaleString()}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+    </div>
+  `;
+
+  window._fundTplExecRows = rows;
+  submitArea.innerHTML = `<button class="btn btn-add" onclick="fundTplExecSubmit()" style="font-size:1em;padding:10px 24px">⚡ 一鍵送出 (${rows.length} 筆)</button>`;
+}
+
+function fundTplExecSubmit() {
+  const rows = window._fundTplExecRows;
+  if (!rows || rows.length === 0) return;
+  if (!confirm(`確定送出 ${rows.length} 筆資金紀錄？`)) return;
+
+  let count = 0;
+  const touchedMarkets = new Set();
+  rows.forEach(r => {
+    let data = getAccountData(r.accId, r.market, 'funds');
+    if (r.market === 'us') {
+      let twdAmount = r.twdAmount, rate = r.rate;
+      if (twdAmount && !rate) rate = twdAmount / r.amount;
+      if (rate && !twdAmount) twdAmount = r.amount * rate;
+      data.push({ id: Date.now() + count, date: r.date, type: r.type, amount: r.amount, twdAmount: twdAmount ?? null, rate: rate ?? null, note: '' });
+    } else {
+      data.push({ id: Date.now() + count, date: r.date, type: r.type, amount: r.amount, note: '' });
+    }
+    data.sort((a, b) => b.date.localeCompare(a.date));
+    saveAccountData(r.accId, r.market, 'funds', data);
+    touchedMarkets.add(r.market);
+    count++;
+  });
+
+  alert(`✅ 已新增 ${count} 筆資金紀錄`);
+  document.getElementById('fundTplExecPreviewArea').innerHTML = '';
+  document.getElementById('fundTplExecSubmitArea').innerHTML = '';
+  window._fundTplExecRows = null;
+  if (touchedMarkets.has('us')) renderUSTab();
+  if (touchedMarkets.has('tw')) renderTWTab();
 }
 
 // ===== Mortgage Tab =====
