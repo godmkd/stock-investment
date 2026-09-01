@@ -10399,10 +10399,12 @@ window._buildDailyRows = function(market, ym) {
     const nwCell = isUS
       ? `<td style="text-align:right;padding:2px 8px">${fmt(d.value)}<div style="font-size:0.8em;color:#888">${d.valueTWD != null ? fmtTWD(d.valueTWD) : '--'}</div></td>`
       : `<td style="text-align:right;padding:2px 8px">${fmtTWD(d.value)}</td>`;
-    return `<tr><td style="padding:2px 8px;color:#bbb;white-space:nowrap">${d.date}${tag}</td>${nwCell}<td style="text-align:right;padding:2px 8px;${rcls}">${pct(roi)}</td><td style="text-align:right;padding:2px 8px;${dcls}">${diff == null ? '--' : (diff >= 0 ? '+' : '') + fmtFn(diff)}</td></tr>`;
+    const rateCell = isUS ? `<td style="text-align:right;padding:2px 8px;color:#888">${d.rate != null ? d.rate.toFixed(3) : '--'}</td>` : '';
+    return `<tr><td style="padding:2px 8px;color:#bbb;white-space:nowrap">${d.date}${tag}</td>${nwCell}<td style="text-align:right;padding:2px 8px;${rcls}">${pct(roi)}</td>${rateCell}<td style="text-align:right;padding:2px 8px;${dcls}">${diff == null ? '--' : (diff >= 0 ? '+' : '') + fmtFn(diff)}</td></tr>`;
   }).join('');
   const nwHdr = isUS ? '淨值<br><span style="font-size:0.85em">(USD/TWD)</span>' : '淨值';
-  return `<table style="width:100%;font-size:0.8em"><thead><tr><th style="text-align:left;padding:2px 8px;color:#888;font-weight:500">日期</th><th style="text-align:right;padding:2px 8px;color:#888;font-weight:500">${nwHdr}</th><th style="text-align:right;padding:2px 8px;color:#888;font-weight:500">投報率</th><th style="text-align:right;padding:2px 8px;color:#888;font-weight:500">日差額</th></tr></thead><tbody>${body}</tbody></table>`;
+  const rateHdr = isUS ? '<th style="text-align:right;padding:2px 8px;color:#888;font-weight:500">匯率</th>' : '';
+  return `<table style="width:100%;font-size:0.8em"><thead><tr><th style="text-align:left;padding:2px 8px;color:#888;font-weight:500">日期</th><th style="text-align:right;padding:2px 8px;color:#888;font-weight:500">${nwHdr}</th><th style="text-align:right;padding:2px 8px;color:#888;font-weight:500">投報率</th>${rateHdr}<th style="text-align:right;padding:2px 8px;color:#888;font-weight:500">日差額</th></tr></thead><tbody>${body}</tbody></table>`;
 };
 
 function renderCombinedMonthlySnapshotTable(usKey, twKey, title) {
