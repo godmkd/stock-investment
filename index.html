@@ -1701,6 +1701,7 @@ function getAccountAdjustedFundIn(accountId, market) {
 let accounts = [];
 let prices = JSON.parse(localStorage.getItem('stock_prices') || '{}');
 let usdTwdRate = parseFloat(localStorage.getItem('usd_twd_rate') || '32');
+let usdTwdRateUpdatedAt = null;
 let mortgages = [];
 let pledges = JSON.parse(localStorage.getItem('stock_pledges') || '[]');
 let currentOwnerFilter = '';
@@ -3711,6 +3712,7 @@ async function fetchUsdTwd() {
     const data = await res.json();
     if (data.rates && data.rates.TWD) {
       usdTwdRate = data.rates.TWD;
+      usdTwdRateUpdatedAt = new Date();
       localStorage.setItem('usd_twd_rate', usdTwdRate.toString());
     }
   } catch (e) {
@@ -3719,11 +3721,17 @@ async function fetchUsdTwd() {
       const data2 = await res2.json();
       if (data2.rates && data2.rates.TWD) {
         usdTwdRate = data2.rates.TWD;
+        usdTwdRateUpdatedAt = new Date();
         localStorage.setItem('usd_twd_rate', usdTwdRate.toString());
       }
     } catch (e2) { console.error('Rate fetch failed', e2); }
   }
   renderOverviewTab();
+}
+
+async function refreshRateReport() {
+  await fetchUsdTwd();
+  if (currentReportView === 'rate') renderReportTab();
 }
 
 // ===== US STOCKS - Forms =====
@@ -11188,8 +11196,8 @@ function renderDividendCalendar(el) {
 }
 
 // Feature 3: 匯率歷史紀錄
-function renderRateHistory(el) {
-  // Collect all USD fund records with rate info
+async function renderRateHistory(el) {
+  // Sparse markers: USD fund records where the user manually filled in a rate
   const rateRecords = [];
   for (const acc of getReportAccounts()) {
     const funds = getAccountData(acc.id, 'us', 'funds');
@@ -11208,28 +11216,55 @@ function renderRateHistory(el) {
   }
   rateRecords.sort((a, b) => a.date.localeCompare(b.date));
 
-  if (rateRecords.length === 0) {
-    el.innerHTML = '<div style="text-align:center;color:#666;padding:40px">尚無匯率紀錄（需在美股資金操作中填入匯率）</div>';
+  // Dense daily series: real USD/TWD close rates backed by fx_rates
+  // (populated by the fetch-fx-rates GitHub Action), independent of
+  // whether the user has ever filled in a rate on a fund record.
+  const today = todayStr();
+  let startDate = rateRecords.length > 0 ? rateRecords[0].date : null;
+  if (!startDate) {
+    const d = new Date();
+    d.setFullYear(d.getFullYear() - 1);
+    startDate = d.toISOString().slice(0, 10);
+  }
+
+  el.innerHTML = '<div style="text-align:center;color:#666;padding:40px">載入每日匯率中...</div>';
+  const fxMap = await fetchFXHistory(startDate, today);
+  const dailyDates = Object.keys(fxMap).sort();
+
+  if (dailyDates.length === 0 && rateRecords.length === 0) {
+    el.innerHTML = '<div style="text-align:center;color:#666;padding:40px">尚無匯率資料</div>';
     return;
   }
 
-  const avgRate = rateRecords.reduce((s, r) => s + r.rate, 0) / rateRecords.length;
-  const minRate = Math.min(...rateRecords.map(r => r.rate));
-  const maxRate = Math.max(...rateRecords.map(r => r.rate));
-  const latestRate = rateRecords[rateRecords.length - 1].rate;
+  const dailyRates = dailyDates.map(d => fxMap[d]);
+  const latestDailyDate = dailyDates[dailyDates.length - 1];
+  const latestDailyRate = latestDailyDate != null ? fxMap[latestDailyDate] : null;
+  const avgRate = dailyRates.length > 0
+    ? dailyRates.reduce((s, r) => s + r, 0) / dailyRates.length
+    : rateRecords.reduce((s, r) => s + r.rate, 0) / rateRecords.length;
+  const minRate = dailyRates.length > 0 ? Math.min(...dailyRates) : Math.min(...rateRecords.map(r => r.rate));
+  const maxRate = dailyRates.length > 0 ? Math.max(...dailyRates) : Math.max(...rateRecords.map(r => r.rate));
+  const liveUpdatedLabel = usdTwdRateUpdatedAt
+    ? usdTwdRateUpdatedAt.toLocaleString('zh-TW')
+    : 'App 開啟時取得';
 
   el.innerHTML = `
     <div class="summary" style="margin-bottom:16px">
-      <div class="card"><div class="label">現在匯率</div><div class="value blue">${usdTwdRate.toFixed(3)}</div></div>
-      <div class="card"><div class="label">最新紀錄</div><div class="value">${latestRate.toFixed(3)}</div><div class="sub">${rateRecords[rateRecords.length-1].date}</div></div>
-      <div class="card"><div class="label">平均匯率</div><div class="value yellow">${avgRate.toFixed(3)}</div></div>
-      <div class="card"><div class="label">最低</div><div class="value pos">${minRate.toFixed(3)}</div></div>
-      <div class="card"><div class="label">最高</div><div class="value neg">${maxRate.toFixed(3)}</div></div>
-      <div class="card"><div class="label">紀錄筆數</div><div class="value">${rateRecords.length}</div></div>
+      <div class="card">
+        <div class="label">即時匯率 <button class="btn" onclick="refreshRateReport()" style="padding:1px 6px;font-size:0.7em;margin-left:4px">🔄</button></div>
+        <div class="value blue">${usdTwdRate.toFixed(3)}</div>
+        <div class="sub">${liveUpdatedLabel}</div>
+      </div>
+      <div class="card"><div class="label">最新每日收盤</div><div class="value">${latestDailyRate != null ? latestDailyRate.toFixed(3) : '-'}</div><div class="sub">${latestDailyDate || ''}</div></div>
+      <div class="card"><div class="label">期間平均</div><div class="value yellow">${avgRate.toFixed(3)}</div></div>
+      <div class="card"><div class="label">期間最低</div><div class="value pos">${minRate.toFixed(3)}</div></div>
+      <div class="card"><div class="label">期間最高</div><div class="value neg">${maxRate.toFixed(3)}</div></div>
+      <div class="card"><div class="label">存提紀錄筆數</div><div class="value">${rateRecords.length}</div></div>
     </div>
     <div style="margin-bottom:20px"><canvas id="rateChartCanvas" style="max-height:350px"></canvas></div>
+    ${rateRecords.length > 0 ? `
     <div class="table-container">
-      <div class="table-header"><h3>💱 匯率紀錄明細</h3></div>
+      <div class="table-header"><h3>💱 存提匯率紀錄明細</h3></div>
       <div style="overflow-x:auto">
       <table><thead><tr><th>日期</th><th>匯率</th><th>類型</th><th>USD</th><th>TWD</th><th>帳戶</th></tr></thead>
       <tbody>${[...rateRecords].reverse().map(r => {
@@ -11244,32 +11279,58 @@ function renderRateHistory(el) {
         </tr>`;
       }).join('')}</tbody></table>
       </div>
-    </div>
+    </div>` : ''}
   `;
+
+  // Merge the dense daily series and the sparse deposit/withdraw markers
+  // onto one shared date axis (they don't fall on the same days — funds can
+  // land on weekends/holidays that fx_rates has no close for).
+  const allDatesSet = new Set(dailyDates);
+  rateRecords.forEach(r => allDatesSet.add(r.date));
+  const allDates = [...allDatesSet].sort();
+  const dailySeries = allDates.map(d => fxMap[d] != null ? fxMap[d] : null);
+  const recordByDate = {};
+  rateRecords.forEach(r => { recordByDate[r.date] = r; });
+  const markerSeries = allDates.map(d => recordByDate[d] ? recordByDate[d].rate : null);
+
+  const datasets = [];
+  if (dailyRates.length > 0) {
+    datasets.push({
+      label: '每日收盤匯率',
+      data: dailySeries,
+      borderColor: '#67e8f9',
+      backgroundColor: 'rgba(103,232,249,0.08)',
+      fill: true,
+      tension: 0.15,
+      pointRadius: 0,
+      borderWidth: 1.5,
+      spanGaps: true
+    });
+  }
+  if (rateRecords.length > 0) {
+    datasets.push({
+      label: '存提紀錄',
+      data: markerSeries,
+      borderColor: '#fbbf24',
+      backgroundColor: '#fbbf24',
+      showLine: false,
+      pointRadius: 5,
+      pointHoverRadius: 7
+    });
+  }
+  datasets.push({
+    label: '即時匯率',
+    data: allDates.map(() => usdTwdRate),
+    borderColor: 'rgba(255,255,255,0.3)',
+    borderDash: [5, 5],
+    pointRadius: 0,
+    fill: false
+  });
 
   destroyChart('rateHistory');
   chartInstances['rateHistory'] = new Chart(document.getElementById('rateChartCanvas'), {
     type: 'line',
-    data: {
-      labels: rateRecords.map(r => r.date),
-      datasets: [{
-        label: 'USD/TWD 匯率',
-        data: rateRecords.map(r => r.rate),
-        borderColor: '#fbbf24',
-        backgroundColor: 'rgba(251,191,36,0.1)',
-        fill: true,
-        tension: 0.3,
-        pointRadius: 4,
-        pointBackgroundColor: '#fbbf24'
-      }, {
-        label: '現在匯率',
-        data: rateRecords.map(() => usdTwdRate),
-        borderColor: 'rgba(103,232,249,0.5)',
-        borderDash: [5, 5],
-        pointRadius: 0,
-        fill: false
-      }]
-    },
+    data: { labels: allDates, datasets },
     options: {
       responsive: true,
       plugins: { legend: { labels: { color: '#aaa' } } },
