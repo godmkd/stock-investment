@@ -2255,13 +2255,11 @@ async function refreshSwapPrices() {
         }
       }
     } catch (e) {}
-    const marketOpen = (typeof isTWMarketHours === 'function') && isTWMarketHours();
-    if (marketOpen) {
-      await tryMethod(fetchTWPricesJsonp, 'jsonp(open)');
-    } else {
-      await tryMethod(fetchTWYahooClosing, 'yahoo');
-      await tryMethod(fetchTWPricesJsonp, 'jsonp(closed)');
-    }
+    // JSONP first — no CORS proxy dependency, works both during and after
+    // market hours, and is far faster/more reliable than the proxy-based
+    // fallbacks below (which depend on free CORS proxy uptime).
+    await tryMethod(fetchTWPricesJsonp, 'jsonp');
+    await tryMethod(fetchTWYahooClosing, 'yahoo');
     if (typeof fetchTWSEClosingPrices === 'function') {
       await tryMethod(fetchTWSEClosingPrices, 'twse-proxy');
     }
@@ -3404,11 +3402,12 @@ function twseJsonp(url) {
   });
 }
 
-// CORS proxy 列表（依序嘗試）
+// CORS proxy 列表（依序嘗試）。corsproxy.io 已改成需要付費 API key（回
+// 401/403），api.codetabs.com 目前連不上（DNS/連線層失敗），兩個都拿掉；
+// proxy.cors.sh 目前測試最穩定，排第一個。
 const corsProxies = [
+  url => `https://proxy.cors.sh/${url}`,
   url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-  url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
-  url => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
 ];
 
 async function fetchWithCorsProxy(url, timeout = 12000) {
@@ -3554,12 +3553,16 @@ function isTWMarketHours() {
 // Yahoo Finance 取得台股收盤價
 async function fetchTWYahooClosing(tickers) {
   const results = {};
-  const proxies = ['https://api.allorigins.win/raw?url=', 'https://corsproxy.io/?'];
+  // corsproxy.io now requires a paid API key (401/403) — replaced with proxy.cors.sh.
+  const proxies = [
+    target => `https://proxy.cors.sh/${target}`,
+    target => `https://api.allorigins.win/raw?url=${encodeURIComponent(target)}`,
+  ];
   for (const code of tickers) {
     const symbol = code + '.TW';
-    for (const proxy of proxies) {
+    for (const proxyFn of proxies) {
       try {
-        const url = proxy + encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=1d&interval=1d`);
+        const url = proxyFn(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=1d&interval=1d`);
         const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
         if (!res.ok) continue;
         const data = await res.json();
@@ -3606,7 +3609,6 @@ async function refreshTWPrices() {
   let fetched = false;
   let method = '';
   let count = 0;
-  const marketOpen = isTWMarketHours();
 
   // 方法1: 本地 tw_prices.json
   try {
@@ -3620,8 +3622,8 @@ async function refreshTWPrices() {
     }
   } catch (e) {}
 
-  // 方法2: 盤中用 TWSE 即時報價
-  if (!fetched && marketOpen) {
+  // 方法2: TWSE 即時報價 (JSONP，不走 CORS proxy，盤中盤後都能用，最快最穩)
+  if (!fetched) {
     try {
       const jsonpResults = await fetchTWPricesJsonp(allTickers);
       if (Object.keys(jsonpResults).length > 0) {
@@ -3633,7 +3635,7 @@ async function refreshTWPrices() {
     } catch (e) { console.log('JSONP method failed:', e); }
   }
 
-  // 方法3: 收盤後用 Yahoo Finance（更快更新收盤價）
+  // 方法3: Yahoo Finance（JSONP 沒抓到才試；需要 CORS proxy，較慢也較不穩）
   if (!fetched) {
     try {
       const yahooResults = await fetchTWYahooClosing(allTickers);
@@ -3646,20 +3648,7 @@ async function refreshTWPrices() {
     } catch (e) { console.log('Yahoo method failed:', e); }
   }
 
-  // 方法4: TWSE JSONP fallback（盤後也試一次）
-  if (!fetched) {
-    try {
-      const jsonpResults = await fetchTWPricesJsonp(allTickers);
-      if (Object.keys(jsonpResults).length > 0) {
-        Object.assign(twPrices, jsonpResults);
-        fetched = true;
-        method = 'TWSE 報價';
-        count = Object.keys(jsonpResults).length / 2;
-      }
-    } catch (e) {}
-  }
-
-  // 方法5: CORS proxy fallback
+  // 方法4: CORS proxy fallback
   if (!fetched) {
     try {
       const twseResults = await fetchTWSEClosingPrices(allTickers);
@@ -3671,7 +3660,7 @@ async function refreshTWPrices() {
     } catch (e) {}
   }
 
-  // 方法4: 補抓上櫃股（如果還有缺的）
+  // 方法5: 補抓上櫃股（如果還有缺的）
   const missingTickers = new Set();
   for (const code of allTickers) {
     if (!twPrices[code] || !twPrices[code].price) missingTickers.add(code);
