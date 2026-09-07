@@ -2255,16 +2255,18 @@ async function refreshSwapPrices() {
         }
       }
     } catch (e) {}
-    // JSONP first — no CORS proxy dependency, works both during and after
-    // market hours, and is far faster/more reliable than the proxy-based
-    // fallbacks below (which depend on free CORS proxy uptime).
-    await tryMethod(fetchTWPricesJsonp, 'jsonp');
-    await tryMethod(fetchTWYahooClosing, 'yahoo');
+    // fetchTWPricesJsonp doesn't actually work — mis.twse.com.tw ignores the
+    // callback param and always returns plain JSON, so the <script>-tag JSONP
+    // trick just times out. Go straight to the proxy-based methods.
     if (typeof fetchTWSEClosingPrices === 'function') {
       await tryMethod(fetchTWSEClosingPrices, 'twse-proxy');
     }
+    await tryMethod(fetchTWYahooClosing, 'yahoo');
     if (typeof fetchTPEXClosingPrices === 'function') {
       await tryMethod(fetchTPEXClosingPrices, 'tpex');
+    }
+    if (typeof fetchTWPricesFromSupabase === 'function') {
+      await tryMethod(fetchTWPricesFromSupabase, 'db-fallback');
     }
     Object.assign(twPrices, fresh);
     try { localStorage.setItem('tw_stock_prices', JSON.stringify(twPrices)); } catch {}
@@ -2596,15 +2598,12 @@ async function fetchThemeLivePrices(tickers) {
         for (const k of Object.keys(data)) if (codes.has(k) && data[k]?.price > 0) fresh[k] = data[k];
       }
     } catch (e) {}
-    const open = (typeof isTWMarketHours === 'function') && isTWMarketHours();
-    if (open) {
-      await tryMethod(fetchTWPricesJsonp);
-    } else {
-      if (typeof fetchTWYahooClosing === 'function') await tryMethod(fetchTWYahooClosing);
-      await tryMethod(fetchTWPricesJsonp);
-    }
+    // fetchTWPricesJsonp doesn't actually work (see refreshSwapPrices) — go
+    // straight to the proxy-based methods.
     if (typeof fetchTWSEClosingPrices === 'function') await tryMethod(fetchTWSEClosingPrices);
+    if (typeof fetchTWYahooClosing === 'function') await tryMethod(fetchTWYahooClosing);
     if (typeof fetchTPEXClosingPrices === 'function') await tryMethod(fetchTPEXClosingPrices);
+    if (typeof fetchTWPricesFromSupabase === 'function') await tryMethod(fetchTWPricesFromSupabase);
     Object.assign(twPrices, fresh);
     try { localStorage.setItem('tw_stock_prices', JSON.stringify(twPrices)); } catch {}
     for (const k of Object.keys(fresh)) out[k] = fresh[k].price;
@@ -3376,32 +3375,6 @@ function getTWTickerDisplay(ticker) {
   return { name: ticker, code: code !== ticker ? code : '' };
 }
 
-function twseJsonp(url) {
-  return new Promise((resolve, reject) => {
-    const cbName = '_twseCb_' + Date.now() + Math.random().toString(36).slice(2);
-    const script = document.createElement('script');
-    const timeout = setTimeout(() => {
-      cleanup();
-      reject(new Error('TWSE JSONP timeout'));
-    }, 10000);
-    
-    function cleanup() {
-      clearTimeout(timeout);
-      delete window[cbName];
-      if (script.parentNode) script.parentNode.removeChild(script);
-    }
-    
-    window[cbName] = function(data) {
-      cleanup();
-      resolve(data);
-    };
-    
-    script.src = url + (url.includes('?') ? '&' : '?') + 'callback=' + cbName;
-    script.onerror = function() { cleanup(); reject(new Error('JSONP load error')); };
-    document.head.appendChild(script);
-  });
-}
-
 // CORS proxy 列表（依序嘗試）。corsproxy.io 已改成需要付費 API key（回
 // 401/403），api.codetabs.com 目前連不上（DNS/連線層失敗），兩個都拿掉；
 // proxy.cors.sh 目前測試最穩定，排第一個。
@@ -3508,34 +3481,38 @@ async function fetchTPEXClosingPrices(tickers) {
   return results;
 }
 
-// 用 JSONP 從 TWSE 即時報價 API 抓股價（不受 CORS 限制）
-async function fetchTWPricesJsonp(tickers) {
+// 最終保底：所有即時來源（都要透過不穩定的免費 CORS proxy）都失敗時，
+// 從 Supabase tw_stock_history 撈最近一次收盤價（由 GitHub Action 每天
+// 兩次穩定寫入，走 Supabase 自己的 API，不受 CORS proxy 生死影響）。
+// 不是即時報價，但至少不會整個更新失敗、畫面卡住舊資料。
+async function fetchTWPricesFromSupabase(tickers) {
   const results = {};
-  // 分批：上市(tse) + 上櫃(otc) 各查一次
-  for (const prefix of ['tse', 'otc']) {
-    const exCh = [...tickers].map(t => `${prefix}_${t}.tw`).join('|');
-    try {
-      const data = await twseJsonp(
-        `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=${exCh}&json=1&delay=0`
-      );
-      if (data && data.msgArray) {
-        for (const stock of data.msgArray) {
-          const code = stock.c;
-          let price = 0, prevClose = 0;
-          try { price = parseFloat(stock.z); } catch(e) {}
-          if (!price || isNaN(price)) try { price = parseFloat(stock.pz); } catch(e) {}
-          try { prevClose = parseFloat(stock.y); } catch(e) {}
-          const name = stock.n || code;
-          if (price > 0) {
-            const change = prevClose > 0 ? ((price - prevClose) / prevClose * 100) : 0;
-            const entry = { price, prevClose, change: parseFloat(change.toFixed(2)), name, time: Date.now() };
-            results[code] = entry;
-            if (name) results[name] = entry;
-          }
-        }
-      }
-    } catch (e) { console.log(`JSONP ${prefix} failed:`, e.message); }
-  }
+  try {
+    const end = todayStr();
+    const start = new Date(); start.setDate(start.getDate() - 10);
+    const startStr = start.toISOString().slice(0, 10);
+    const rows = await fetchStockHistory('tw', [...tickers], startStr, end);
+    const byCode = {};
+    for (const r of rows) {
+      const code = r.stock_code;
+      if (!tickers.has(code)) continue;
+      if (!byCode[code]) byCode[code] = [];
+      byCode[code].push(r);
+    }
+    for (const code in byCode) {
+      const sorted = byCode[code].sort((a, b) => a.trade_date.localeCompare(b.trade_date));
+      const last = sorted[sorted.length - 1];
+      const prev = sorted.length > 1 ? sorted[sorted.length - 2] : null;
+      const price = parseFloat(last.close_price);
+      if (!(price > 0)) continue;
+      const prevClose = prev ? parseFloat(prev.close_price) : price;
+      const change = prevClose > 0 ? ((price - prevClose) / prevClose * 100) : 0;
+      const name = twCodeToName[code] || code;
+      const entry = { price, prevClose, change: parseFloat(change.toFixed(2)), name, time: Date.now(), stale: true };
+      results[code] = entry;
+      if (name && name !== code) results[name] = entry;
+    }
+  } catch (e) { console.log('Supabase TW price fallback failed:', e.message); }
   return results;
 }
 
@@ -3622,20 +3599,23 @@ async function refreshTWPrices() {
     }
   } catch (e) {}
 
-  // 方法2: TWSE 即時報價 (JSONP，不走 CORS proxy，盤中盤後都能用，最快最穩)
+  // 方法2: 證交所 API（透過 CORS proxy）— mis.twse.com.tw 的 callback 參數其實
+  // 不會真的包成 JSONP（伺服器一律回傳純 JSON，不管 callback 打什麼名字），
+  // 用 <script> 標籤載入會直接語法錯誤、卡到逾時，是死路，已移除。改用
+  // fetchWithCorsProxy 真的送出 fetch 請求。
   if (!fetched) {
     try {
-      const jsonpResults = await fetchTWPricesJsonp(allTickers);
-      if (Object.keys(jsonpResults).length > 0) {
-        Object.assign(twPrices, jsonpResults);
+      const twseResults = await fetchTWSEClosingPrices(allTickers);
+      if (Object.keys(twseResults).length > 0) {
+        Object.assign(twPrices, twseResults);
         fetched = true;
-        method = 'TWSE 即時報價';
-        count = Object.keys(jsonpResults).length / 2;
+        method = '證交所 API (proxy)';
+        count = Object.keys(twseResults).length / 2;
       }
-    } catch (e) { console.log('JSONP method failed:', e); }
+    } catch (e) {}
   }
 
-  // 方法3: Yahoo Finance（JSONP 沒抓到才試；需要 CORS proxy，較慢也較不穩）
+  // 方法3: Yahoo Finance（證交所 API 沒抓到才試；也走 proxy）
   if (!fetched) {
     try {
       const yahooResults = await fetchTWYahooClosing(allTickers);
@@ -3648,19 +3628,7 @@ async function refreshTWPrices() {
     } catch (e) { console.log('Yahoo method failed:', e); }
   }
 
-  // 方法4: CORS proxy fallback
-  if (!fetched) {
-    try {
-      const twseResults = await fetchTWSEClosingPrices(allTickers);
-      if (Object.keys(twseResults).length > 0) {
-        Object.assign(twPrices, twseResults);
-        fetched = true;
-        method = '證交所 API (proxy)';
-      }
-    } catch (e) {}
-  }
-
-  // 方法5: 補抓上櫃股（如果還有缺的）
+  // 方法4: 補抓上櫃股（如果還有缺的）
   const missingTickers = new Set();
   for (const code of allTickers) {
     if (!twPrices[code] || !twPrices[code].price) missingTickers.add(code);
@@ -3673,6 +3641,20 @@ async function refreshTWPrices() {
         fetched = true;
         if (!method) method = '櫃買中心';
         else method += ' + 櫃買中心';
+      }
+    } catch (e) {}
+  }
+
+  // 方法5: 免費 CORS proxy 全掛時的保底 — 從 Supabase 拿最近收盤價
+  const stillMissing = new Set([...allTickers].filter(c => !twPrices[c] || !twPrices[c].price));
+  if (stillMissing.size > 0) {
+    try {
+      const dbResults = await fetchTWPricesFromSupabase(stillMissing);
+      if (Object.keys(dbResults).length > 0) {
+        Object.assign(twPrices, dbResults);
+        fetched = true;
+        if (!method) method = '資料庫最近收盤價';
+        else method += ' + 資料庫最近收盤價';
       }
     } catch (e) {}
   }
