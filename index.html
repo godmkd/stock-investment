@@ -2261,12 +2261,15 @@ async function refreshSwapPrices() {
     if (typeof fetchTWSEClosingPrices === 'function') {
       await tryMethod(fetchTWSEClosingPrices, 'twse-proxy');
     }
+    // DB fallback before Yahoo/TPEX — those two are slow (per-ticker × proxy)
+    // and Yahoo's also been seen rate-limited independent of proxy, so try
+    // the fast+reliable Supabase source for whatever's still missing first.
+    if (typeof fetchTWPricesFromSupabase === 'function') {
+      await tryMethod(fetchTWPricesFromSupabase, 'db-fallback');
+    }
     await tryMethod(fetchTWYahooClosing, 'yahoo');
     if (typeof fetchTPEXClosingPrices === 'function') {
       await tryMethod(fetchTPEXClosingPrices, 'tpex');
-    }
-    if (typeof fetchTWPricesFromSupabase === 'function') {
-      await tryMethod(fetchTWPricesFromSupabase, 'db-fallback');
     }
     Object.assign(twPrices, fresh);
     try { localStorage.setItem('tw_stock_prices', JSON.stringify(twPrices)); } catch {}
@@ -2601,9 +2604,10 @@ async function fetchThemeLivePrices(tickers) {
     // fetchTWPricesJsonp doesn't actually work (see refreshSwapPrices) — go
     // straight to the proxy-based methods.
     if (typeof fetchTWSEClosingPrices === 'function') await tryMethod(fetchTWSEClosingPrices);
+    // DB fallback before Yahoo/TPEX — see refreshSwapPrices for why.
+    if (typeof fetchTWPricesFromSupabase === 'function') await tryMethod(fetchTWPricesFromSupabase);
     if (typeof fetchTWYahooClosing === 'function') await tryMethod(fetchTWYahooClosing);
     if (typeof fetchTPEXClosingPrices === 'function') await tryMethod(fetchTPEXClosingPrices);
-    if (typeof fetchTWPricesFromSupabase === 'function') await tryMethod(fetchTWPricesFromSupabase);
     Object.assign(twPrices, fresh);
     try { localStorage.setItem('tw_stock_prices', JSON.stringify(twPrices)); } catch {}
     for (const k of Object.keys(fresh)) out[k] = fresh[k].price;
@@ -3375,15 +3379,16 @@ function getTWTickerDisplay(ticker) {
   return { name: ticker, code: code !== ticker ? code : '' };
 }
 
-// CORS proxy 列表（依序嘗試）。corsproxy.io 已改成需要付費 API key（回
-// 401/403），api.codetabs.com 目前連不上（DNS/連線層失敗），兩個都拿掉；
-// proxy.cors.sh 目前測試最穩定，排第一個。
+// CORS proxy 列表。免費 proxy 這幾天測下來沒有一個真的穩定過——corsproxy.io
+// 改成要付費 API key，api.codetabs.com 連不上，proxy.cors.sh 測試時還能用，
+// 兩天後網域直接 NXDOMAIN 消失。目前只留 allorigins（實測約 1/3 成功率，
+// 失敗常常是 10+ 秒逾時），不要再花時間追加/替換「這個目前測試穩定」的
+// proxy 了 — 這條路本質上就是不可靠的，真正的保底是 fetchTWPricesFromSupabase。
 const corsProxies = [
-  url => `https://proxy.cors.sh/${url}`,
   url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
 ];
 
-async function fetchWithCorsProxy(url, timeout = 12000) {
+async function fetchWithCorsProxy(url, timeout = 3000) {
   // 先嘗試直接 fetch
   try {
     const ctrl = new AbortController();
@@ -3530,9 +3535,11 @@ function isTWMarketHours() {
 // Yahoo Finance 取得台股收盤價
 async function fetchTWYahooClosing(tickers) {
   const results = {};
-  // corsproxy.io now requires a paid API key (401/403) — replaced with proxy.cors.sh.
+  // Only allorigins left — corsproxy.io needs a paid key now, proxy.cors.sh's
+  // domain went NXDOMAIN days after it tested fine. This whole method is a
+  // slow last resort (per-ticker × proxy, short timeout) — Yahoo itself has
+  // also been seen 429-rate-limiting regardless of proxy.
   const proxies = [
-    target => `https://proxy.cors.sh/${target}`,
     target => `https://api.allorigins.win/raw?url=${encodeURIComponent(target)}`,
   ];
   for (const code of tickers) {
@@ -3540,7 +3547,7 @@ async function fetchTWYahooClosing(tickers) {
     for (const proxyFn of proxies) {
       try {
         const url = proxyFn(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=1d&interval=1d`);
-        const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+        const res = await fetch(url, { signal: AbortSignal.timeout(3000) });
         if (!res.ok) continue;
         const data = await res.json();
         const meta = data?.chart?.result?.[0]?.meta;
@@ -3615,38 +3622,10 @@ async function refreshTWPrices() {
     } catch (e) {}
   }
 
-  // 方法3: Yahoo Finance（證交所 API 沒抓到才試；也走 proxy）
-  if (!fetched) {
-    try {
-      const yahooResults = await fetchTWYahooClosing(allTickers);
-      if (Object.keys(yahooResults).length > 0) {
-        Object.assign(twPrices, yahooResults);
-        fetched = true;
-        method = 'Yahoo Finance 收盤價';
-        count = Object.keys(yahooResults).length / 2;
-      }
-    } catch (e) { console.log('Yahoo method failed:', e); }
-  }
-
-  // 方法4: 補抓上櫃股（如果還有缺的）
-  const missingTickers = new Set();
-  for (const code of allTickers) {
-    if (!twPrices[code] || !twPrices[code].price) missingTickers.add(code);
-  }
-  if (missingTickers.size > 0) {
-    try {
-      const tpexResults = await fetchTPEXClosingPrices(missingTickers);
-      if (Object.keys(tpexResults).length > 0) {
-        Object.assign(twPrices, tpexResults);
-        fetched = true;
-        if (!method) method = '櫃買中心';
-        else method += ' + 櫃買中心';
-      }
-    } catch (e) {}
-  }
-
-  // 方法5: 免費 CORS proxy 全掛時的保底 — 從 Supabase 拿最近收盤價
-  const stillMissing = new Set([...allTickers].filter(c => !twPrices[c] || !twPrices[c].price));
+  // 方法3: Supabase 最近收盤價 — 快又穩（走 Supabase 自己的 CORS API，不靠
+  // 免費 proxy），證交所 API 沒抓到的部分先用這個墊底，省得還沒填到的股票
+  // 又去等 Yahoo/櫃買中心那兩個慢又不穩的 proxy 方法。
+  let stillMissing = new Set([...allTickers].filter(c => !twPrices[c] || !twPrices[c].price));
   if (stillMissing.size > 0) {
     try {
       const dbResults = await fetchTWPricesFromSupabase(stillMissing);
@@ -3655,6 +3634,34 @@ async function refreshTWPrices() {
         fetched = true;
         if (!method) method = '資料庫最近收盤價';
         else method += ' + 資料庫最近收盤價';
+      }
+    } catch (e) {}
+  }
+
+  // 方法4: Yahoo Finance（前面都補不到才試；每檔都要走 proxy，較慢）
+  stillMissing = new Set([...allTickers].filter(c => !twPrices[c] || !twPrices[c].price));
+  if (stillMissing.size > 0) {
+    try {
+      const yahooResults = await fetchTWYahooClosing(stillMissing);
+      if (Object.keys(yahooResults).length > 0) {
+        Object.assign(twPrices, yahooResults);
+        fetched = true;
+        if (!method) method = 'Yahoo Finance 收盤價';
+        else method += ' + Yahoo Finance';
+      }
+    } catch (e) { console.log('Yahoo method failed:', e); }
+  }
+
+  // 方法5: 補抓上櫃股（如果還有缺的）
+  stillMissing = new Set([...allTickers].filter(c => !twPrices[c] || !twPrices[c].price));
+  if (stillMissing.size > 0) {
+    try {
+      const tpexResults = await fetchTPEXClosingPrices(stillMissing);
+      if (Object.keys(tpexResults).length > 0) {
+        Object.assign(twPrices, tpexResults);
+        fetched = true;
+        if (!method) method = '櫃買中心';
+        else method += ' + 櫃買中心';
       }
     } catch (e) {}
   }
