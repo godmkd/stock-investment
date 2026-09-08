@@ -3377,12 +3377,13 @@ function getTWTickerDisplay(ticker) {
   return { name: ticker, code: code !== ticker ? code : '' };
 }
 
-// CORS proxy 列表。免費 proxy 這幾天測下來沒有一個真的穩定過——corsproxy.io
-// 改成要付費 API key，api.codetabs.com 連不上，proxy.cors.sh 測試時還能用，
-// 兩天後網域直接 NXDOMAIN 消失。目前只留 allorigins（實測約 1/3 成功率，
-// 失敗常常是 10+ 秒逾時），不要再花時間追加/替換「這個目前測試穩定」的
-// proxy 了 — 這條路本質上就是不可靠的，真正的保底是 fetchTWPricesFromSupabase。
+// CORS proxy 列表。第三方免費 proxy 這幾天測下來沒有一個真的穩定過——
+// corsproxy.io 改成要付費 API key，api.codetabs.com 連不上，proxy.cors.sh
+// 測試時還能用，兩天後網域直接 NXDOMAIN 消失。改成自己架的 Cloudflare
+// Worker（cloudflare-worker-proxy.js，免費額度，只轉發白名單主機）排第一，
+// allorigins 留著當備援。
 const corsProxies = [
+  url => `https://wild-sun.godmkd1.workers.dev/?url=${encodeURIComponent(url)}`,
   url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
 ];
 
@@ -3533,11 +3534,12 @@ function isTWMarketHours() {
 // Yahoo Finance 取得台股收盤價
 async function fetchTWYahooClosing(tickers) {
   const results = {};
-  // Only allorigins left — corsproxy.io needs a paid key now, proxy.cors.sh's
-  // domain went NXDOMAIN days after it tested fine. This whole method is a
-  // slow last resort (per-ticker × proxy, short timeout) — Yahoo itself has
-  // also been seen 429-rate-limiting regardless of proxy.
+  // Self-hosted Cloudflare Worker first (allowlists query1.finance.yahoo.com),
+  // allorigins as backup. This whole method is still a slow last resort
+  // (per-ticker × proxy) — Yahoo itself has also been seen 429-rate-limiting
+  // regardless of proxy.
   const proxies = [
+    target => `https://wild-sun.godmkd1.workers.dev/?url=${encodeURIComponent(target)}`,
     target => `https://api.allorigins.win/raw?url=${encodeURIComponent(target)}`,
   ];
   for (const code of tickers) {
