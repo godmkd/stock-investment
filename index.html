@@ -3347,8 +3347,6 @@ async function savePricesToCloud() {
 // ===== TW Stock Prices =====
 // 由 Python 腳本更新後寫入 localStorage，或手動按更新按鈕時用 prompt 輸入
 let twPrices = JSON.parse(localStorage.getItem('tw_stock_prices') || '{}');
-// 自動注入的台股即時股價（由 update_prices.py 更新）
-(function() { const _p = {"0050":{"price":75.45,"prevClose":72.35,"change":4.28,"name":"元大台灣50"},"元大台灣50":{"price":75.45,"prevClose":72.35,"change":4.28,"name":"元大台灣50"},"006208":{"price":175.3,"prevClose":168.1,"change":4.28,"name":"富邦台50"},"富邦台50":{"price":175.3,"prevClose":168.1,"change":4.28,"name":"富邦台50"},"009802":{"price":12.41,"prevClose":12.01,"change":3.33,"name":"富邦旗艦50"},"富邦旗艦50":{"price":12.41,"prevClose":12.01,"change":3.33,"name":"富邦旗艦50"},"1720":{"price":64.1,"prevClose":63.4,"change":1.1,"name":"生達"},"生達":{"price":64.1,"prevClose":63.4,"change":1.1,"name":"生達"},"2324":{"price":27.45,"prevClose":26.95,"change":1.86,"name":"仁寶"},"仁寶":{"price":27.45,"prevClose":26.95,"change":1.86,"name":"仁寶"},"2330":{"price":1855.0,"prevClose":1760.0,"change":5.4,"name":"台積電"},"台積電":{"price":1855.0,"prevClose":1760.0,"change":5.4,"name":"台積電"},"3231":{"price":127.0,"prevClose":122.5,"change":3.67,"name":"緯創"},"緯創":{"price":127.0,"prevClose":122.5,"change":3.67,"name":"緯創"},"4938":{"price":78.2,"prevClose":76.2,"change":2.62,"name":"和碩"},"和碩":{"price":78.2,"prevClose":76.2,"change":2.62,"name":"和碩"}}; Object.assign(twPrices, _p); localStorage.setItem('tw_stock_prices', JSON.stringify(twPrices)); })();
 
 // 台股名稱對照表（交易紀錄可能用中文名）
 const twTickerMap = {
@@ -3593,6 +3591,16 @@ async function refreshTWPrices() {
   let fetched = false;
   let method = '';
   let count = 0;
+  // Tracks which tickers got a FRESH result during THIS run — must not be
+  // confused with "twPrices already has some price", which is true for
+  // almost every ticker almost always (old cached/cloud-synced value from a
+  // past run) and previously made every fallback below a no-op whenever the
+  // one unconditional method (方法2) failed. That's why refreshes kept
+  // reporting "更新失敗" even though the fallback chain looked complete.
+  const gotFresh = new Set();
+  const markFresh = (resultObj) => {
+    for (const k of Object.keys(resultObj)) if (allTickers.has(k)) gotFresh.add(k);
+  };
 
   // 方法1: 本地 tw_prices.json
   try {
@@ -3600,6 +3608,7 @@ async function refreshTWPrices() {
     if (res.ok) {
       const data = await res.json();
       Object.assign(twPrices, data);
+      markFresh(data);
       fetched = true;
       method = '本地檔案';
       count = Object.keys(data).length / 2;
@@ -3610,11 +3619,12 @@ async function refreshTWPrices() {
   // 不會真的包成 JSONP（伺服器一律回傳純 JSON，不管 callback 打什麼名字），
   // 用 <script> 標籤載入會直接語法錯誤、卡到逾時，是死路，已移除。改用
   // fetchWithCorsProxy 真的送出 fetch 請求。
-  if (!fetched) {
+  if (gotFresh.size < allTickers.size) {
     try {
       const twseResults = await fetchTWSEClosingPrices(allTickers);
       if (Object.keys(twseResults).length > 0) {
         Object.assign(twPrices, twseResults);
+        markFresh(twseResults);
         fetched = true;
         method = '證交所 API (proxy)';
         count = Object.keys(twseResults).length / 2;
@@ -3625,12 +3635,13 @@ async function refreshTWPrices() {
   // 方法3: Supabase 最近收盤價 — 快又穩（走 Supabase 自己的 CORS API，不靠
   // 免費 proxy），證交所 API 沒抓到的部分先用這個墊底，省得還沒填到的股票
   // 又去等 Yahoo/櫃買中心那兩個慢又不穩的 proxy 方法。
-  let stillMissing = new Set([...allTickers].filter(c => !twPrices[c] || !twPrices[c].price));
+  let stillMissing = new Set([...allTickers].filter(c => !gotFresh.has(c)));
   if (stillMissing.size > 0) {
     try {
       const dbResults = await fetchTWPricesFromSupabase(stillMissing);
       if (Object.keys(dbResults).length > 0) {
         Object.assign(twPrices, dbResults);
+        markFresh(dbResults);
         fetched = true;
         if (!method) method = '資料庫最近收盤價';
         else method += ' + 資料庫最近收盤價';
@@ -3639,12 +3650,13 @@ async function refreshTWPrices() {
   }
 
   // 方法4: Yahoo Finance（前面都補不到才試；每檔都要走 proxy，較慢）
-  stillMissing = new Set([...allTickers].filter(c => !twPrices[c] || !twPrices[c].price));
+  stillMissing = new Set([...allTickers].filter(c => !gotFresh.has(c)));
   if (stillMissing.size > 0) {
     try {
       const yahooResults = await fetchTWYahooClosing(stillMissing);
       if (Object.keys(yahooResults).length > 0) {
         Object.assign(twPrices, yahooResults);
+        markFresh(yahooResults);
         fetched = true;
         if (!method) method = 'Yahoo Finance 收盤價';
         else method += ' + Yahoo Finance';
@@ -3653,12 +3665,13 @@ async function refreshTWPrices() {
   }
 
   // 方法5: 補抓上櫃股（如果還有缺的）
-  stillMissing = new Set([...allTickers].filter(c => !twPrices[c] || !twPrices[c].price));
+  stillMissing = new Set([...allTickers].filter(c => !gotFresh.has(c)));
   if (stillMissing.size > 0) {
     try {
       const tpexResults = await fetchTPEXClosingPrices(stillMissing);
       if (Object.keys(tpexResults).length > 0) {
         Object.assign(twPrices, tpexResults);
+        markFresh(tpexResults);
         fetched = true;
         if (!method) method = '櫃買中心';
         else method += ' + 櫃買中心';
