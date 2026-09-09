@@ -3458,6 +3458,16 @@ async function fetchTWSEClosingPrices(tickers) {
           let price = 0, prevClose = 0;
           try { price = parseFloat(stock.z); } catch(e) {}
           if (!price || isNaN(price)) try { price = parseFloat(stock.pz); } catch(e) {}
+          // 盤中這個 API 對匿名請求常常不給最新成交價（z/pz 都是 "-"，連台積電
+          // 這種量最大的股票也一樣），但買賣五檔（a/b）還是有即時資料。沒有
+          // 成交價時退而求其次，用最佳買賣價中點當作目前市價的估計值。
+          if (!price || isNaN(price)) {
+            const bestBid = parseFloat((stock.b || '').split('_')[0]);
+            const bestAsk = parseFloat((stock.a || '').split('_')[0]);
+            if (bestBid > 0 && bestAsk > 0) price = (bestBid + bestAsk) / 2;
+            else if (bestBid > 0) price = bestBid;
+            else if (bestAsk > 0) price = bestAsk;
+          }
           try { prevClose = parseFloat(stock.y); } catch(e) {}
           const name = stock.n || code;
           if (price > 0) {
