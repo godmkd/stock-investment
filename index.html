@@ -4802,47 +4802,46 @@ function renderOwnerBlock(title, summary, ownerMortgages) {
   const usTwdPL = usTwdCost > 0 ? usTwdValue - usTwdCost : 0;
   const usTwdRet = usTwdCost > 0 ? (usTwdPL / usTwdCost * 100) : 0;
 
-  const cardStyle = 'flex:1 1 0;min-width:130px';
   const stockTotalTWD = usNetWorth * usdTwdRate + twNetWorth;
 
   return `
     <div style="margin-bottom:20px">
       ${title ? `<h3 style="color:#67e8f9;font-size:1em;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid rgba(255,255,255,0.1)">${title}</h3>` : ''}
-      <div style="display:flex;flex-wrap:wrap;gap:8px">
-        <div class="card" style="${cardStyle}">
+      <div class="summary">
+        <div class="card">
           <div class="label">🇺🇸 美股淨值</div>
           <div class="value blue">${fmt(usNetWorth)}</div>
           <div class="sub">投報: <span class="${plClass(usRet)}">${fmtPct(usRet)}</span></div>
           <div class="sub" style="color:#fbbf24;margin-top:2px">${fmtTWD(usNetWorth * usdTwdRate)}</div>
         </div>
-        ${usWeightedAvgRate > 0 ? `<div class="card" style="${cardStyle}">
+        ${usWeightedAvgRate > 0 ? `<div class="card">
           <div class="label">🇺🇸 美股台幣損益</div>
           <div class="value ${plClass(usTwdPL)}">${(usTwdPL>=0?'+':'') + fmtTWD(usTwdPL)}</div>
           <div class="sub">均匯 ${usWeightedAvgRate.toFixed(2)} | 投報 <span class="${plClass(usTwdRet)}">${fmtPct(usTwdRet)}</span></div>
         </div>` : ''}
-        <div class="card" style="${cardStyle}">
+        <div class="card">
           <div class="label">🇹🇼 台股淨值</div>
           <div class="value orange">${fmtTWD(twNetWorth)}</div>
           <div class="sub">投報: <span class="${plClass(twRet)}">${fmtPct(twRet)}</span></div>
         </div>
-        <div class="card" style="${cardStyle}">
+        <div class="card">
           <div class="label">📈 股票總值 (TWD)</div>
           <div class="value" style="color:#fbbf24">${fmtTWD(stockTotalTWD)}</div>
           <div class="sub">美股+台股合計</div>
         </div>
-        <div class="card" style="${cardStyle}">
+        <div class="card">
           <div class="label">🏠 房產</div>
           <div class="value orange">${fmtTWD(propertyValue)}</div>
         </div>
-        <div class="card" style="${cardStyle}">
+        <div class="card">
           <div class="label">💰 總資產</div>
           <div class="value" style="color:#a78bfa">${fmtTWD(totalAssets)}</div>
         </div>
-        <div class="card" style="${cardStyle}">
+        <div class="card">
           <div class="label">🔴 總負債</div>
           <div class="value" style="color:#f87171">${fmtTWD(totalDebt)}</div>
         </div>
-        <div class="card" style="${cardStyle}">
+        <div class="card">
           <div class="label">💎 淨資產</div>
           <div class="value" style="color:${netAssets >= 0 ? '#34d399' : '#f87171'}">${fmtTWD(netAssets)}</div>
         </div>
