@@ -50,6 +50,7 @@
   .content-area.active { display: block; }
 
   .summary { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; margin-bottom: 20px; overflow: hidden; }
+  .summary-2col { grid-template-columns: 1fr 1fr !important; }
   .card {
     background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
     border-radius: 10px; padding: 10px 12px; text-align: center; min-width: 0; overflow: hidden;
@@ -4807,7 +4808,7 @@ function renderOwnerBlock(title, summary, ownerMortgages) {
   return `
     <div style="margin-bottom:20px">
       ${title ? `<h3 style="color:#67e8f9;font-size:1em;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid rgba(255,255,255,0.1)">${title}</h3>` : ''}
-      <div class="summary">
+      <div class="summary summary-2col">
         <div class="card">
           <div class="label">🇺🇸 美股淨值</div>
           <div class="value blue">${fmt(usNetWorth)}</div>
