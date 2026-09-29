@@ -422,7 +422,7 @@
 
 <div id="appContainer" style="display:none">
 <div class="header">
-  <h1>💼 投資追蹤系統 <span style="font-size:.4em;font-weight:400;color:#666;-webkit-text-fill-color:#666">v75</span></h1>
+  <h1>💼 投資追蹤系統 <span style="font-size:.4em;font-weight:400;color:#666;-webkit-text-fill-color:#666">v76</span></h1>
   <div class="user-bar" id="userBar" style="display:none;position:relative">
     <span id="userDisplayName" onclick="document.getElementById('userMenu').style.display=document.getElementById('userMenu').style.display==='block'?'none':'block'" style="cursor:pointer"></span>
     <div id="userMenu" style="display:none;position:absolute;top:100%;right:0;background:#1e1e2e;border:1px solid rgba(255,255,255,0.15);border-radius:8px;padding:12px;min-width:260px;z-index:200;box-shadow:0 8px 24px rgba(0,0,0,0.4);margin-top:4px">
@@ -6068,7 +6068,7 @@ function renderStockSections(containerId, analysis, trades, market) {
           const noteText = t.note || '';
           const xfer = isTransfer(t);
           const priceCell = xfer ? '<span style="color:#67e8f9;font-size:0.78em">匯撥</span>' : fmtPrice(t.price);
-          const amtCell = xfer ? fmtAmt(transferCost(t)) : fmtAmt(t.shares * t.price);
+          const amtCell = xfer ? fmtAmt(transferCost(t)) : fmtAmt(isTW ? Math.floor(t.shares * t.price) : t.shares * t.price);
           const dateCell = xfer ? `<span style="color:#67e8f9">📥 ${t.date}</span>` : t.date;
           return `<tr>
             <td>${dateCell}</td>
@@ -6088,7 +6088,7 @@ function renderStockSections(containerId, analysis, trades, market) {
           const noteText = t.note || '';
           const xfer = isTransfer(t);
           const priceCell = xfer ? '<span style="color:#67e8f9;font-size:0.78em">匯撥</span>' : fmtPrice(t.price);
-          const amtCell = xfer ? fmtAmt(transferCost(t)) : fmtAmt(t.shares * t.price);
+          const amtCell = xfer ? fmtAmt(transferCost(t)) : fmtAmt(isTW ? Math.floor(t.shares * t.price) : t.shares * t.price);
           const dateCell = xfer ? `<span style="color:#67e8f9">📤 ${t.date}</span>` : t.date;
           return `<tr>
             <td>${dateCell}</td>
