@@ -6700,7 +6700,7 @@ function submitAllDCA() {
       const amount = parseFloat(row.querySelector('.dcaAmt')?.value) || 0;
       if (amount <= 0) return;
       const shares = Math.floor(amount / price);
-      const actualCost = shares * price;
+      const actualCost = market === 'tw' ? Math.floor(shares * price) : shares * price;
       const fee = market === 'tw' ? Math.max(1, Math.floor(actualCost * feeRate)) : actualCost * feeRate;
       let trades = getAccountData(accid, market, 'trades');
       trades.push({
@@ -7206,9 +7206,9 @@ function tplExecUpdatePreview() {
       if (!acc) return;
       const shares = Math.floor(inv.amount / price);
       if (shares <= 0) return;
-      const actualCost = shares * price;
       const market = detectMarket(tpl.ticker);
-      const fee = market === 'tw' ? Math.max(1, Math.round(actualCost * tpl.feeRate)) : actualCost * tpl.feeRate;
+      const actualCost = market === 'tw' ? Math.floor(shares * price) : shares * price;
+      const fee = market === 'tw' ? Math.max(1, Math.floor(actualCost * tpl.feeRate)) : actualCost * tpl.feeRate;
       rows.push({
         date: de.actualDate,
         ticker: tpl.ticker,
