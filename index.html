@@ -422,7 +422,7 @@
 
 <div id="appContainer" style="display:none">
 <div class="header">
-  <h1>💼 投資追蹤系統 <span style="font-size:.4em;font-weight:400;color:#666;-webkit-text-fill-color:#666">v76</span></h1>
+  <h1>💼 投資追蹤系統 <span style="font-size:.4em;font-weight:400;color:#666;-webkit-text-fill-color:#666">v77</span></h1>
   <div class="user-bar" id="userBar" style="display:none;position:relative">
     <span id="userDisplayName" onclick="document.getElementById('userMenu').style.display=document.getElementById('userMenu').style.display==='block'?'none':'block'" style="cursor:pointer"></span>
     <div id="userMenu" style="display:none;position:absolute;top:100%;right:0;background:#1e1e2e;border:1px solid rgba(255,255,255,0.15);border-radius:8px;padding:12px;min-width:260px;z-index:200;box-shadow:0 8px 24px rgba(0,0,0,0.4);margin-top:4px">
@@ -6118,7 +6118,7 @@ function renderStockSections(containerId, analysis, trades, market) {
       : '';
 
     return `
-      <div style="background:rgba(255,255,255,0.03);border:1px solid ${isErrorState ? 'rgba(248,113,113,0.3)' : 'rgba(255,255,255,0.06)'};border-radius:12px;margin-bottom:12px;overflow:hidden">
+      <div data-ticker="${s.ticker}" style="background:rgba(255,255,255,0.03);border:1px solid ${isErrorState ? 'rgba(248,113,113,0.3)' : 'rgba(255,255,255,0.06)'};border-radius:12px;margin-bottom:12px;overflow:hidden">
         <div onclick="this.parentElement.querySelector('.stock-detail').style.display=this.parentElement.querySelector('.stock-detail').style.display==='none'?'block':'none';this.querySelector('.arrow').classList.toggle('open')"
              style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;cursor:pointer;background:rgba(255,255,255,0.03);user-select:none">
           <div style="display:flex;align-items:center;gap:12px">
@@ -6151,6 +6151,32 @@ function renderStockSections(containerId, analysis, trades, market) {
   el.querySelectorAll('.arrow.open').forEach(a => a.style.transform = 'rotate(90deg)');
 }
 
+// Captures which per-stock cards are expanded + scroll position before a
+// full renderTWTab/renderUSTab, so re-rendering after a delete doesn't feel
+// like the page reloaded (all cards re-collapsing, scroll jumping to top).
+function snapshotStockSectionsState(containerId) {
+  const container = document.getElementById(containerId);
+  const scrollY = window.scrollY;
+  const expandedTickers = container
+    ? [...container.querySelectorAll('[data-ticker]')]
+        .filter(card => card.querySelector('.stock-detail')?.style.display === 'block')
+        .map(card => card.dataset.ticker)
+    : [];
+  return () => {
+    const container = document.getElementById(containerId);
+    if (container) {
+      expandedTickers.forEach(ticker => {
+        const card = container.querySelector(`[data-ticker="${CSS.escape(ticker)}"]`);
+        const detail = card?.querySelector('.stock-detail');
+        const arrow = card?.querySelector('.arrow');
+        if (detail) detail.style.display = 'block';
+        if (arrow) { arrow.classList.add('open'); arrow.style.transform = 'rotate(90deg)'; }
+      });
+    }
+    window.scrollTo(window.scrollX, scrollY);
+  };
+}
+
 function deleteTrade(market, tradeId) {
   const accId = market === 'us' ? currentUSAccount : currentTWAccount;
   const trades = getAccountData(accId, market, 'trades');
@@ -6178,8 +6204,10 @@ function deleteTrade(market, tradeId) {
     const kept = trades.filter(t => String(t.id) !== String(tradeId));
     saveAccountData(accId, market, 'trades', kept);
   }
+  const restore = snapshotStockSectionsState(market === 'us' ? 'usStockSections' : 'twStockSections');
   if (market === 'us') renderUSTab();
   else renderTWTab();
+  restore();
 }
 
 function findTransferPartner(market, transferId, excludeAccId) {
