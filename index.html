@@ -422,7 +422,7 @@
 
 <div id="appContainer" style="display:none">
 <div class="header">
-  <h1>💼 投資追蹤系統 <span style="font-size:.4em;font-weight:400;color:#666;-webkit-text-fill-color:#666">v77</span></h1>
+  <h1>💼 投資追蹤系統 <span style="font-size:.4em;font-weight:400;color:#666;-webkit-text-fill-color:#666">v78</span></h1>
   <div class="user-bar" id="userBar" style="display:none;position:relative">
     <span id="userDisplayName" onclick="document.getElementById('userMenu').style.display=document.getElementById('userMenu').style.display==='block'?'none':'block'" style="cursor:pointer"></span>
     <div id="userMenu" style="display:none;position:absolute;top:100%;right:0;background:#1e1e2e;border:1px solid rgba(255,255,255,0.15);border-radius:8px;padding:12px;min-width:260px;z-index:200;box-shadow:0 8px 24px rgba(0,0,0,0.4);margin-top:4px">
@@ -9838,6 +9838,7 @@ function createDoughnutChart(canvasId, labels, data, colors) {
     },
     options: {
       responsive: true,
+      maintainAspectRatio: false,
       plugins: {
         legend: {
           position: 'bottom',
@@ -10910,15 +10911,15 @@ function renderOverviewCharts(ownerGroups) {
       // 上排：圓餅圖（一左一右）
       let chartHtml = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:100%">';
       if (hasData) {
-        chartHtml += `<div style="background:rgba(255,255,255,0.04);border-radius:10px;padding:12px;max-height:250px">
+        chartHtml += `<div style="background:rgba(255,255,255,0.04);border-radius:10px;padding:12px">
           <h3 style="color:#888;font-size:0.8em;margin-bottom:6px">📊 美股 vs 台股</h3>
-          <canvas id="ovMarketPie_${idx}" style="max-height:200px"></canvas>
+          <div style="height:220px"><canvas id="ovMarketPie_${idx}"></canvas></div>
         </div>`;
       }
       if (allActive > 0) {
-        chartHtml += `<div style="background:rgba(255,255,255,0.04);border-radius:10px;padding:12px;max-height:250px">
+        chartHtml += `<div style="background:rgba(255,255,255,0.04);border-radius:10px;padding:12px">
           <h3 style="color:#888;font-size:0.8em;margin-bottom:6px">📊 個股配置</h3>
-          <canvas id="ovStockPie_${idx}" style="max-height:200px"></canvas>
+          <div style="height:220px"><canvas id="ovStockPie_${idx}"></canvas></div>
         </div>`;
       }
       chartHtml += '</div>';
@@ -10961,16 +10962,16 @@ function renderOverviewCharts(ownerGroups) {
   let html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0;max-width:100%">';
 
   if (hasData) {
-    html += `<div style="background:rgba(255,255,255,0.04);border-radius:10px;padding:12px;max-height:250px">
+    html += `<div style="background:rgba(255,255,255,0.04);border-radius:10px;padding:12px">
       <h3 style="color:#888;font-size:0.82em;margin-bottom:8px">📊 美股 vs 台股配置</h3>
-      <canvas id="ovMarketDoughnutCanvas" style="max-height:200px"></canvas>
+      <div style="height:220px"><canvas id="ovMarketDoughnutCanvas"></canvas></div>
     </div>`;
   }
 
   if (h.allActiveUS.length + h.allActiveTW.length > 0) {
-    html += `<div style="background:rgba(255,255,255,0.04);border-radius:10px;padding:12px;max-height:250px">
+    html += `<div style="background:rgba(255,255,255,0.04);border-radius:10px;padding:12px">
       <h3 style="color:#888;font-size:0.82em;margin-bottom:8px">📊 全部個股配置</h3>
-      <canvas id="ovAllStocksDoughnutCanvas" style="max-height:200px"></canvas>
+      <div style="height:220px"><canvas id="ovAllStocksDoughnutCanvas"></canvas></div>
     </div>`;
   }
 
