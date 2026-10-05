@@ -422,7 +422,7 @@
 
 <div id="appContainer" style="display:none">
 <div class="header">
-  <h1>💼 投資追蹤系統 <span style="font-size:.4em;font-weight:400;color:#666;-webkit-text-fill-color:#666">v78</span></h1>
+  <h1>💼 投資追蹤系統 <span style="font-size:.4em;font-weight:400;color:#666;-webkit-text-fill-color:#666">v79</span></h1>
   <div class="user-bar" id="userBar" style="display:none;position:relative">
     <span id="userDisplayName" onclick="document.getElementById('userMenu').style.display=document.getElementById('userMenu').style.display==='block'?'none':'block'" style="cursor:pointer"></span>
     <div id="userMenu" style="display:none;position:absolute;top:100%;right:0;background:#1e1e2e;border:1px solid rgba(255,255,255,0.15);border-radius:8px;padding:12px;min-width:260px;z-index:200;box-shadow:0 8px 24px rgba(0,0,0,0.4);margin-top:4px">
@@ -9826,6 +9826,14 @@ function destroyChart(key) {
   if (chartInstances[key]) { chartInstances[key].destroy(); delete chartInstances[key]; }
 }
 
+// Doughnut legend renders one row per entry at this card width — a chart
+// with many holdings needs a taller box than the market-split (2-item)
+// chart, or Chart.js has to shrink the doughnut to near-nothing and the
+// legend still gets clipped. Floor matches the 2-item chart's old height.
+function legendChartHeight(itemCount) {
+  return Math.max(220, 90 + itemCount * 22);
+}
+
 function createDoughnutChart(canvasId, labels, data, colors) {
   const ctx = document.getElementById(canvasId);
   if (!ctx) return null;
@@ -10919,7 +10927,7 @@ function renderOverviewCharts(ownerGroups) {
       if (allActive > 0) {
         chartHtml += `<div style="background:rgba(255,255,255,0.04);border-radius:10px;padding:12px">
           <h3 style="color:#888;font-size:0.8em;margin-bottom:6px">📊 個股配置</h3>
-          <div style="height:220px"><canvas id="ovStockPie_${idx}"></canvas></div>
+          <div style="height:${legendChartHeight(allActive)}px"><canvas id="ovStockPie_${idx}"></canvas></div>
         </div>`;
       }
       chartHtml += '</div>';
@@ -10971,7 +10979,7 @@ function renderOverviewCharts(ownerGroups) {
   if (h.allActiveUS.length + h.allActiveTW.length > 0) {
     html += `<div style="background:rgba(255,255,255,0.04);border-radius:10px;padding:12px">
       <h3 style="color:#888;font-size:0.82em;margin-bottom:8px">📊 全部個股配置</h3>
-      <div style="height:220px"><canvas id="ovAllStocksDoughnutCanvas"></canvas></div>
+      <div style="height:${legendChartHeight(h.allActiveUS.length + h.allActiveTW.length)}px"><canvas id="ovAllStocksDoughnutCanvas"></canvas></div>
     </div>`;
   }
 
