@@ -422,7 +422,7 @@
 
 <div id="appContainer" style="display:none">
 <div class="header">
-  <h1>💼 投資追蹤系統 <span style="font-size:.4em;font-weight:400;color:#666;-webkit-text-fill-color:#666">v79</span></h1>
+  <h1>💼 投資追蹤系統 <span style="font-size:.4em;font-weight:400;color:#666;-webkit-text-fill-color:#666">v80</span></h1>
   <div class="user-bar" id="userBar" style="display:none;position:relative">
     <span id="userDisplayName" onclick="document.getElementById('userMenu').style.display=document.getElementById('userMenu').style.display==='block'?'none':'block'" style="cursor:pointer"></span>
     <div id="userMenu" style="display:none;position:absolute;top:100%;right:0;background:#1e1e2e;border:1px solid rgba(255,255,255,0.15);border-radius:8px;padding:12px;min-width:260px;z-index:200;box-shadow:0 8px 24px rgba(0,0,0,0.4);margin-top:4px">
@@ -9834,7 +9834,12 @@ function legendChartHeight(itemCount) {
   return Math.max(220, 90 + itemCount * 22);
 }
 
-function createDoughnutChart(canvasId, labels, data, colors) {
+// fixedHeight: pass true only when the canvas sits in a wrapper div with an
+// explicit CSS height (e.g. legendChartHeight) — maintainAspectRatio:false
+// needs that to size against, or the chart grows unbounded on every resize.
+// Charts without such a wrapper (sized via max-height / aspect ratio only)
+// must keep the default maintainAspectRatio:true.
+function createDoughnutChart(canvasId, labels, data, colors, fixedHeight) {
   const ctx = document.getElementById(canvasId);
   if (!ctx) return null;
   const total = data.reduce((s, v) => s + v, 0);
@@ -9846,7 +9851,7 @@ function createDoughnutChart(canvasId, labels, data, colors) {
     },
     options: {
       responsive: true,
-      maintainAspectRatio: false,
+      maintainAspectRatio: !fixedHeight,
       plugins: {
         legend: {
           position: 'bottom',
@@ -10937,7 +10942,7 @@ function renderOverviewCharts(ownerGroups) {
       // 渲染圓餅圖
       if (hasData) {
         chartInstances[`ovMarketPie_${idx}`] = createDoughnutChart(
-          `ovMarketPie_${idx}`, ['🇺🇸 美股', '🇹🇼 台股'], [h.usTotalValue, h.twTotalValue], ['#3b82f6', '#f97316']
+          `ovMarketPie_${idx}`, ['🇺🇸 美股', '🇹🇼 台股'], [h.usTotalValue, h.twTotalValue], ['#3b82f6', '#f97316'], true
         );
       }
       if (allActive > 0) {
@@ -10947,7 +10952,7 @@ function renderOverviewCharts(ownerGroups) {
         const entries = Object.entries(stockMap).sort((a, b) => b[1] - a[1]);
         chartInstances[`ovStockPie_${idx}`] = createDoughnutChart(
           `ovStockPie_${idx}`, entries.map(e => e[0]), entries.map(e => e[1]),
-          entries.map((_, i) => chartColors[i % chartColors.length])
+          entries.map((_, i) => chartColors[i % chartColors.length]), true
         );
       }
 
@@ -10990,7 +10995,7 @@ function renderOverviewCharts(ownerGroups) {
   if (hasData) {
     chartInstances['ovMarketDoughnut'] = createDoughnutChart(
       'ovMarketDoughnutCanvas', ['🇺🇸 美股 (TWD)', '🇹🇼 台股 (TWD)'],
-      [h.usTotalValue, h.twTotalValue], ['#3b82f6', '#f97316']
+      [h.usTotalValue, h.twTotalValue], ['#3b82f6', '#f97316'], true
     );
   }
 
@@ -11001,7 +11006,7 @@ function renderOverviewCharts(ownerGroups) {
     const entries = Object.entries(stockMap).sort((a, b) => b[1] - a[1]);
     chartInstances['ovAllStocksDoughnut'] = createDoughnutChart(
       'ovAllStocksDoughnutCanvas', entries.map(e => e[0]), entries.map(e => e[1]),
-      entries.map((_, i) => chartColors[i % chartColors.length])
+      entries.map((_, i) => chartColors[i % chartColors.length]), true
     );
   }
 
