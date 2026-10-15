@@ -422,7 +422,7 @@
 
 <div id="appContainer" style="display:none">
 <div class="header">
-  <h1>💼 投資追蹤系統 <span style="font-size:.4em;font-weight:400;color:#666;-webkit-text-fill-color:#666">v80</span></h1>
+  <h1>💼 投資追蹤系統 <span style="font-size:.4em;font-weight:400;color:#666;-webkit-text-fill-color:#666">v81</span></h1>
   <div class="user-bar" id="userBar" style="display:none;position:relative">
     <span id="userDisplayName" onclick="document.getElementById('userMenu').style.display=document.getElementById('userMenu').style.display==='block'?'none':'block'" style="cursor:pointer"></span>
     <div id="userMenu" style="display:none;position:absolute;top:100%;right:0;background:#1e1e2e;border:1px solid rgba(255,255,255,0.15);border-radius:8px;padding:12px;min-width:260px;z-index:200;box-shadow:0 8px 24px rgba(0,0,0,0.4);margin-top:4px">
@@ -10431,7 +10431,16 @@ window._buildDailyRows = function(market, ym) {
   const full = series.filter(d => d && d.date && d.value != null)
                      .sort((a, b) => a.date.localeCompare(b.date));
   const diffMap = {};
-  for (let i = 1; i < full.length; i++) diffMap[full[i].date] = full[i].value - full[i - 1].value;
+  // netProfitMap strips out that day's new invested capital (deposits/buys net
+  // of withdrawals) from the raw diff, leaving pure market gain/loss — so
+  // 日差額 can include fresh money in, while 淨獲利 doesn't.
+  const netProfitMap = {};
+  for (let i = 1; i < full.length; i++) {
+    diffMap[full[i].date] = full[i].value - full[i - 1].value;
+    if (full[i].invested != null && full[i - 1].invested != null) {
+      netProfitMap[full[i].date] = diffMap[full[i].date] - (full[i].invested - full[i - 1].invested);
+    }
+  }
   const rows = full.filter(d => d.date.slice(0, 7) === ym)
                    .sort((a, b) => b.date.localeCompare(a.date));
   if (rows.length === 0) return '<div style="color:#888;font-size:0.82em;padding:4px">尚無每日資料（切換到較長的趨勢區間以載入更多天）</div>';
@@ -10447,6 +10456,8 @@ window._buildDailyRows = function(market, ym) {
   const body = rows.map(d => {
     const diff = diffMap[d.date];
     const dcls = diff == null ? '' : (diff >= 0 ? 'color:#34d399' : 'color:#f87171');
+    const netProfit = netProfitMap[d.date];
+    const npcls = netProfit == null ? '' : (netProfit >= 0 ? 'color:#34d399' : 'color:#f87171');
     const roi = roiOf(d);
     const rcls = roi == null ? '' : (roi >= 0 ? 'color:#34d399' : 'color:#f87171');
     const tag = (liveToday && d.date === liveToday) ? ' <span style="color:#fbbf24;font-size:0.8em">即時</span>' : '';
@@ -10454,11 +10465,11 @@ window._buildDailyRows = function(market, ym) {
       ? `<td style="text-align:right;padding:2px 8px">${fmt(d.value)}<div style="font-size:0.8em;color:#888">${d.valueTWD != null ? fmtTWD(d.valueTWD) : '--'}</div></td>`
       : `<td style="text-align:right;padding:2px 8px">${fmtTWD(d.value)}</td>`;
     const rateCell = isUS ? `<td style="text-align:right;padding:2px 8px;color:#888">${d.rate != null ? d.rate.toFixed(3) : '--'}</td>` : '';
-    return `<tr><td style="padding:2px 8px;color:#bbb;white-space:nowrap">${d.date}${tag}</td>${nwCell}<td style="text-align:right;padding:2px 8px;${rcls}">${pct(roi)}</td>${rateCell}<td style="text-align:right;padding:2px 8px;${dcls}">${diff == null ? '--' : (diff >= 0 ? '+' : '') + fmtFn(diff)}</td></tr>`;
+    return `<tr><td style="padding:2px 8px;color:#bbb;white-space:nowrap">${d.date}${tag}</td>${nwCell}<td style="text-align:right;padding:2px 8px;${rcls}">${pct(roi)}</td>${rateCell}<td style="text-align:right;padding:2px 8px;${dcls}">${diff == null ? '--' : (diff >= 0 ? '+' : '') + fmtFn(diff)}</td><td style="text-align:right;padding:2px 8px;${npcls}">${netProfit == null ? '--' : (netProfit >= 0 ? '+' : '') + fmtFn(netProfit)}</td></tr>`;
   }).join('');
   const nwHdr = isUS ? '淨值<br><span style="font-size:0.85em">(USD/TWD)</span>' : '淨值';
   const rateHdr = isUS ? '<th style="text-align:right;padding:2px 8px;color:#888;font-weight:500">匯率</th>' : '';
-  return `<table style="width:100%;font-size:0.8em"><thead><tr><th style="text-align:left;padding:2px 8px;color:#888;font-weight:500">日期</th><th style="text-align:right;padding:2px 8px;color:#888;font-weight:500">${nwHdr}</th><th style="text-align:right;padding:2px 8px;color:#888;font-weight:500">投報率</th>${rateHdr}<th style="text-align:right;padding:2px 8px;color:#888;font-weight:500">日差額</th></tr></thead><tbody>${body}</tbody></table>`;
+  return `<table style="width:100%;font-size:0.8em"><thead><tr><th style="text-align:left;padding:2px 8px;color:#888;font-weight:500">日期</th><th style="text-align:right;padding:2px 8px;color:#888;font-weight:500">${nwHdr}</th><th style="text-align:right;padding:2px 8px;color:#888;font-weight:500">投報率</th>${rateHdr}<th style="text-align:right;padding:2px 8px;color:#888;font-weight:500">日差額</th><th style="text-align:right;padding:2px 8px;color:#888;font-weight:500">淨獲利</th></tr></thead><tbody>${body}</tbody></table>`;
 };
 
 function renderCombinedMonthlySnapshotTable(usKey, twKey, title) {
