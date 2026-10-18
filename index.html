@@ -422,7 +422,7 @@
 
 <div id="appContainer" style="display:none">
 <div class="header">
-  <h1>💼 投資追蹤系統 <span style="font-size:.4em;font-weight:400;color:#666;-webkit-text-fill-color:#666">v81</span></h1>
+  <h1>💼 投資追蹤系統 <span style="font-size:.4em;font-weight:400;color:#666;-webkit-text-fill-color:#666">v82</span></h1>
   <div class="user-bar" id="userBar" style="display:none;position:relative">
     <span id="userDisplayName" onclick="document.getElementById('userMenu').style.display=document.getElementById('userMenu').style.display==='block'?'none':'block'" style="cursor:pointer"></span>
     <div id="userMenu" style="display:none;position:absolute;top:100%;right:0;background:#1e1e2e;border:1px solid rgba(255,255,255,0.15);border-radius:8px;padding:12px;min-width:260px;z-index:200;box-shadow:0 8px 24px rgba(0,0,0,0.4);margin-top:4px">
@@ -6912,7 +6912,9 @@ const twHolidays = new Set([
   '2025-02-28','2025-04-03','2025-04-04','2025-05-30','2025-06-02','2025-10-06','2025-10-10',
   // 2026
   '2026-01-01','2026-02-16','2026-02-17','2026-02-18','2026-02-19','2026-02-20',
-  '2026-02-27','2026-04-03','2026-04-06','2026-05-25','2026-06-19','2026-10-05','2026-10-09'
+  '2026-02-27','2026-04-03','2026-04-06','2026-05-25','2026-06-19',
+  '2026-09-25','2026-09-28', // 中秋節 — missing originally; confirmed via tw_stock_history gap (no trades 9/25 or 9/28, next trade day 9/29)
+  '2026-10-05','2026-10-09'
 ]);
 
 function nextBusinessDay(dateStr) {
@@ -10230,6 +10232,11 @@ function renderDetailedMonthlySnapshotTable(usKey, twKey, owner, period) {
     const twdRoi = (twdProfit != null && twdInv_ > 0) ? twdProfit / twdInv_ * 100 : null;
     const [usdDiff, usdDiffPct] = diffPct(usdNwArr, i);
     const [twdDiff, twdDiffPct] = diffPct(twdNwArr, i);
+    // 淨獲利 = 淨值差額 − 當期新增投入資金（存款/提款/匯撥），隔離出純粹市場漲跌。
+    const [usdInvDiff] = diffPct(usdInvArr, i);
+    const [twdInvDiff] = diffPct(twdInvArr, i);
+    const usdNetProfit = (usdDiff != null && usdInvDiff != null) ? usdDiff - usdInvDiff : null;
+    const twdNetProfit = (twdDiff != null && twdInvDiff != null) ? twdDiff - twdInvDiff : null;
 
     // Two-line cell helper: USD top, TWD bottom
     const dual2 = (usd, twd, color, fmtUsd = fmt, fmtTwd = fmtTWD) => {
@@ -10253,9 +10260,10 @@ function renderDetailedMonthlySnapshotTable(usKey, twKey, owner, period) {
       ${td(rate != null ? rate.toFixed(3) : dash)}
       ${dual2(usdDiff, twdDiff, cls(usdDiff))}
       ${dualPct(usdDiffPct, twdDiffPct, cls(usdDiffPct))}
-    </tr>` + (isYear ? '' : _dailyDetailRow('us', m, 8)) };
+      ${dual2(usdNetProfit, twdNetProfit, cls(usdNetProfit))}
+    </tr>` + (isYear ? '' : _dailyDetailRow('us', m, 9)) };
   });
-  const usHdr = `<th>${perLabel}份</th><th style="text-align:right">淨值<br><span style="font-size:0.78em;color:#888">(USD/TWD)</span></th><th style="text-align:right">投資金額<br><span style="font-size:0.78em;color:#888">(USD/TWD)</span></th><th style="text-align:right">獲利<br><span style="font-size:0.78em;color:#888">(USD/TWD)</span></th><th style="text-align:right">投報率<br><span style="font-size:0.78em;color:#888">(USD/TWD)</span></th><th style="text-align:right">USD/TWD</th><th style="text-align:right">${perLabel}差額<br><span style="font-size:0.78em;color:#888">(USD/TWD)</span></th><th style="text-align:right">${perLabel}損益率<br><span style="font-size:0.78em;color:#888">(USD/TWD)</span></th>`;
+  const usHdr = `<th>${perLabel}份</th><th style="text-align:right">淨值<br><span style="font-size:0.78em;color:#888">(USD/TWD)</span></th><th style="text-align:right">投資金額<br><span style="font-size:0.78em;color:#888">(USD/TWD)</span></th><th style="text-align:right">獲利<br><span style="font-size:0.78em;color:#888">(USD/TWD)</span></th><th style="text-align:right">投報率<br><span style="font-size:0.78em;color:#888">(USD/TWD)</span></th><th style="text-align:right">USD/TWD</th><th style="text-align:right">${perLabel}差額<br><span style="font-size:0.78em;color:#888">(USD/TWD)</span></th><th style="text-align:right">${perLabel}損益率<br><span style="font-size:0.78em;color:#888">(USD/TWD)</span></th><th style="text-align:right">${perLabel}淨獲利<br><span style="font-size:0.78em;color:#888">(USD/TWD)</span></th>`;
 
   // ===== TW section =====
   const twItems = months.map((m, i) => {
@@ -10265,6 +10273,9 @@ function renderDetailedMonthlySnapshotTable(usKey, twKey, owner, period) {
     const roi = (profit != null && inv > 0) ? profit / inv * 100 : null;
     const allNW = months.map(mm => twData[mm]);
     const [diff, diffPctVal] = diffPct(allNW, i);
+    const allInv = months.map(mm => twInv[mm]);
+    const [invDiff] = diffPct(allInv, i);
+    const netProfit = (diff != null && invDiff != null) ? diff - invDiff : null;
     return { ym: m, html: `<tr>
       ${isYear ? `<td>${m}</td>` : _dailyMonthCell('tw', m)}
       ${td(nw != null ? fmtTWD(nw) : dash)}
@@ -10273,9 +10284,10 @@ function renderDetailedMonthlySnapshotTable(usKey, twKey, owner, period) {
       ${td(roi != null ? fmtPct(roi) : dash, plClass(roi).replace('style="', '').replace('"',''))}
       ${td(diff != null ? fmtTWD(diff) : dash, plClass(diff).replace('style="', '').replace('"',''))}
       ${td(diffPctVal != null ? fmtPct(diffPctVal) : dash, plClass(diffPctVal).replace('style="', '').replace('"',''))}
-    </tr>` + (isYear ? '' : _dailyDetailRow('tw', m, 7)) };
+      ${td(netProfit != null ? fmtTWD(netProfit) : dash, plClass(netProfit).replace('style="', '').replace('"',''))}
+    </tr>` + (isYear ? '' : _dailyDetailRow('tw', m, 8)) };
   });
-  const twHdr = `<th>${perLabel}份</th><th style="text-align:right">淨值(TWD)</th><th style="text-align:right">投資金額(TWD)</th><th style="text-align:right">獲利(TWD)</th><th style="text-align:right">投報率</th><th style="text-align:right">${perLabel}差額</th><th style="text-align:right">${perLabel}損益率</th>`;
+  const twHdr = `<th>${perLabel}份</th><th style="text-align:right">淨值(TWD)</th><th style="text-align:right">投資金額(TWD)</th><th style="text-align:right">獲利(TWD)</th><th style="text-align:right">投報率</th><th style="text-align:right">${perLabel}差額</th><th style="text-align:right">${perLabel}損益率</th><th style="text-align:right">${perLabel}淨獲利</th>`;
 
   // ===== Total section (in TWD) =====
   // Carry each market's last-known value forward across months. US and TW cross
@@ -10305,6 +10317,8 @@ function renderDetailedMonthlySnapshotTable(usKey, twKey, owner, period) {
     const profit = (nw != null && inv != null) ? (nw - inv) : null;
     const roi = (profit != null && inv > 0) ? profit / inv * 100 : null;
     const [diff, diffPctVal] = diffPct(totalNW, i);
+    const [invDiff] = diffPct(totalInv, i);
+    const netProfit = (diff != null && invDiff != null) ? diff - invDiff : null;
     return { ym: m, html: `<tr>
       ${isYear ? `<td>${m}</td>` : _dailyMonthCell('total', m)}
       ${td(inv != null ? fmtTWD(inv) : dash)}
@@ -10313,9 +10327,10 @@ function renderDetailedMonthlySnapshotTable(usKey, twKey, owner, period) {
       ${td(roi != null ? fmtPct(roi) : dash, plClass(roi).replace('style="', '').replace('"',''))}
       ${td(diff != null ? fmtTWD(diff) : dash, plClass(diff).replace('style="', '').replace('"',''))}
       ${td(diffPctVal != null ? fmtPct(diffPctVal) : dash, plClass(diffPctVal).replace('style="', '').replace('"',''))}
-    </tr>` + (isYear ? '' : _dailyDetailRow('total', m, 7)) };
+      ${td(netProfit != null ? fmtTWD(netProfit) : dash, plClass(netProfit).replace('style="', '').replace('"',''))}
+    </tr>` + (isYear ? '' : _dailyDetailRow('total', m, 8)) };
   });
-  const totalHdr = `<th>${perLabel}份</th><th style="text-align:right">總投資</th><th style="text-align:right">總獲利</th><th style="text-align:right">總金額</th><th style="text-align:right">投報率</th><th style="text-align:right">${perLabel}差額</th><th style="text-align:right">${perLabel}損益率</th>`;
+  const totalHdr = `<th>${perLabel}份</th><th style="text-align:right">總投資</th><th style="text-align:right">總獲利</th><th style="text-align:right">總金額</th><th style="text-align:right">投報率</th><th style="text-align:right">${perLabel}差額</th><th style="text-align:right">${perLabel}損益率</th><th style="text-align:right">${perLabel}淨獲利</th>`;
 
   // ===== Debt section =====
   const debtVals = months.map(m => debtMap[m]);
@@ -10425,22 +10440,31 @@ window._toggleDailyDetail = function(market, ym, cellEl) {
 };
 window._buildDailyRows = function(market, ym) {
   const series = (window._dailyNetWorth && window._dailyNetWorth[market]) || [];
+  const real = series.filter(d => d && d.date && d.value != null)
+                     .sort((a, b) => a.date.localeCompare(b.date));
+  if (real.length === 0) return '<div style="color:#888;font-size:0.82em;padding:4px">尚無每日資料（切換到較長的趨勢區間以載入更多天）</div>';
+  // Fill weekend/holiday gaps by carrying forward the last real trading day's
+  // value, so the list shows every calendar day (not just trading days) —
+  // closed days are tagged 休市 and naturally diff to 0 against the prior
+  // carried value since nothing changed.
+  const realByDate = {};
+  real.forEach(d => { realByDate[d.date] = d; });
+  const fmtDate = dt => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+  const cursor = new Date(real[0].date + 'T12:00:00');
+  const endD = new Date(real[real.length - 1].date + 'T12:00:00');
+  const full = [];
+  let last = null;
+  while (cursor <= endD) {
+    const ds = fmtDate(cursor);
+    if (realByDate[ds]) { last = realByDate[ds]; full.push(last); }
+    else if (last) full.push({ ...last, date: ds, _closed: true });
+    cursor.setDate(cursor.getDate() + 1);
+  }
   // Day-over-day diff is computed across the FULL series (not just this month),
   // so each month's FIRST day diffs against the previous month's LAST day
   // instead of showing "--".
-  const full = series.filter(d => d && d.date && d.value != null)
-                     .sort((a, b) => a.date.localeCompare(b.date));
   const diffMap = {};
-  // netProfitMap strips out that day's new invested capital (deposits/buys net
-  // of withdrawals) from the raw diff, leaving pure market gain/loss — so
-  // 日差額 can include fresh money in, while 淨獲利 doesn't.
-  const netProfitMap = {};
-  for (let i = 1; i < full.length; i++) {
-    diffMap[full[i].date] = full[i].value - full[i - 1].value;
-    if (full[i].invested != null && full[i - 1].invested != null) {
-      netProfitMap[full[i].date] = diffMap[full[i].date] - (full[i].invested - full[i - 1].invested);
-    }
-  }
+  for (let i = 1; i < full.length; i++) diffMap[full[i].date] = full[i].value - full[i - 1].value;
   const rows = full.filter(d => d.date.slice(0, 7) === ym)
                    .sort((a, b) => b.date.localeCompare(a.date));
   if (rows.length === 0) return '<div style="color:#888;font-size:0.82em;padding:4px">尚無每日資料（切換到較長的趨勢區間以載入更多天）</div>';
@@ -10455,21 +10479,22 @@ window._buildDailyRows = function(market, ym) {
   const pct = v => (v == null || isNaN(v)) ? '--' : (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
   const body = rows.map(d => {
     const diff = diffMap[d.date];
-    const dcls = diff == null ? '' : (diff >= 0 ? 'color:#34d399' : 'color:#f87171');
-    const netProfit = netProfitMap[d.date];
-    const npcls = netProfit == null ? '' : (netProfit >= 0 ? 'color:#34d399' : 'color:#f87171');
+    const dcls = d._closed ? 'color:#666' : (diff == null ? '' : (diff >= 0 ? 'color:#34d399' : 'color:#f87171'));
     const roi = roiOf(d);
-    const rcls = roi == null ? '' : (roi >= 0 ? 'color:#34d399' : 'color:#f87171');
-    const tag = (liveToday && d.date === liveToday) ? ' <span style="color:#fbbf24;font-size:0.8em">即時</span>' : '';
+    const rcls = d._closed ? 'color:#666' : (roi == null ? '' : (roi >= 0 ? 'color:#34d399' : 'color:#f87171'));
+    const tag = d._closed
+      ? ' <span style="color:#666;font-size:0.8em">休市</span>'
+      : ((liveToday && d.date === liveToday) ? ' <span style="color:#fbbf24;font-size:0.8em">即時</span>' : '');
+    const dateCls = d._closed ? 'color:#666' : 'color:#bbb';
     const nwCell = isUS
-      ? `<td style="text-align:right;padding:2px 8px">${fmt(d.value)}<div style="font-size:0.8em;color:#888">${d.valueTWD != null ? fmtTWD(d.valueTWD) : '--'}</div></td>`
-      : `<td style="text-align:right;padding:2px 8px">${fmtTWD(d.value)}</td>`;
+      ? `<td style="text-align:right;padding:2px 8px;${d._closed ? 'color:#666' : ''}">${fmt(d.value)}<div style="font-size:0.8em;color:#888">${d.valueTWD != null ? fmtTWD(d.valueTWD) : '--'}</div></td>`
+      : `<td style="text-align:right;padding:2px 8px;${d._closed ? 'color:#666' : ''}">${fmtTWD(d.value)}</td>`;
     const rateCell = isUS ? `<td style="text-align:right;padding:2px 8px;color:#888">${d.rate != null ? d.rate.toFixed(3) : '--'}</td>` : '';
-    return `<tr><td style="padding:2px 8px;color:#bbb;white-space:nowrap">${d.date}${tag}</td>${nwCell}<td style="text-align:right;padding:2px 8px;${rcls}">${pct(roi)}</td>${rateCell}<td style="text-align:right;padding:2px 8px;${dcls}">${diff == null ? '--' : (diff >= 0 ? '+' : '') + fmtFn(diff)}</td><td style="text-align:right;padding:2px 8px;${npcls}">${netProfit == null ? '--' : (netProfit >= 0 ? '+' : '') + fmtFn(netProfit)}</td></tr>`;
+    return `<tr><td style="padding:2px 8px;${dateCls};white-space:nowrap">${d.date}${tag}</td>${nwCell}<td style="text-align:right;padding:2px 8px;${rcls}">${pct(roi)}</td>${rateCell}<td style="text-align:right;padding:2px 8px;${dcls}">${diff == null ? '--' : (diff >= 0 ? '+' : '') + fmtFn(diff)}</td></tr>`;
   }).join('');
   const nwHdr = isUS ? '淨值<br><span style="font-size:0.85em">(USD/TWD)</span>' : '淨值';
   const rateHdr = isUS ? '<th style="text-align:right;padding:2px 8px;color:#888;font-weight:500">匯率</th>' : '';
-  return `<table style="width:100%;font-size:0.8em"><thead><tr><th style="text-align:left;padding:2px 8px;color:#888;font-weight:500">日期</th><th style="text-align:right;padding:2px 8px;color:#888;font-weight:500">${nwHdr}</th><th style="text-align:right;padding:2px 8px;color:#888;font-weight:500">投報率</th>${rateHdr}<th style="text-align:right;padding:2px 8px;color:#888;font-weight:500">日差額</th><th style="text-align:right;padding:2px 8px;color:#888;font-weight:500">淨獲利</th></tr></thead><tbody>${body}</tbody></table>`;
+  return `<table style="width:100%;font-size:0.8em"><thead><tr><th style="text-align:left;padding:2px 8px;color:#888;font-weight:500">日期</th><th style="text-align:right;padding:2px 8px;color:#888;font-weight:500">${nwHdr}</th><th style="text-align:right;padding:2px 8px;color:#888;font-weight:500">投報率</th>${rateHdr}<th style="text-align:right;padding:2px 8px;color:#888;font-weight:500">日差額</th></tr></thead><tbody>${body}</tbody></table>`;
 };
 
 function renderCombinedMonthlySnapshotTable(usKey, twKey, title) {
