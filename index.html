@@ -422,7 +422,7 @@
 
 <div id="appContainer" style="display:none">
 <div class="header">
-  <h1>💼 投資追蹤系統 <span style="font-size:.4em;font-weight:400;color:#666;-webkit-text-fill-color:#666">v82</span></h1>
+  <h1>💼 投資追蹤系統 <span style="font-size:.4em;font-weight:400;color:#666;-webkit-text-fill-color:#666">v83</span></h1>
   <div class="user-bar" id="userBar" style="display:none;position:relative">
     <span id="userDisplayName" onclick="document.getElementById('userMenu').style.display=document.getElementById('userMenu').style.display==='block'?'none':'block'" style="cursor:pointer"></span>
     <div id="userMenu" style="display:none;position:absolute;top:100%;right:0;background:#1e1e2e;border:1px solid rgba(255,255,255,0.15);border-radius:8px;padding:12px;min-width:260px;z-index:200;box-shadow:0 8px 24px rgba(0,0,0,0.4);margin-top:4px">
@@ -10297,7 +10297,7 @@ function renderDetailedMonthlySnapshotTable(usKey, twKey, owner, period) {
   const _cfMonths = [...months].sort(); // ascending
   const _carryFwd = (src) => { const out = {}; let last = null; for (const m of _cfMonths) { if (src[m] != null) last = src[m]; out[m] = last; } return out; };
   const usNWcf = _carryFwd(usData), twNWcf = _carryFwd(twData);
-  const usINVcf = _carryFwd(usInv), twINVcf = _carryFwd(twInv);
+  const twINVcf = _carryFwd(twInv);
   // Use the SAME per-month rate as the US section (ratePerMonth: current month
   // = live rate, past months = that month's frozen rate) so the total exactly
   // reconciles with 美股(TWD) + 台股 instead of drifting by rate rounding.
@@ -10306,10 +10306,18 @@ function renderDetailedMonthlySnapshotTable(usKey, twKey, owner, period) {
     if (us == null && tw == null) return null;
     return (us != null ? us * r : 0) + (tw != null ? tw : 0);
   });
-  const totalInv = months.map((m, i) => {
-    const us = usINVcf[m], tw = twINVcf[m], r = ratePerMonth[i];
+  // Invested must use the actual historical TWD paid in (usInvTWD — same
+  // series the 美股 section displays as its TWD 投資金額), NOT usInv(USD)
+  // × this period's rate. Each USD deposit was converted at ITS OWN rate on
+  // its own date, so re-multiplying the cumulative USD total by one later
+  // rate doesn't reproduce that sum — it silently drifted 總計投資金額 away
+  // from 美股投資金額(TWD) + 台股投資金額 by however much the rate moved
+  // between deposits and "now".
+  const usInvTWDcf = _carryFwd(usInvTWD);
+  const totalInv = months.map((m) => {
+    const us = usInvTWDcf[m], tw = twINVcf[m];
     if (us == null && tw == null) return null;
-    return (us != null ? us * r : 0) + (tw != null ? tw : 0);
+    return (us || 0) + (tw || 0);
   });
   const totalItems = months.map((m, i) => {
     const nw = totalNW[i];
